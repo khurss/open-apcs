@@ -1,0 +1,13 @@
+{
+  "name": "@open-apcs/gateway",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { ".": "./src/mqtt-led.ts" },
+  "dependencies": {
+    "@open-apcs/domain": "workspace:*",
+    "@open-apcs/led-protocol": "workspace:*",
+    "@open-apcs/storage": "workspace:*",
+    "mqtt": "5.14.1"
+  }
+}

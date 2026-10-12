@@ -71,3 +71,11 @@ Added `check:language` before typecheck/tests in the full Docker command. It fir
 The first GitHub Actions run failed during dependency installation. A separate clean checkout owned by UID 1001, with empty dependency volumes and the existing UID 1000 tooling image, reproduced `EACCES` while creating `packages/storage/node_modules` (installer exit 243). This exposed a permission assumption hidden by the original developer workspace.
 
 The workflow now gives UID 1000 ownership of its checkout before container operations and restores the runner's ownership in an always-run step before checkout cleanup. Application installation and tests remain non-root inside Docker. Applying the same ownership preparation to the isolated checkout made the frozen installation pass, followed by the language check, TypeScript, and **111 passing tests**. No tooling image rebuild was needed. Probe services and volumes are separate from the development environment.
+
+## 2026-10-12: LED MQTT protocol, gateway, and runtime
+
+Observed RED against explicit stubs: protocol/session suite 26 failed / 1 passed, six real MQTT/PostgreSQL integration tests failed, and five runtime scheduler tests failed. A journal test reproduced a missing monotonic deadline; another reproduced a gateway consuming another output's pending command. Implemented versioned bounded frames, clock/session handshake, retained-frame rejection, conservative device deadlines, scoped claims, and a serial headless worker.
+
+Real transport testing exposed a snapshot timestamp captured separately from its lease anchor; capturing it once fixed the handshake without relaxing freshness limits. Additional tests cover device reboot, gateway restart, live retained writes, and runtime lifecycle races. The latter reproduced two failures before the restart/cancellation fixes.
+
+Final `make test`: **156 passed in 8 files**, including 9 MQTT integration tests and 24 journal tests; TypeScript and the language guard passed. Images were not rebuilt; the two new workspace packages and lockfile were installed in Docker. API/authentication, deployment processes, offline distribution, hardware verification, and editors remain pending; M0 is not yet complete.

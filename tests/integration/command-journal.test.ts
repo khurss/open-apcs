@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import type { CommandContext, CommandRequest } from '../../packages/domain/src/commands.js';
@@ -46,6 +47,34 @@ async function counts() {
 }
 
 describe('M0: durable commands and transactional outbox', () => {
+  it('scopes a gateway claim to its output without consuming another device command', async () => {
+    await journal.migrate();
+    const other = request({ targetSignalId: 'other-led' });
+    const own = request();
+    await journal.request(other, context); await journal.request(own, context);
+    expect((await journal.claimNext(async () => context, 'led'))?.command.id).toBe(own.id);
+    expect((await journal.get(other.id)).state).toBe('Accepted');
+    expect((await journal.claimNext(async () => context, 'other-led'))?.command.id).toBe(other.id);
+  });
+
+  it('returns a process-local monotonic deadline that includes COMMIT latency', async () => {
+    await journal.migrate();
+    await pool.query(`
+      CREATE FUNCTION delay_dispatch_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.snapshot->>'state' = 'Dispatched' THEN PERFORM pg_sleep(0.1); END IF;
+        RETURN NEW;
+      END $$;
+      CREATE CONSTRAINT TRIGGER injected_commit_delay AFTER UPDATE ON apcs_commands
+        DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION delay_dispatch_commit()`);
+    const input = request({ ttlMs: 1000 });
+    await journal.request(input, context);
+    const intent = await journal.claimNext(async () => context);
+    expect(intent?.deadlineMonotonicMs).toBeTypeOf('number');
+    expect(intent!.deadlineMonotonicMs - performance.now()).toBeGreaterThan(0);
+    expect(intent!.deadlineMonotonicMs - performance.now()).toBeLessThan(910);
+  });
+
   it('does not issue a command whose deadline elapses while resolving live context', async () => {
     await journal.migrate();
     const input = request({ ttlMs: 100 });

@@ -1,6 +1,6 @@
 # PostgreSQL command journal: the first implemented contract
 
-`@open-apcs/storage/command-journal` provides `PgCommandJournal`. This storage and dispatch-intent library handles boolean outputs for the LED milestone. The HTTP API, MQTT dispatcher, and automatic recovery loop are not connected yet. PostgreSQL in `compose.test.yml` uses tmpfs for tests only; a production installation requires a separate persistent volume and backups.
+`@open-apcs/storage/command-journal` provides `PgCommandJournal`. This storage and dispatch-intent library handles boolean outputs for the LED milestone. The HTTP API remains pending. The separate [LED gateway/runtime](led-network.md) now connects this library to MQTT delivery and periodic recovery. PostgreSQL in `compose.test.yml` uses tmpfs for tests only; a production installation requires a separate persistent volume and backups.
 
 ## Stored data
 
@@ -17,7 +17,7 @@ Each transaction uses one dedicated `pg` client, following the [node-postgres tr
 | `migrate()` | Validate and apply the schema |
 | `request(request, context)` | Persisted snapshot; the same actor/key/payload returns the original ID |
 | `get(id)` | Snapshot with expiration applied; resulting state changes are persisted |
-| `claimNext(resolveContext)` | At most one intent, returned only after a successful COMMIT |
+| `claimNext(resolveContext, targetSignalId?)` | At most one intent, optionally scoped to an output, returned only after a successful COMMIT |
 | `acknowledge(ack)` | Correlated ACK validated against command ID, output, boot session, and expected value |
 | `recoverExpired(limit = 100)` | Bounded scan of expired commands and detected clock regressions; maximum 1000 |
 | `connectionLost(targetSignalId)` | Pending → Cancelled; Dispatched/DeviceAccepted → Unknown |
@@ -44,7 +44,7 @@ Until explicit Unknown reconciliation is implemented, such an output remains blo
 
 PostgreSQL stores an absolute `expires_at`; retries and object restoration do not extend it. After reading database time, the operation tracks the remaining interval monotonically, including time spent awaiting the resolver. A negative remainder produces Expired/Unknown. A detected database clock regression relative to `last_observed_at` cancels pending commands and marks dispatched commands Unknown.
 
-Between operations, command age depends on the PostgreSQL system clock. A partial clock rollback that does not cross the last stored observation is not detected by this comparison. Before controlling physical outputs, the protocol/firmware must independently validate command age and control sessions, monitor clock skew, and implement a local watchdog. A database deadline does not replace these controls. An intent can also expire after COMMIT; the future dispatcher must verify the deadline and current authority immediately before I/O.
+Between operations, command age depends on the PostgreSQL system clock. A partial clock rollback that does not cross the last stored observation is not detected by this comparison. Before controlling physical outputs, the protocol/firmware must independently validate command age and control sessions, monitor clock skew, and implement a local watchdog. A database deadline does not replace these controls. An intent can also expire after COMMIT; the dispatcher must verify the deadline and current authority immediately before I/O. The LED adapter uses the same-process `deadlineMonotonicMs` field; COMMIT time consumes its budget.
 
 Automatic publication retries, runtime-wide HA/fencing, a reconciliation API, annual history retention, and a complete database privilege model are not implemented. Snapshots hold a short command transition history, also stored as individual event rows. Storage currently grows with request count; retention/archiving is required before a long-running production deployment.
 

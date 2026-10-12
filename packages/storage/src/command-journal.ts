@@ -13,6 +13,8 @@ export interface DispatchIntent {
   request: CommandRequest;
   attemptId: string;
   expiresAt: string;
+  /** Same-process performance.now() deadline; never serialize across processes. */
+  deadlineMonotonicMs: number;
 }
 
 interface Row {
@@ -121,11 +123,13 @@ export class PgCommandJournal {
   }
 
   /** Resolver only reads trusted live state; it must not publish or mutate devices. */
-  async claimNext(resolve: (request: CommandRequest, signal: AbortSignal) => Promise<CommandContext>): Promise<DispatchIntent | null> {
+  async claimNext(resolve: (request: CommandRequest, signal: AbortSignal) => Promise<CommandContext>, targetSignalId?: string): Promise<DispatchIntent | null> {
+    if (targetSignalId !== undefined && !targetSignalId.trim()) throw new Error('Invalid output scope');
     return transaction(this.pool, async (client) => {
       const result = await client.query<Row>(`SELECT c.* FROM apcs_commands c
         JOIN apcs_command_outbox o ON o.command_id = c.id WHERE o.state = 'pending'
-        ORDER BY c.created_at, c.id LIMIT 1 FOR UPDATE OF c SKIP LOCKED`);
+        AND ($1::text IS NULL OR c.target_signal_id = $1)
+        ORDER BY c.created_at, c.id LIMIT 1 FOR UPDATE OF c SKIP LOCKED`, [targetSignalId ?? null]);
       const row = result.rows[0];
       if (!row) return null;
       const clock = await databaseClock(client);
@@ -140,7 +144,8 @@ export class PgCommandJournal {
       const attemptId = randomUUID();
       await client.query("UPDATE apcs_command_outbox SET state = 'consumed', attempt_id = $2 WHERE command_id = $1", [row.id, attemptId]);
       // transaction() returns this intent only after COMMIT succeeds.
-      return { command: snapshot, request: { ...row.request }, attemptId, expiresAt: row.expires_at.toISOString() };
+      return { command: snapshot, request: { ...row.request }, attemptId, expiresAt: row.expires_at.toISOString(),
+        deadlineMonotonicMs: clock.monotonicNow() + row.expires_at.getTime() - clock.wallNow().getTime() };
     });
   }
 

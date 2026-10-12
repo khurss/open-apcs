@@ -1,0 +1,8 @@
+{
+  "name": "@open-apcs/led-protocol",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@open-apcs/domain": "workspace:*" }
+}

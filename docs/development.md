@@ -2,13 +2,13 @@
 
 ## Current status
 
-Part of M0 is implemented: a TypeScript/pnpm workspace, container tooling, watch mode, `SignalStore`, `CommandBook`, `VirtualLed`, and `PgCommandJournal`. RED → GREEN cycles have been observed; full-suite and TypeScript results are recorded in the [TDD log](tdd-log.md).
+Part of M0 is implemented: a TypeScript/pnpm workspace, container tooling, watch mode, `SignalStore`, `CommandBook`, `VirtualLed`, `PgCommandJournal`, and the LED MQTT gateway/simulator/runtime libraries. RED → GREEN cycles have been observed; full-suite and TypeScript results are recorded in the [TDD log](tdd-log.md).
 
 `SignalStore` keeps values in memory, including quality, monotonic freshness, boot sessions, duplicates, ordering, exact int64/uint64, and disconnection. A trusted gateway calls `beginSession` after device verification; the class does not authenticate MQTT hello messages. Missing data remains `null`; disconnection preserves the last value with `Disconnected` quality.
 
 `CommandBook` is a synchronous lifecycle model for boolean commands in the LED milestone. It checks output ownership, quality, interlocks, revision, boot session, and TTL; deduplicates requests; and separates dispatch, ACK, and result evidence. A trusted application supplies context, not the browser. `CommandBook` itself is in-memory and must not be connected to physical outputs as a standalone command service.
 
-`PgCommandJournal` adds PostgreSQL persistence: transactional commands/events/outbox, concurrent deduplication, one-time intent issuance, and expiration recovery. It restores snapshots through the same `CommandBook` model. One unfinished command is allowed per output; Unknown blocks new requests until future explicit reconciliation. See the [journal contract](command-journal.md) for details, time assumptions, and remaining limitations. MQTT delivery and runtime scheduling are not connected yet.
+`PgCommandJournal` adds PostgreSQL persistence: transactional commands/events/outbox, concurrent deduplication, one-time intent issuance, and expiration recovery. It restores snapshots through the same `CommandBook` model. One unfinished command is allowed per output; Unknown blocks new requests until future explicit reconciliation. See the [journal contract](command-journal.md) for details, time assumptions, and remaining limitations. The [LED network increment](led-network.md) connects the journal to a tested MQTT gateway and headless scheduling library; standalone deployment processes and the API are still pending.
 
 `VirtualLed` models one output with OFF as the LED-specific safe state and a maximum 3000 ms lease. All model participants share one monotonic virtual clock; its `expiresAt` cannot be transferred directly to a network contract between physical devices with independent clocks. The watchdog calculates state when the model is accessed rather than running a hardware timer. The model neither executes ESP32 firmware nor connects to MQTT yet. Its completed-command cache is limited to 10,000 entries per boot; once full, new entries are rejected until model reboot.
 
@@ -95,7 +95,7 @@ make stop
 
 ## Next implementation sequence
 
-1. Add versioned network DTOs, an MQTT gateway, and a simulator with time/session, retain, lost-ACK, and reconnect checks; connect the journal and periodic recovery.
+1. Package the tested LED MQTT gateway, simulator, and runtime into runnable application processes; configure authenticated broker access.
 2. Add local authentication, an API, and a device catalog with container integration tests.
 3. Add explicit Unknown reconciliation, journal retention, and verified backups.
 4. Add the web interface with Vite HMR and container E2E tests, then both editors.

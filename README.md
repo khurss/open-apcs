@@ -2,7 +2,7 @@
 
 An open automation platform with a web interface, an HMI editor, and an executable logic editor. Designed to run locally on Linux in Docker without mandatory internet access. The first target device is ESP-WROOM-32.
 
-Part of M0 is implemented: the signal model, command lifecycle, virtual LED with a watchdog, and a PostgreSQL command journal with a transactional outbox. TypeScript checks and unit/integration tests run in Docker; watch mode picks up changes without rebuilding images. The web application and connection to a physical ESP32 are still pending. See [development and hot reload](docs/development.md), the [TDD log](docs/tdd-log.md), and the [command storage contract](docs/command-journal.md).
+Part of M0 is implemented: the signal model, command lifecycle, virtual LED with a watchdog, a PostgreSQL command journal with a transactional outbox, and a tested MQTT LED gateway/simulator with a headless runtime library. TypeScript checks and unit/integration tests run in Docker; watch mode picks up changes without rebuilding images. The web application and connection to a physical ESP32 are still pending. See [development and hot reload](docs/development.md), the [TDD log](docs/tdd-log.md), the [command storage contract](docs/command-journal.md), and the [LED network contract](docs/led-network.md).
 
 ```bash
 cd open-apcs # If your current directory is the parent APCS directory.

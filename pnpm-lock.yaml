@@ -32,6 +32,27 @@ importers:
 
   packages/domain: {}
 
+  packages/gateway:
+    dependencies:
+      '@open-apcs/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@open-apcs/led-protocol':
+        specifier: workspace:*
+        version: link:../led-protocol
+      '@open-apcs/storage':
+        specifier: workspace:*
+        version: link:../storage
+      mqtt:
+        specifier: 5.14.1
+        version: 5.14.1
+
+  packages/led-protocol:
+    dependencies:
+      '@open-apcs/domain':
+        specifier: workspace:*
+        version: link:../domain
+
   packages/storage:
     dependencies:
       '@open-apcs/domain':

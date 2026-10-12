@@ -1,3 +1,5 @@
+import { enqueueNotifications, syncNotificationRoutes, claimNotification, finishNotification } from '../../apps/api/src/notification-store.js';
+import { transaction } from '../../apps/api/src/store.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { PgSignalArchive } from '../../packages/storage/src/signal-archive.js';
@@ -45,6 +47,35 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('exposes secret-free notification logs and protects audited bounded retries', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Alarm LED', siteId: 'alarm', deviceId: 'led', kind: 'virtual-led' } })).json();
+    const alarmId = (await app!.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/alarms`, headers: headers(), payload: { name: 'LED on', signalId: device.signalId, priority: 'high', definition: { condition: { kind: 'boolean', value: true }, activationDelayMs: 0, returnDelayMs: 0 } } })).json().id;
+    const secret = 'fixture-notification-private-secret-32';
+    await syncNotificationRoutes(pool, [{ id: 'local', name: 'Local receiver', kind: 'webhook', url: 'https://private.fixture.invalid/secret-path', secret, priorities: ['high'], events: ['Activated'], projectIds: [] }]);
+    await transaction(pool, (client) => enqueueNotifications(client, alarmId, { version: 1, kind: 'Activated', occurrence: 1, at: new Date().toISOString() }, { active: true, acknowledged: false, suppressedUntil: null }));
+    const job = (await claimNotification(pool))!; await finishNotification(pool, job, { retryable: false, message: secret });
+    const url = `/api/v1/projects/${projectId}/notifications`;
+    expect((await app!.inject({ url })).statusCode).toBe(401);
+    const result = await app!.inject({ url, headers: headers() }); expect(result.statusCode).toBe(200); expect(result.body).not.toContain(secret); expect(result.body).not.toContain('secret-path');
+    expect(result.json().items[0]).toMatchObject({ id: job.id, state: 'Dead', attempts: 1 });
+    const retry = `/api/v1/notifications/${job.id}/retry`;
+    expect((await app!.inject({ method: 'POST', url: retry, headers: { origin, cookie }, payload: { reason: 'Endpoint repaired' } })).statusCode).toBe(403);
+    expect((await app!.inject({ method: 'POST', url: retry, headers: headers(), payload: { reason: ' ' } })).statusCode).toBe(400);
+    await pool.query("CREATE FUNCTION deny_notification_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='notification.retry' THEN RAISE EXCEPTION 'Fixture audit failure'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER deny_notification_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_notification_audit()');
+    expect((await app!.inject({ method: 'POST', url: retry, headers: headers(), payload: { reason: 'Endpoint repaired' } })).statusCode).toBe(500);
+    expect((await pool.query('SELECT state FROM apcs_notification_deliveries')).rows[0].state).toBe('Dead');
+    await pool.query('DROP TRIGGER deny_notification_audit ON apcs_audit');
+    expect((await app!.inject({ method: 'POST', url: retry, headers: headers(), payload: { reason: 'Endpoint repaired' } })).statusCode).toBe(204);
+    expect((await pool.query("SELECT data FROM apcs_audit WHERE action='notification.retry'")).rows[0].data).toMatchObject({ reason: 'Endpoint repaired', attempts: 1 });
+    const second = (await claimNotification(pool))!; expect(second).toMatchObject({ id: job.id, attempt: 2 }); await finishNotification(pool, second);
+    expect((await app!.inject({ url: `/api/v1/notifications/${job.id}/attempts`, headers: headers() })).json().items).toHaveLength(2);
+    expect((await app!.inject({ method: 'POST', url: retry, headers: headers(), payload: { reason: 'Duplicate' } })).statusCode).toBe(409);
+    const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'foreign-notification','fixture')", [foreign]); await pool.query('UPDATE apcs_projects SET owner_id=$2 WHERE id=$1', [projectId, foreign]);
+    expect((await app!.inject({ url, headers: headers() })).statusCode).toBe(404);
+    expect((await app!.inject({ method: 'POST', url: retry, headers: headers(), payload: { reason: 'Foreign' } })).statusCode).toBe(404);
+  });
   it('validates alarm rules, ownership, authentication and bounded lifecycle reads', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Alarm LED', siteId: 'alarm', deviceId: 'led', kind: 'virtual-led' } })).json();

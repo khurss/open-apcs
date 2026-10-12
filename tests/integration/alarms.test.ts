@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { migrateApplication } from '../../apps/api/src/store.js';
+import { syncNotificationRoutes } from '../../apps/api/src/notification-store.js';
 import { AlarmService } from '../../apps/api/src/alarm-service.js';
 import type { SignalSnapshot } from '../../packages/domain/src/signals.js';
 let admin: Pool; let pool: Pool; let schema: string; let service: AlarmService; let actor: string; let alarmId: string; let current: SignalSnapshot;
@@ -22,6 +23,26 @@ afterEach(async () => { await service?.close(); await pool?.end(); if (admin) { 
 const state = async () => (await pool.query('SELECT state FROM apcs_alarms WHERE id=$1', [alarmId])).rows[0].state;
 async function waitFor(check: () => Promise<boolean>) { const deadline = performance.now() + 3000; while (performance.now() < deadline) { if (await check()) return; await new Promise((resolve) => setTimeout(resolve, 20)); } throw new Error('Alarm condition timed out'); }
 describe('durable alarm monitoring', () => {
+  it('enqueues notifications in the alarm transaction and suppresses maintenance events', async () => {
+    await syncNotificationRoutes(pool, [{ id: 'fixture', name: 'Fixture', kind: 'webhook', url: 'https://fixture.invalid/events', secret: 'fixture-secret-at-least-32-characters', priorities: ['high'], events: ['Activated', 'Reactivated', 'Returned', 'Unsuppressed'], projectIds: [] }]);
+    service.start(); await waitFor(async () => (await state()).active);
+    expect((await pool.query('SELECT body FROM apcs_notification_deliveries')).rows.map((r) => JSON.parse(r.body).kind)).toEqual(['Activated']);
+    await service.action(alarmId, actor, { kind: 'suppress', durationMs: 60000, reason: 'Maintenance' });
+    current.value = false; await waitFor(async () => !(await state()).active);
+    current.value = true; await waitFor(async () => (await state()).active);
+    expect((await pool.query('SELECT id FROM apcs_notification_deliveries')).rowCount).toBe(1);
+    await service.action(alarmId, actor, { kind: 'unsuppress', reason: 'Maintenance finished' });
+    expect((await pool.query('SELECT body FROM apcs_notification_deliveries ORDER BY created_at')).rows.map((r) => JSON.parse(r.body).kind)).toEqual(['Activated', 'Unsuppressed']);
+    expect((await state()).acknowledged).toBe(false);
+  });
+  it('rolls back the outbox when the alarm audit cannot commit', async () => {
+    await syncNotificationRoutes(pool, [{ id: 'fixture', name: 'Fixture', kind: 'webhook', url: 'https://fixture.invalid/events', secret: 'fixture-secret-at-least-32-characters', priorities: ['high'], events: ['Activated'], projectIds: [] }]);
+    await pool.query("CREATE FUNCTION deny_activation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='alarm.activated' THEN RAISE EXCEPTION 'Fixture audit failure'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER deny_activation BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_activation()');
+    service.start(); await waitFor(async () => service.status.state === 'faulted');
+    expect((await pool.query('SELECT id FROM apcs_notification_deliveries')).rowCount).toBe(0);
+    expect((await state()).active).toBe(false);
+  });
   it('evaluates without a browser and persists state plus ordered lifecycle events', async () => {
     service.start(); await waitFor(async () => (await state()).active);
     current.value = false; await waitFor(async () => !(await state()).active);

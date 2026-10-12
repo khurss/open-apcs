@@ -1,3 +1,4 @@
+import { NotificationLog } from './notifications.js';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type Project, type Device, type Signal } from './api.js';
 interface Alarm { id: string; name: string; priority: string; phase: string; evaluationStale: boolean; state: { occurrence: number; acknowledged: boolean; available: boolean; suppressedUntil: string | null }; }
@@ -52,5 +53,6 @@ export function AlarmWorkspace({ projects, devices, signals, initialProject }: {
       <button className="secondary" disabled={disabled || active.evaluationStale} onClick={() => action('suppress')}>Suppress for one minute</button>
       <button className="secondary" disabled={disabled || !active.state.suppressedUntil} onClick={() => action('unsuppress')}>Remove suppression</button>
     </div><p className="muted">Suppression expires automatically and is cleared on runtime restart. Latest 20 lifecycle events:</p></div><div className="table-scroll"><table aria-label="Alarm events"><thead><tr><th>Time</th><th>Event</th><th>Reason</th></tr></thead><tbody>{events.map((event) => <tr key={event.id}><td>{new Date(event.at).toLocaleString()}</td><td>{event.kind}</td><td>{event.reason ?? '—'}</td></tr>)}</tbody></table></div></section>}
+    {project && <NotificationLog key={project} project={project} />}
   </>;
 }

@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import { NotificationProcess } from '../../apps/api/src/notification-process.js';
 import { ScriptClient } from '../../packages/script-runtime/src/client.js';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -25,12 +27,21 @@ const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POS
 const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
 await mkdir(new URL('../../.cache/e2e/', import.meta.url), { recursive: true });
 await writeFile(new URL('../../.cache/e2e/schema.json', import.meta.url), JSON.stringify({ schema }), { mode: 0o600 });
+// Isolated local recipient: reject the first delivery to exercise the audited retry UI.
+let deliveries = 0;
+const recipient = createServer((request, response) => { request.resume(); request.on('end', () => { response.writeHead(++deliveries === 1 ? 400 : 204).end(); }); });
+await new Promise<void>((resolve) => recipient.listen(0, '127.0.0.1', resolve));
+const recipientAddress = recipient.address(); if (!recipientAddress || typeof recipientAddress === 'string') throw new Error('Fixture listener required');
+const notificationConfigPath = '/tmp/apcs-e2e/notifications.json';
+await writeFile(notificationConfigPath, JSON.stringify({ version: 1, routes: [{ id: 'fixture', name: 'Local test receiver', kind: 'webhook', url: `http://127.0.0.1:${recipientAddress.port}/events`, secret: 'fixture-only-signing-secret-at-least-32', allowInsecure: true, priorities: ['low', 'medium', 'high'], events: ['Activated', 'Returned'], projectIds: [] }] }), { mode: 0o600 });
+const notifications = new NotificationProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, databaseOptions: `-c search_path=${schema}`, configPath: notificationConfigPath });
 await app.listen({ host: '0.0.0.0', port: 3000 });
 let stopped = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => {
   if (stopped) return;
   stopped = true;
   void (async () => {
+    await notifications.close(); recipient.closeAllConnections(); await new Promise<void>((resolve) => recipient.close(() => resolve()));
     await app.close(); await simulator.stop(); await pool.end();
     await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end();
   })();

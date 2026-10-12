@@ -1,3 +1,4 @@
+import { registerNotifications } from './notification-api.js';
 import type { ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { registerPhysicalRuntime } from './physical-api.js';
 import { registerAlarms } from './alarm-api.js';
@@ -215,6 +216,7 @@ export async function createApi(options: ApiOptions) {
   registerCommandRecovery(app, pool, journal, options.runtime);
   registerHistory(app, pool, options.runtime);
   registerAlarms(app, pool, options.runtime);
+  registerNotifications(app, pool);
   registerEditors(app, pool, options.scripts);
   registerGraphRuntime(app, pool, options.runtime);
   registerPhysicalRuntime(app, pool, options.runtime);

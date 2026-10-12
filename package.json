@@ -24,6 +24,8 @@
     "pg": "8.16.3",
     "typescript": "5.9.3",
     "vitest": "4.0.18",
-    "@playwright/test": "1.64.0"
+    "@playwright/test": "1.64.0",
+    "smtp-server": "3.19.21",
+    "@types/smtp-server": "3.5.13"
   }
 }

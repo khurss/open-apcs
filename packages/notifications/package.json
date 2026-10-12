@@ -1,0 +1,12 @@
+{
+  "name": "@open-apcs/notifications",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "nodemailer": "10.1.0"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.2"
+  }
+}

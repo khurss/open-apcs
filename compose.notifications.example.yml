@@ -1,0 +1,13 @@
+# Copy to an ignored deployment override and provide a mode-0600 JSON file.
+# No destination is configured by this example.
+services:
+  api:
+    environment:
+      APCS_NOTIFICATIONS_CONFIG: /run/apcs/notifications.json
+    volumes:
+      - type: bind
+        source: ${APCS_NOTIFICATION_FILE:?Set an absolute private configuration file path}
+        target: /run/apcs/notifications.json
+        read_only: true
+        bind:
+          create_host_path: false

@@ -289,3 +289,7 @@ This is a structural plan, not a list of completed applications. PostgreSQL migr
 ## Initial isolated script service
 
 JS/TS boolean graph blocks execute in a separate Docker service with QuickJS WebAssembly, fresh guest contexts, an externally bounded worker and a bounded queue. API and private runtime processes use a typed HTTP client; they never evaluate user code. See [script architecture, limits and failure semantics](script-runtime.md). This initial service uses the existing pinned Node image and internal sandbox network; it is not the final scale profile.
+
+## Initial notification worker
+
+Alarm state/events/audit and outbox records commit together in PostgreSQL. A separate private Node process handles bounded SMTP/webhook delivery, with schema ownership, expiring job leases, retry limits and secret-free attempt logs. Its restart cannot arm outputs or acknowledge alarms. Private destination files stay outside the API; only public route metadata and fingerprints are persisted. See [notification contracts and deployment](notifications.md).

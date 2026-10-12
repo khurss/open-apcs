@@ -1,3 +1,4 @@
+import { enqueueNotifications } from './notification-store.js';
 import type { Pool } from 'pg';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 import { AlarmEngine, type AlarmSnapshot, type AlarmDefinition } from '../../../packages/domain/src/alarms.js';
@@ -39,6 +40,7 @@ export class AlarmService {
         if (!row || row.state.version !== entry.version) throw new Error('Alarm state changed concurrently');
         for (const event of events) {
           await client.query('INSERT INTO apcs_alarm_events (alarm_id,version,kind,occurrence,actor_id,reason,at) VALUES ($1,$2,$3,$4,$5,$6,$7)', [entry.id, event.version, event.kind, event.occurrence, event.actorId, event.reason, event.at]);
+          await enqueueNotifications(client, entry.id, event, state);
           await audit(client, event.actorId, `alarm.${event.kind.toLowerCase()}`, entry.id, { occurrence: event.occurrence, reason: event.reason });
         }
         await client.query('UPDATE apcs_alarms SET state=$2,last_evaluated_at=$3 WHERE id=$1', [entry.id, state, entry.evaluatedAt]);

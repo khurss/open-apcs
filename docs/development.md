@@ -93,15 +93,11 @@ The `open-apcs-test` project is separate from `open-apcs-dev`. It has separate v
 make stop
 ```
 
-## Next implementation sequence
+## Current implementation sequence
 
-1. Extend the working private simulation runtime with production broker authentication and physical-device provisioning.
-2. Extend virtual-device supervision with live graph activation and physical commissioning.
-3. Add explicit Unknown reconciliation, journal retention, and scheduled backup retention; manual backup/restore is verified.
-4. Connect the basic graph/HMI editors and prepared revisions to controlled runtime activation.
-5. Extend the minimal offline engineering bundle with production provisioning and ESP32 firmware toolchains.
+The [roadmap](roadmap.md) is the milestone source of truth. M0 is accepted; M1 remains partial pending physical ESP32 acceptance and the L0 load gate. Both editors, live graph/HMI execution, simulator and TLS bench commissioning, Unknown reconciliation for virtual devices, raw history and basic alarms are implemented. An offline firmware bundle was verified against its documented historical source snapshot.
 
-The M0 foundation gate has passed; M1 remains incomplete. Hardware tests, the offline bundle, live graph/HMI execution, and the remaining specification are future milestones.
+M2 software increments proceed while the board is unavailable: revision comparison/restoration, isolated boolean JS/TS blocks, raw trends/CSV and local SMTP/webhook delivery are implemented. Numeric logic, annual aggregates, complete reports, OTA/ESPHome and remaining roadmap items are still pending. Notification configuration and Docker deployment are documented in [notifications](notifications.md); no recipient is enabled by default.
 
 ## Phase commits and language
 

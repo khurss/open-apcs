@@ -5,13 +5,13 @@ export default defineConfig({
     passWithNoTests: false,
     maxWorkers: 2,
     // Migrations are loaded through fs, outside Vite's import graph.
-    forceRerunTriggers: [...configDefaults.forceRerunTriggers, '**/packages/storage/migrations/*.sql'],
+    forceRerunTriggers: [...configDefaults.forceRerunTriggers, '**/packages/storage/migrations/*.sql', '**/apps/api/migrations/*.sql'],
     projects: [
       {
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['packages/**/*.test.ts'],
+          include: ['packages/**/*.test.ts', 'apps/**/*.test.ts'],
           testTimeout: 2_000,
           retry: 0,
         },

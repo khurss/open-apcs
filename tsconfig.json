@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["packages/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }

@@ -41,3 +41,13 @@ stop:
 config:
 	docker compose -f compose.yml config --quiet
 	docker compose -f compose.test.yml config --quiet
+
+.PHONY: install-dev dev dev-stop
+install-dev:
+	docker compose run --rm deps
+
+dev:
+	docker compose up -d api
+
+dev-stop:
+	docker compose down --remove-orphans

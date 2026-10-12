@@ -79,3 +79,11 @@ Observed RED against explicit stubs: protocol/session suite 26 failed / 1 passed
 Real transport testing exposed a snapshot timestamp captured separately from its lease anchor; capturing it once fixed the handshake without relaxing freshness limits. Additional tests cover device reboot, gateway restart, live retained writes, and runtime lifecycle races. The latter reproduced two failures before the restart/cancellation fixes.
 
 Final `make test`: **156 passed in 8 files**, including 9 MQTT integration tests and 24 journal tests; TypeScript and the language guard passed. Images were not rebuilt; the two new workspace packages and lockfile were installed in Docker. API/authentication, deployment processes, offline distribution, hardware verification, and editors remain pending; M0 is not yet complete.
+
+## 2026-10-12: Local authentication and catalog API
+
+Initial Docker RED: **15 failed** across credential and API suites against explicit stubs. Implemented scrypt credentials, serialized local administrator bootstrap, PostgreSQL sessions/audit, strict Fastify schemas, Origin/CSRF enforcement, login throttling, cursor-paged catalogs, project revision preconditions, and the authenticated command route. A non-ASCII forged CSRF token reproduced HTTP 500 instead of 403; validating its encoded form before constant-time comparison fixed the regression.
+
+Added migration drift/bootstrap concurrency, rejected-command idempotency, and an authenticated API → real PostgreSQL → real MQTT → virtual LED → Verified scenario. Final `make test`: **175 passed in 10 files**, TypeScript and language checks passed. Compose configurations validated. The API starts under `tsx watch`; touching its entry file produced a restart and a passing container health request without an image build.
+
+The development API uses host port 3100 because another existing application occupies port 3000. Its PostgreSQL volume is persistent and separate from temporary test storage. Broker/TLS deployment, runtime commissioning, web UI, offline delivery, and the rest of M0–M5 remain pending.

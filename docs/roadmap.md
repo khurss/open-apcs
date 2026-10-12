@@ -10,7 +10,7 @@ Scope: TypeScript monorepo, development/test Compose, offline dependency manifes
 
 Exit: a new developer runs unit and integration tests in Docker without installing Node on the host; signal-quality, command-state-machine, and MQTT round-trip tests first fail, then pass. Schemas establish core types/APIs. A minimal project starts from a prepared offline bundle.
 
-Current status: **partially implemented**. The workspace, Docker checks/watchers, signal/command models, virtual LED, PostgreSQL journal, and tested MQTT gateway/simulator/runtime libraries are available. Authentication, runnable application processes, and the offline bundle are still pending. See the [development guide](development.md) and [TDD log](tdd-log.md).
+Current status: **partially implemented**. The workspace, Docker checks/watchers, signal/command models, virtual LED, PostgreSQL journal, and tested MQTT gateway/simulator/runtime libraries are available. The local authenticated API and basic project/device catalog are now runnable with hot reload. Catalog-driven runtime deployment and the offline bundle are still pending. See the [development guide](development.md) and [TDD log](tdd-log.md).
 
 ## M1: Working ESP32 path
 

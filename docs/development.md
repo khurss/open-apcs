@@ -8,7 +8,7 @@ Part of M0 is implemented: a TypeScript/pnpm workspace, container tooling, watch
 
 `CommandBook` is a synchronous lifecycle model for boolean commands in the LED milestone. It checks output ownership, quality, interlocks, revision, boot session, and TTL; deduplicates requests; and separates dispatch, ACK, and result evidence. A trusted application supplies context, not the browser. `CommandBook` itself is in-memory and must not be connected to physical outputs as a standalone command service.
 
-`PgCommandJournal` adds PostgreSQL persistence: transactional commands/events/outbox, concurrent deduplication, one-time intent issuance, and expiration recovery. It restores snapshots through the same `CommandBook` model. One unfinished command is allowed per output; Unknown blocks new requests until future explicit reconciliation. See the [journal contract](command-journal.md) for details, time assumptions, and remaining limitations. The [LED network increment](led-network.md) connects the journal to a tested MQTT gateway and headless scheduling library; standalone deployment processes and the API are still pending.
+`PgCommandJournal` adds PostgreSQL persistence: transactional commands/events/outbox, concurrent deduplication, one-time intent issuance, and expiration recovery. It restores snapshots through the same `CommandBook` model. One unfinished command is allowed per output; Unknown blocks new requests until future explicit reconciliation. See the [journal contract](command-journal.md) for details, time assumptions, and remaining limitations. The [LED network increment](led-network.md) connects the journal to a tested MQTT gateway and headless scheduling library; the [local API](api.md) now runs with process watch, while catalog-driven runtime deployment remains pending.
 
 `VirtualLed` models one output with OFF as the LED-specific safe state and a maximum 3000 ms lease. All model participants share one monotonic virtual clock; its `expiresAt` cannot be transferred directly to a network contract between physical devices with independent clocks. The watchdog calculates state when the model is accessed rather than running a hardware timer. The model neither executes ESP32 firmware nor connects to MQTT yet. Its completed-command cache is limited to 10,000 entries per boot; once full, new entries are rejected until model reboot.
 
@@ -36,7 +36,7 @@ make watch
 
 ## Development without image rebuilds
 
-The `.:/workspace` bind mount makes file changes immediately available inside containers. `node_modules` and the pnpm store use named volumes, keeping container dependencies separate from host dependencies. Vitest watch reruns affected tests. Process watch and Vite HMR will be added with the first tested Node/frontend applications.
+The `.:/workspace` bind mount makes file changes immediately available inside containers. `node_modules` and the pnpm store use named volumes, keeping container dependencies separate from host dependencies. Vitest watch reruns affected tests. The API uses tsx process watch; Vite HMR will accompany the web client.
 
 `make watch` runs in the foreground; `make watch-bg` starts the same service in the background. Follow logs with `docker compose -f compose.test.yml logs -f unit-watch`. `make watch-integration` starts the PostgreSQL/MQTT watcher; use `docker compose -f compose.test.yml up -d integration-watch` for background mode. Hot reload was verified through RED → GREEN source edits. SQL migrations also trigger reruns.
 
@@ -96,7 +96,7 @@ make stop
 ## Next implementation sequence
 
 1. Package the tested LED MQTT gateway, simulator, and runtime into runnable application processes; configure authenticated broker access.
-2. Add local authentication, an API, and a device catalog with container integration tests.
+2. Extend the local API and basic catalog with commissioning/runtime supervision and the web client.
 3. Add explicit Unknown reconciliation, journal retention, and verified backups.
 4. Add the web interface with Vite HMR and container E2E tests, then both editors.
 5. Prepare the offline bundle and custom ESP32 firmware for the LED bench.

@@ -24,6 +24,39 @@ services:
     <<: *node
     command: [node, -e, "setInterval(() => {}, 3600000)"]
 
+  api:
+    <<: *node
+    command: [pnpm, --filter, '@open-apcs/api', dev]
+    environment:
+      APCS_POSTGRES_URL: postgres://apcs_dev:apcs_dev@postgres:5432/apcs_dev
+      APCS_ORIGIN: http://localhost:5173
+      API_PORT: 3000
+    ports: ["127.0.0.1:${API_PORT:-3100}:3000"]
+    networks: [development, frontend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Local development only; database ports are not published to the host.
+  postgres:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    environment:
+      POSTGRES_USER: apcs_dev
+      POSTGRES_PASSWORD: apcs_dev
+      POSTGRES_DB: apcs_dev
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    networks: [development]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U apcs_dev -d apcs_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
   unit-watch:
     <<: *node
     command: [pnpm, test:watch]
@@ -33,3 +66,9 @@ services:
 volumes:
   node_modules:
   pnpm_store:
+  postgres_data:
+
+networks:
+  frontend: {}
+  development:
+    internal: true

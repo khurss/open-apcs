@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "scripts": { "dev": "tsx watch src/main.ts", "start": "tsx src/main.ts" },
+  "scripts": {
+    "dev": "tsx watch --include 'src/runtime-*.ts' --include '../../packages/**/src/*.ts' --exclude '**/*.test.ts' src/main.ts",
+    "start": "tsx src/main.ts"
+  },
   "dependencies": {
     "@fastify/cookie": "11.1.3",
     "@fastify/rate-limit": "11.2.1",
@@ -12,5 +15,7 @@
     "fastify": "5.12.5",
     "pg": "8.16.3"
   },
-  "devDependencies": { "tsx": "4.23.15" }
+  "devDependencies": {
+    "tsx": "4.23.15"
+  }
 }

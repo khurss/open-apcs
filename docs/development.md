@@ -95,8 +95,8 @@ make stop
 
 ## Next implementation sequence
 
-1. Package the tested LED MQTT gateway, simulator, and runtime into runnable application processes; configure authenticated broker access.
-2. Extend the local API and basic catalog with commissioning/runtime supervision and the web client.
+1. Extend the working private simulation runtime with production broker authentication and physical-device provisioning.
+2. Extend virtual-device supervision with live graph activation and physical commissioning.
 3. Add explicit Unknown reconciliation, journal retention, and scheduled backup retention; manual backup/restore is verified.
 4. Connect the basic graph/HMI editors and prepared revisions to controlled runtime activation.
 5. Extend the minimal offline engineering bundle with production provisioning and ESP32 firmware toolchains.

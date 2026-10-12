@@ -6,6 +6,7 @@ import { LedPeer } from '../../packages/led-protocol/src/index.js';
 import { MqttLedGateway, MqttLedSimulator } from '../../packages/gateway/src/mqtt-led.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
+import { RuntimeProcess } from '../../apps/api/src/runtime-process.js';
 import { createApi } from '../../apps/api/src/app.js';
 import { bootstrapAdmin, migrateApplication } from '../../apps/api/src/store.js';
 
@@ -43,6 +44,34 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('commissions a virtual LED in the private worker and controls it through the audited API', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Worker LED', siteId: 'worker', deviceId: 'worker-led', kind: 'virtual-led' } })).json();
+    await app!.close();
+    app = await createApi({ pool, origin, secureCookies: false, runtime: new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` }) });
+    const start = await app.inject({ method: 'POST', url: `/api/v1/devices/${device.id}/runtime`, headers: headers(), payload: { action: 'start', reason: 'Commission virtual bench' } });
+    expect(start.statusCode).toBe(200); expect(start.json().state).toBe('running');
+    const response = await app.inject({ method: 'POST', url: '/api/v1/commands', headers: { ...headers(), 'idempotency-key': randomUUID() }, payload: { targetSignalId: device.signalId, value: true, ttlMs: 2000, expectedProjectRevision: 1, reason: 'Worker control test' } });
+    expect(response.statusCode).toBe(202); expect(response.json().state).toBe('Accepted');
+    let verified = false; const deadline = performance.now() + 2500;
+    while (performance.now() < deadline) {
+      const result = await app.inject({ url: `/api/v1/commands/${response.json().id}`, headers: { cookie } });
+      if (result.json().state === 'Verified') { verified = true; break; }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    expect(verified).toBe(true);
+    expect((await app.inject({ url: `/api/v1/signals/${device.signalId}/value`, headers: { cookie } })).json()).toMatchObject({ value: true, quality: 'Good' });
+    expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device.id}/runtime`, headers: headers(), payload: { action: 'stop', reason: 'End virtual bench' } })).json().state).toBe('stopped');
+    const audit = (await app.inject({ url: '/api/v1/audit', headers: { cookie } })).json().items;
+    expect(audit.some((e: { action: string }) => e.action === 'runtime.start.requested')).toBe(true);
+    await pool.query("CREATE FUNCTION reject_runtime_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action = 'runtime.start.completed' THEN RAISE EXCEPTION 'fixture'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER reject_runtime_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION reject_runtime_audit()');
+    const unaudited = await app.inject({ method: 'POST', url: `/api/v1/devices/${device.id}/runtime`, headers: headers(), payload: { action: 'start', reason: 'Audit rollback probe' } });
+    expect(unaudited.statusCode).toBe(503);
+    expect((await app.inject({ url: `/api/v1/devices/${device.id}/runtime`, headers: { cookie } })).json().state).toBe('stopped');
+
+  });
+
   it('controls a protocol simulator through the authenticated API and durable MQTT path', async () => {
     await setup(); const projectId = (await project()).json().id;
     const catalog = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: {

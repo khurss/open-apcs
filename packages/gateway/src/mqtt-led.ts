@@ -6,7 +6,7 @@ import type { PgCommandJournal } from '../../storage/src/command-journal.js';
 import { decodeFrame, deviceTopic, GatewaySession, type LedPeer, type Frame } from '../../led-protocol/src/index.js';
 
 export interface LedConnection {
-  url: string; siteId: string; deviceId: string; signalId: string;
+  url: string; siteId: string; deviceId: string; signalId: string; protocolDeviceId?: string;
   credentials?: Pick<IClientOptions, 'username' | 'password' | 'ca' | 'cert' | 'key'>;
 }
 const clientOptions = (options: LedConnection): IClientOptions => ({
@@ -39,7 +39,7 @@ export class MqttLedSimulator {
     const client = await connectAsync(this.options.url, clientOptions(this.options));
     this.client = client;
     client.on('message', (topic, payload, packet) => {
-      if (topic !== deviceTopic(this.options.siteId, this.options.deviceId, 'in')) return;
+      if (topic !== deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in')) return;
       if (this.queued >= 128) { this.rejected++; void client.endAsync(true); return; }
       this.queued++;
       this.queue = this.queue.then(async () => {
@@ -49,7 +49,7 @@ export class MqttLedSimulator {
         if (frame.kind === 'write') await this.telemetry();
       }).catch(() => { this.rejected++; }).finally(() => { this.queued--; });
     });
-    await client.subscribeAsync(deviceTopic(this.options.siteId, this.options.deviceId, 'in'), { qos: 1, rap: true });
+    await client.subscribeAsync(deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in'), { qos: 1, rap: true });
   }
 
   async stop(): Promise<void> {
@@ -59,7 +59,7 @@ export class MqttLedSimulator {
   async telemetry(): Promise<void> { await this.send(this.peer.telemetry()); }
   get rejectedFrames(): number { return this.rejected; }
   private send(frame: Frame): Promise<void> {
-    return publish(this.client, deviceTopic(this.options.siteId, this.options.deviceId, 'out'), frame);
+    return publish(this.client, deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'out'), frame);
   }
 }
 
@@ -84,7 +84,7 @@ export class MqttLedGateway {
     private readonly journal: PgCommandJournal, private readonly clock: Clock,
     private readonly policy: () => Pick<CommandContext, 'projectRevision' | 'interlockReason' | 'ownerId' | 'maxTtlMs'>) {
     this.session = new GatewaySession(() => clock.monotonicNow(), randomUUID());
-    deviceTopic(options.siteId, options.deviceId, 'in');
+    deviceTopic(options.siteId, options.protocolDeviceId ?? options.deviceId, 'in');
   }
 
   async start(): Promise<void> {
@@ -96,7 +96,7 @@ export class MqttLedGateway {
     client.on('close', () => this.invalidate());
     client.on('error', () => { this.lastError = 'MQTT connection error'; this.invalidate(); });
     client.on('message', (topic, payload, packet) => {
-      if (topic !== deviceTopic(this.options.siteId, this.options.deviceId, 'out')) return;
+      if (topic !== deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'out')) return;
       if (this.queued >= 128) { this.lastError = 'MQTT receive queue exhausted'; this.invalidate(); void client.endAsync(true); return; }
       this.queued++;
       this.queue = this.queue.then(async () => {
@@ -116,7 +116,7 @@ export class MqttLedGateway {
         this.rejectedFrames++; this.lastError = error instanceof Error ? error.message : 'Frame processing failed';
       }).finally(() => { this.queued--; });
     });
-    await client.subscribeAsync(deviceTopic(this.options.siteId, this.options.deviceId, 'out'), { qos: 1, rap: true });
+    await client.subscribeAsync(deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'out'), { qos: 1, rap: true });
   }
 
   async synchronize(): Promise<void> {
@@ -164,7 +164,7 @@ export class MqttLedGateway {
         await this.journal.connectionLost(this.options.signalId); return false;
       }
       const frame = this.session.command(intent.command.id, intent.command.value, intent.deadlineMonotonicMs);
-      await publish(this.client, deviceTopic(this.options.siteId, this.options.deviceId, 'in'), frame);
+      await publish(this.client, deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in'), frame);
       return true;
     } catch (error) {
       this.invalidate(); throw error;
@@ -194,7 +194,7 @@ export class MqttLedGateway {
       timer = setTimeout(() => reject(new Error('Device handshake timed out')), 500);
     });
     try {
-      const [, response] = await Promise.all([publish(this.client, deviceTopic(this.options.siteId, this.options.deviceId, 'in'), frame), reply]);
+      const [, response] = await Promise.all([publish(this.client, deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in'), frame), reply]);
       return response;
     } finally { clearTimeout(timer); this.waiter = null; }
   }

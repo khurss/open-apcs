@@ -8,7 +8,8 @@ async function login(page: Page) {
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
 }
 
-test('creates a project and virtual device, shows unknown signal quality, and audits the workflow', async ({ page }) => {
+test('creates a project and virtual device, verifies a command, and audits the workflow', async ({ page }) => {
+  test.setTimeout(45000);
   const errors: string[] = [];
   const external: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -28,6 +29,22 @@ test('creates a project and virtual device, shows unknown signal quality, and au
   await expect(page.getByText('Workbench LED.led', { exact: true })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'Workbench LED.led' })).toContainText('Disconnected');
   await expect(page.getByRole('row').filter({ hasText: 'Workbench LED.led' })).toContainText('No data');
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  const card = page.getByRole('article').filter({ hasText: 'Workbench LED' });
+  await card.getByRole('button', { name: 'Start simulator', exact: true }).click();
+  await expect(card.getByText('Simulation running', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Signals', exact: true }).click();
+  const row = page.getByRole('row').filter({ hasText: 'Workbench LED.led' });
+  await expect(row).toContainText('Good');
+  await row.getByRole('button', { name: 'Control', exact: true }).click();
+  await page.getByLabel('Command reason', { exact: true }).fill('Browser LED commissioning');
+  await page.getByRole('button', { name: 'Send ON', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Verified');
+  await expect(row).toContainText('ON');
+  await page.screenshot({ path: 'test-results/manual-control.png', fullPage: true });
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  await card.getByRole('button', { name: 'Stop simulator', exact: true }).click();
+  await expect(card.getByText('Simulation stopped', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Activity', exact: true }).click();
   await expect(page.getByText('Device created', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Overview', exact: true }).click();

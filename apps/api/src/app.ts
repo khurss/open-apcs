@@ -9,11 +9,13 @@ import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 import { audit, migrateApplication, transaction } from './store.js';
 import { verifyPassword } from './security.js';
 import { registerEditors } from './editors.js';
+import type { RuntimeControl } from './runtime-service.js';
 
 export interface ApiOptions {
   pool: Pool; origin: string; secureCookies: boolean;
-  resolveContext?: (request: CommandRequest) => CommandContext;
-  readSignal?: (id: string) => SignalSnapshot;
+  runtime?: RuntimeControl;
+  resolveContext?: (request: CommandRequest) => CommandContext | Promise<CommandContext>;
+  readSignal?: (id: string) => SignalSnapshot | Promise<SignalSnapshot>;
 }
 interface Session { id: string; username: string; csrf_token: string; }
 declare module 'fastify' { interface FastifyRequest { sessionUser: Session | null; } }
@@ -148,7 +150,7 @@ export async function createApi(options: ApiOptions) {
   }
   app.get<{ Params: { id: string } }>('/api/v1/signals/:id/value', { schema: { params: idParams } }, async (request) => {
     if (!(await pool.query('SELECT id FROM apcs_signals WHERE id = $1', [request.params.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
-    return options.readSignal?.(request.params.id) ?? { value: null, quality: 'Disconnected', sourceTime: null, receivedTime: null, bootId: null, sequence: null };
+    return options.readSignal?.(request.params.id) ?? options.runtime?.readSignal(request.params.id) ?? { value: null, quality: 'Disconnected', sourceTime: null, receivedTime: null, bootId: null, sequence: null };
   });
   app.get<{ Querystring: { limit?: string; cursor?: string } }>('/api/v1/audit', {
     schema: { querystring: object({ limit: { type: 'string', pattern: '^(100|[1-9][0-9]?)$' }, cursor: { type: 'string', pattern: '^[0-9]{1,18}$' } }, []) },
@@ -167,7 +169,7 @@ export async function createApi(options: ApiOptions) {
     const input: CommandRequest = { ...request.body, id: randomUUID(), idempotencyKey: key, actorId: request.sessionUser!.id };
     const target = await pool.query<{ revision: number }>(`SELECT p.revision FROM apcs_signals s JOIN apcs_devices d ON d.id = s.device_id JOIN apcs_projects p ON p.id = d.project_id WHERE s.id = $1`, [input.targetSignalId]);
     if (!target.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
-    const context = options.resolveContext?.(input) ?? { bootId: null, projectRevision: target.rows[0].revision, quality: 'Disconnected', interlockReason: 'Output has not been commissioned', ownerId: null, maxTtlMs: 3000 };
+    const context = await (options.resolveContext?.(input) ?? options.runtime?.context(input) ?? { bootId: null, projectRevision: target.rows[0].revision, quality: 'Disconnected', interlockReason: 'Output has not been commissioned', ownerId: null, maxTtlMs: 3000 });
     try { return reply.code(202).send(await journal.request(input, context)); }
     catch (error) {
       if (error instanceof Error && /conflict/i.test(error.message)) throw new HttpError(409, 'COMMAND_CONFLICT', 'Command idempotency conflict');
@@ -178,6 +180,31 @@ export async function createApi(options: ApiOptions) {
     try { return await journal.get(request.params.id); }
     catch (error) { if (error instanceof Error && error.message.startsWith('Unknown command:')) throw new HttpError(404, 'NOT_FOUND', 'Command not found'); throw error; }
   });
+  app.get<{ Params: { id: string } }>('/api/v1/devices/:id/runtime', { schema: { params: idParams } }, async (request) => {
+    if (!(await pool.query('SELECT id FROM apcs_devices WHERE id=$1', [request.params.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
+    return options.runtime?.status(request.params.id) ?? { deviceId: request.params.id, environment: 'Simulation', state: 'stopped', error: 'Runtime service is not configured' };
+  });
+  app.post<{ Params: { id: string }; Body: { action: 'start' | 'stop'; reason: string } }>('/api/v1/devices/:id/runtime', {
+    schema: { params: idParams, body: object({ action: { type: 'string', enum: ['start', 'stop'] }, reason: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } }) },
+  }, async (request) => {
+    if (!options.runtime) throw new HttpError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
+    const found = await pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [request.params.id]);
+    if (!found.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
+    if (found.rows[0].kind !== 'virtual-led') throw new HttpError(422, 'PHYSICAL_PROFILE_UNSUPPORTED', 'This runtime supports virtual devices only');
+    const { action, reason } = request.body;
+    try { await transaction(pool, (client) => audit(client, request.sessionUser!.id, `runtime.${action}.requested`, request.params.id, { reason })); }
+    catch (error) { if (action === 'stop') await options.runtime.stop(request.params.id); throw error; }
+    try {
+      const status = action === 'start' ? await options.runtime.start(request.params.id, request.sessionUser!.id) : await options.runtime.stop(request.params.id);
+      await transaction(pool, (client) => audit(client, request.sessionUser!.id, `runtime.${action}.completed`, request.params.id));
+      return status;
+    } catch {
+      // Failure to record completion must not leave newly enabled control unaudited.
+      await options.runtime.stop(request.params.id).catch(() => {});
+      throw new HttpError(503, 'RUNTIME_UNAVAILABLE', 'Runtime operation failed; control was stopped or is unavailable');
+    }
+  });
+  if (options.runtime) app.addHook('onClose', () => options.runtime!.close());
   registerEditors(app, pool);
   await app.ready(); return app;
 }

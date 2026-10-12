@@ -30,11 +30,14 @@ services:
     environment:
       APCS_POSTGRES_URL: postgres://apcs_dev:apcs_dev@postgres:5432/apcs_dev
       APCS_ORIGIN: http://localhost:5173
+      APCS_MQTT_URL: mqtt://simulation-mqtt:1883
       API_PORT: 3000
     ports: ["127.0.0.1:${API_PORT:-3100}:3000"]
     networks: [development, frontend]
     depends_on:
       postgres:
+        condition: service_healthy
+      simulation-mqtt:
         condition: service_healthy
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -76,6 +79,16 @@ services:
       postgres:
         condition: service_healthy
     command: [sh, scripts/database-backup.sh, /backups]
+
+  simulation-mqtt:
+    image: eclipse-mosquitto:2.0.22@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
+    networks: [development]
+    volumes: ["./docker/mosquitto.simulation.conf:/mosquitto/config/mosquitto.conf:ro"]
+    healthcheck:
+      test: [CMD, mosquitto_pub, -h, localhost, -t, health, -m, ready]
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   # Local development only; database ports are not published to the host.
   postgres:

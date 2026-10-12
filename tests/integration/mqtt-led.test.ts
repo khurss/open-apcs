@@ -56,6 +56,18 @@ async function waitFor(check: () => Promise<boolean> | boolean) {
 }
 
 describe('LED gateway with real PostgreSQL and Mosquitto', () => {
+  it('keeps the catalog device identity separate from its MQTT address', async () => {
+    const addressed = { ...options, protocolDeviceId: 'wire-led' };
+    gateway = new MqttLedGateway(addressed, signals, journal, clock, () => ({ projectRevision: 1, interlockReason: null, ownerId: 'operator', maxTtlMs: 3000 }));
+    const startAt = performance.now();
+    simulator = new MqttLedSimulator({ ...options, deviceId: 'wire-led' }, new LedPeer(() => performance.now() - startAt, randomUUID()));
+    await simulator.start(); await gateway.start(); await gateway.synchronize();
+    expect(signals.get('led').quality).toBe('Good');
+    const input = request(); await journal.request(input, gateway.context(input)); await gateway.dispatchNext();
+    await waitFor(async () => (await journal.get(input.id)).state === 'Verified');
+    expect(simulator.peer.read()).toBe(true);
+  });
+
   it('rejects a command accepted for the previous device boot', async () => {
     await start(); const input = request();
     await journal.request(input, gateway.context(input));

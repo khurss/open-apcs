@@ -1,6 +1,6 @@
 # Local API and catalog increment
 
-The Fastify API provides local authentication, projects, a basic LED device/signal catalog, audit records, and access to the durable command service. This is part of M0. The standalone development process does not automatically commission catalog devices or start live control; its default command context rejects uncommissioned outputs. Integration tests connect the API to the real MQTT gateway and simulator through explicit trusted application callbacks.
+The Fastify API provides local authentication, projects, a basic LED device/signal catalog, audit records, and access to the durable command service. This is part of M0. The development process supports explicit virtual-device startup through a private worker. Physical profiles remain uncommissioned and rejected. See [runtime operation](runtime.md). Integration tests connect the API to the real MQTT gateway and simulator through explicit trusted application callbacks.
 
 ## Development startup
 
@@ -54,7 +54,7 @@ All paths use `/api/v1`.
 | `POST /commands` | Validate input, derive actor from session, persist Accepted/Rejected outcome |
 | `GET /commands/:id` | Durable command state and transition history |
 
-Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. GPIO assignment, profiles beyond the initial LED types, device editing, and catalog-driven commissioning are not yet implemented.
+Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. GPIO assignment, profiles beyond the initial LED types, device editing, and physical commissioning are not yet implemented. Virtual startup is documented in the runtime contract.
 
 Project updates return ETag and require the matching If-Match revision. Missing revision returns 428; a conflicting revision returns 412. Configuration mutation and audit insertion share a transaction; an audit failure rolls back the mutation. Audit is application-append-only, not protected against a database administrator.
 

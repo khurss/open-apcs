@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import { RuntimeProcess } from '../../apps/api/src/runtime-process.js';
 import { createApi } from '../../apps/api/src/app.js';
 import { bootstrapAdmin, migrateApplication } from '../../apps/api/src/store.js';
 
@@ -10,7 +11,8 @@ await admin.query(`CREATE SCHEMA ${schema}`);
 const pool = new Pool({ connectionString: process.env.APCS_TEST_POSTGRES_URL, options: `-c search_path=${schema}`, connectionTimeoutMillis: 2000 });
 await migrateApplication(pool);
 await bootstrapAdmin(pool, 'operator', 'E2E fixture password only!');
-const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false });
+const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
 await app.listen({ host: '0.0.0.0', port: 3000 });
 let stopped = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => {

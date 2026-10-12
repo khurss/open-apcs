@@ -48,6 +48,9 @@ services:
   postgres:
     image: $postgres_tag
     pull_policy: never
+  simulation-mqtt:
+    image: $mqtt_tag
+    pull_policy: never
   backup:
     image: $postgres_tag
     pull_policy: never

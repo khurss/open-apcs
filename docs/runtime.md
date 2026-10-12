@@ -37,7 +37,7 @@ Production broker authentication, per-device ACLs, TLS/certificate provisioning,
 | `GET /signals/:id/value` | Private-worker snapshot for running virtual devices |
 | `POST /commands` | Existing journal route, using trusted worker context |
 
-Physical profiles return 422 from the runtime mutation route. An unconfigured runtime returns 503. No request automatically starts an uncommissioned output. HTTP acceptance is distinct from application/verification; unknown or unavailable results must be inspected before issuing another command. Explicit reconciliation of journal `Unknown` outcomes remains pending, and such outcomes continue to block that output.
+Physical profiles return 422 from the runtime mutation route. An unconfigured runtime returns 503. No request automatically starts an uncommissioned output. HTTP acceptance is distinct from application/verification; unknown or unavailable results must be inspected before issuing another command. Unresolved journal `Unknown` outcomes block the output. Explicit virtual LED reconciliation is now available after a new boot/session and a Good OFF observation; see [the recovery contract](command-journal.md#explicit-virtual-led-reconciliation).
 
 The main API creates the worker only when `APCS_MQTT_URL` is configured. API tests can inject another trusted context/reader, while browser fixtures use the actual private process and real PostgreSQL/MQTT containers. The worker receives database configuration through its process environment, not command-line arguments or logs. Production secret provisioning remains part of the later deployment profile.
 

@@ -1,0 +1,53 @@
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { expect, test } from '@playwright/test';
+import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
+
+test('recovers an uncertain virtual output without rewriting its original outcome', async ({ page }) => {
+  test.setTimeout(40000);
+  if (process.env.NODE_ENV !== 'test' || !process.env.APCS_TEST_POSTGRES_URL) throw new Error('Isolated Docker fixture required');
+  await page.goto('/');
+  await page.getByLabel('Username', { exact: true }).fill('operator');
+  await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Projects', exact: true }).click();
+  await page.getByLabel('Project name', { exact: true }).fill('Recovery bench');
+  await page.getByRole('button', { name: 'Create project', exact: true }).click();
+  await expect(page.getByText('Recovery bench', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  await page.getByLabel('Device name', { exact: true }).fill('Recovery LED');
+  await page.getByLabel('Site ID', { exact: true }).fill('recovery');
+  await page.getByLabel('Device address', { exact: true }).fill('led');
+  await page.getByRole('button', { name: 'Add device', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Recovery LED', exact: true })).toBeVisible();
+  const { schema } = JSON.parse(await readFile(new URL('../../.cache/e2e/schema.json', import.meta.url), 'utf8')) as { schema: string };
+  if (!/^e2e_[a-f0-9]{32}$/.test(schema)) throw new Error('Invalid isolated fixture schema');
+  const pool = new Pool({ connectionString: process.env.APCS_TEST_POSTGRES_URL, options: `-c search_path=${schema}` });
+  let commandId: string;
+  try {
+    const row = (await pool.query("SELECT s.id,p.owner_id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE d.name='Recovery LED'")).rows[0];
+    commandId = randomUUID(); const journal = new PgCommandJournal(pool);
+    const context = { bootId: 'retired-browser-fixture-boot', projectRevision: 1, ownerId: row.owner_id as string, quality: 'Good' as const, interlockReason: null, maxTtlMs: 3000 };
+    await journal.request({ id: commandId, idempotencyKey: commandId, actorId: row.owner_id, targetSignalId: row.id, value: true, expectedProjectRevision: 1, ttlMs: 3000, reason: 'Injected loss after durable dispatch claim' }, context);
+    await journal.claimNext(async () => context, row.id); await journal.connectionLost(row.id);
+  } finally { await pool.end(); }
+  await page.getByRole('article').filter({ hasText: 'Recovery LED' }).getByRole('button', { name: 'Start simulator', exact: true }).click();
+  await page.getByRole('button', { name: 'Signals', exact: true }).click();
+  const row = page.getByRole('row').filter({ hasText: 'Recovery LED.led' });
+  await expect(row).toContainText('Good'); await row.getByRole('button', { name: 'Control', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Unknown');
+  await expect(page.getByRole('button', { name: 'Send ON', exact: true })).toBeDisabled();
+  await page.getByLabel('Recovery reason', { exact: true }).fill('Inspected the restarted simulator in its OFF state');
+  await page.getByLabel('I accept that the original command outcome remains unknown', { exact: true }).check();
+  await page.getByRole('button', { name: 'Reconcile Unknown', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Reconciled');
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Unknown');
+  await page.getByLabel('Command reason', { exact: true }).fill('New command after explicit recovery');
+  await page.getByRole('button', { name: 'Send ON', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Verified');
+  await expect(row).toContainText('ON');
+  expect((await page.request.get(`/api/v1/commands/${commandId!}`)).status()).toBe(200);
+  const preserved = await (await page.request.get(`/api/v1/commands/${commandId!}`)).json();
+  expect(preserved.state).toBe('Unknown'); expect(preserved.reconciliation).toBeDefined();
+});

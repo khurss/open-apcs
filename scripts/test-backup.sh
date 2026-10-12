@@ -16,6 +16,7 @@ createdb --template=template0 "$PGDATABASE"
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/001-application.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/002-editors.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
+psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
 INSERT INTO apcs_users (id,username,password_hash) VALUES ('00000000-0000-4000-8000-000000000001','fixture','fixture-only');
 INSERT INTO apcs_projects (id,name,owner_id) VALUES ('00000000-0000-4000-8000-000000000002','Backup bench','00000000-0000-4000-8000-000000000001');

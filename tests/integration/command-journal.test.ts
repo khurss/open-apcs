@@ -109,7 +109,7 @@ describe('M0: durable commands and transactional outbox', () => {
     await journal.migrate();
     await pool.query("UPDATE apcs_schema_migrations SET checksum = 'changed'");
     await expect(journal.migrate()).rejects.toThrow(/checksum/i);
-    await pool.query('UPDATE apcs_schema_migrations SET version = 2');
+    await pool.query('UPDATE apcs_schema_migrations SET version = version + 100');
     await expect(journal.migrate()).rejects.toThrow(/version/i);
   });
 
@@ -177,8 +177,8 @@ describe('M0: durable commands and transactional outbox', () => {
   it('applies migrations idempotently, including concurrent startup', async () => {
     await Promise.all([journal.migrate(), new PgCommandJournal(pool).migrate()]);
     await journal.migrate();
-    const result = await pool.query('SELECT version FROM apcs_schema_migrations');
-    expect(result.rows).toEqual([{ version: 1 }]);
+    const result = await pool.query('SELECT version FROM apcs_schema_migrations ORDER BY version');
+    expect(result.rows).toEqual([{ version: 1 }, { version: 2 }]);
     expect(await counts()).toEqual({ commands: 0, events: 0, outbox: 0 });
   });
 

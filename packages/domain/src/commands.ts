@@ -30,7 +30,10 @@ export interface CommandEvent {
   reason: string | null;
 }
 
+export interface CommandReconciliation { actorId: string; reason: string; at: string; bootId: string; observedValue: false; evidence: 'new-session-safe-output'; }
+
 export interface CommandSnapshot {
+  reconciliation?: CommandReconciliation;
   id: string;
   targetSignalId: string;
   value: boolean;

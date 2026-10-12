@@ -44,6 +44,37 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('lists blocking commands and atomically audits explicit recovery using the real restarted simulator', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Recovery LED', siteId: 'recovery', deviceId: 'led', kind: 'virtual-led' } })).json();
+    const actor = (await pool.query('SELECT owner_id FROM apcs_projects WHERE id=$1', [projectId])).rows[0].owner_id;
+    const journal = new PgCommandJournal(pool); const id = randomUUID();
+    const input = { id, idempotencyKey: id, actorId: actor, targetSignalId: device.signalId, value: true, ttlMs: 3000, expectedProjectRevision: 1, reason: 'Lost ACK fixture' };
+    const old = { bootId: 'retired-boot', quality: 'Good' as const, ownerId: actor, projectRevision: 1, maxTtlMs: 3000, interlockReason: null };
+    await journal.request(input, old); await journal.claimNext(async () => old); await journal.connectionLost(device.signalId);
+    await app!.close(); const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+    app = await createApi({ pool, origin, secureCookies: false, runtime });
+    for (let index = 0; index < 12; index++) { const next = randomUUID(); await journal.request({ ...input, id: next, idempotencyKey: next }, old); }
+    const historyUrl = `/api/v1/signals/${device.signalId}/commands`;
+    const history = await app.inject({ url: historyUrl, headers: headers() }); expect(history.statusCode).toBe(200); expect(history.json().blocking).toMatchObject({ id, state: 'Unknown' });
+    expect(history.json().items).toHaveLength(10);
+    expect((await app.inject({ url: `${historyUrl}?before=${history.json().nextCursor}`, headers: headers() })).json().items.some((entry: { id: string }) => entry.id === id)).toBe(true);
+    const url = `/api/v1/commands/${id}/reconcile`; const payload = { reason: 'Inspected restarted virtual LED', acceptUnknownOutcome: true };
+    expect((await app.inject({ method: 'POST', url, headers: headers(), payload })).statusCode).toBe(409);
+    await runtime.start(device.id, actor);
+    expect((await app.inject({ method: 'POST', url, headers: { cookie }, payload })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url, headers: headers(), payload: { ...payload, actorId: 'forged' } })).statusCode).toBe(400);
+    await pool.query("CREATE FUNCTION deny_recovery_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='command.reconciled' THEN RAISE EXCEPTION 'Fixture audit failure'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER deny_recovery_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_recovery_audit()');
+    expect((await app.inject({ method: 'POST', url, headers: headers(), payload })).statusCode).toBe(500);
+    expect((await app.inject({ url: historyUrl, headers: headers() })).json().blocking.id).toBe(id);
+    await pool.query('DROP TRIGGER deny_recovery_audit ON apcs_audit');
+    const result = await app.inject({ method: 'POST', url, headers: headers(), payload }); expect(result.statusCode).toBe(200);
+    expect(result.json()).toMatchObject({ state: 'Unknown', reconciliation: { actorId: actor, observedValue: false } });
+    expect((await app.inject({ url: historyUrl, headers: headers() })).json().blocking).toBeNull();
+    expect((await pool.query("SELECT data FROM apcs_audit WHERE action='command.reconciled'")).rows[0].data).toMatchObject({ reason: payload.reason, bootId: result.json().reconciliation.bootId });
+  });
+
   it('commissions a virtual LED in the private worker and controls it through the audited API', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Worker LED', siteId: 'worker', deviceId: 'worker-led', kind: 'virtual-led' } })).json();

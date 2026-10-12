@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 import type { Pool, PoolClient } from 'pg';
 import {
   CommandBook, commandFingerprint, validateCommandRequest,
-  type CommandAck, type CommandContext, type CommandRequest, type CommandSnapshot,
+  type CommandAck, type CommandReconciliation, type CommandContext, type CommandRequest, type CommandSnapshot,
 } from '@open-apcs/domain/commands';
 import type { Clock } from '@open-apcs/domain/signals';
 
@@ -17,7 +17,10 @@ export interface DispatchIntent {
   deadlineMonotonicMs: number;
 }
 
+export interface ReconciliationContext extends CommandContext { value: boolean | null; }
+
 interface Row {
+  reconciliation: CommandReconciliation | null;
   id: string;
   request: CommandRequest;
   snapshot: CommandSnapshot;
@@ -64,20 +67,23 @@ export class PgCommandJournal {
   }
 
   async migrate(): Promise<void> {
-    const sql = await readFile(new URL('../migrations/001-command-journal.sql', import.meta.url), 'utf8');
-    const checksum = createHash('sha256').update(sql).digest('hex');
+    const migrations = await Promise.all(['001-command-journal.sql', '002-reconciliation.sql'].map(async (name, index) => {
+      const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+      return { version: index + 1, sql, checksum: createHash('sha256').update(sql).digest('hex') };
+    }));
     await transaction(this.pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(9021001)');
       await client.query(`CREATE TABLE IF NOT EXISTS apcs_schema_migrations (
         version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())`);
       const applied = await client.query<{ version: number; checksum: string }>('SELECT version, checksum FROM apcs_schema_migrations ORDER BY version');
-      if (applied.rows.some((row) => row.version !== 1)) throw new Error('Unsupported database schema version');
-      if (applied.rows.length) {
-        if (applied.rows[0]!.checksum !== checksum) throw new Error('Migration checksum mismatch');
-        return;
+      for (const [index, row] of applied.rows.entries()) {
+        if (row.version !== index + 1 || !migrations[index]) throw new Error('Unsupported database schema version');
+        if (migrations[index]!.checksum !== row.checksum) throw new Error('Migration checksum mismatch');
       }
-      await client.query(sql);
-      await client.query('INSERT INTO apcs_schema_migrations (version, checksum) VALUES (1, $1)', [checksum]);
+      for (const migration of migrations.slice(applied.rows.length)) {
+        await client.query(migration.sql);
+        await client.query('INSERT INTO apcs_schema_migrations (version, checksum) VALUES ($1, $2)', [migration.version, migration.checksum]);
+      }
     });
   }
 
@@ -96,7 +102,7 @@ export class PgCommandJournal {
       }
       await this.lock(client, ['output', request.targetSignalId]);
       const busy = await client.query(`SELECT id FROM apcs_commands WHERE target_signal_id = $1
-        AND snapshot->>'state' IN ('Accepted', 'Dispatched', 'DeviceAccepted', 'Unknown') LIMIT 1`, [request.targetSignalId]);
+        AND snapshot->>'state' IN ('Accepted', 'Dispatched', 'DeviceAccepted', 'Unknown') AND reconciliation IS NULL LIMIT 1`, [request.targetSignalId]);
       if (busy.rowCount) context = { ...context, interlockReason: context.interlockReason ?? 'Output has an unfinished command; reconcile Unknown before retrying' };
       const clock = await databaseClock(client);
       const snapshot = new CommandBook(clock).request(request, context);
@@ -120,6 +126,37 @@ export class PgCommandJournal {
 
   async get(id: string): Promise<CommandSnapshot> {
     return transaction(this.pool, async (client) => this.refresh(client, await this.load(client, id)));
+  }
+
+  async reconcile(id: string, actorId: string, reason: string,
+    resolve: (request: CommandRequest, signal: AbortSignal) => Promise<ReconciliationContext>,
+    onAudit?: (client: PoolClient, receipt: CommandReconciliation) => Promise<void>,
+  ): Promise<CommandSnapshot> {
+    if (!actorId.trim() || actorId.length > 256) throw new Error('Invalid reconciliation actor');
+    if (!reason.trim() || reason.length > 256) throw new Error('Invalid reconciliation reason');
+    return transaction(this.pool, async (client) => {
+      const target = await client.query<{ target_signal_id: string }>('SELECT target_signal_id FROM apcs_commands WHERE id=$1', [id]);
+      if (!target.rows[0]) throw new Error(`Unknown command: ${id}`);
+      // The output lock prevents accepting a new command until reconciliation commits.
+      await this.lock(client, ['output', target.rows[0].target_signal_id]);
+      const row = await this.load(client, id); const snapshot = await this.refresh(client, row);
+      if (row.reconciliation) {
+        if (row.reconciliation.actorId !== actorId || row.reconciliation.reason !== reason) throw new Error('Reconciliation conflict');
+        return snapshot;
+      }
+      if (snapshot.state !== 'Unknown') throw new Error('Only an Unknown command can be reconciled');
+      const context = await this.resolveContext(resolve, { ...row.request, actorId });
+      if (context.ownerId !== actorId) throw new Error('Output owner required for reconciliation');
+      if (context.quality !== 'Good') throw new Error('Good output quality required for reconciliation');
+      if (context.interlockReason !== null) throw new Error('Output interlock prevents reconciliation');
+      if (!context.bootId || context.bootId === snapshot.bootId) throw new Error('A new device boot session is required');
+      if (context.value !== false) throw new Error('The LED safe output must be observed OFF');
+      const clock = await databaseClock(client);
+      const reconciliation: CommandReconciliation = { actorId, reason, at: clock.wallNow().toISOString(), bootId: context.bootId, observedValue: false, evidence: 'new-session-safe-output' };
+      await client.query('UPDATE apcs_commands SET reconciliation=$2 WHERE id=$1', [id, reconciliation]);
+      await onAudit?.(client, reconciliation);
+      return { ...snapshot, reconciliation };
+    });
   }
 
   /** Resolver only reads trusted live state; it must not publish or mutate devices. */
@@ -200,7 +237,7 @@ export class PgCommandJournal {
     const clock = await databaseClock(client);
     const snapshot = this.restore(row, clock).get(row.id);
     await this.save(client, row, snapshot, clock);
-    return snapshot;
+    return { ...snapshot, ...(row.reconciliation ? { reconciliation: row.reconciliation } : {}) };
   }
 
   private async save(client: PoolClient, row: Row, snapshot: CommandSnapshot, clock: Clock): Promise<void> {
@@ -230,9 +267,9 @@ export class PgCommandJournal {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(scope)]);
   }
 
-  private async resolveContext(
-    resolve: (request: CommandRequest, signal: AbortSignal) => Promise<CommandContext>, request: CommandRequest,
-  ): Promise<CommandContext> {
+  private async resolveContext<T extends CommandContext>(
+    resolve: (request: CommandRequest, signal: AbortSignal) => Promise<T>, request: CommandRequest,
+  ): Promise<T> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {

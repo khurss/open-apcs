@@ -101,6 +101,7 @@ services:
       - .:/workspace
       - node_modules:/workspace/node_modules
     network_mode: service:e2e-web
+    environment: *test-env
     depends_on:
       e2e-web:
         condition: service_healthy

@@ -65,3 +65,9 @@ Translated the README and all 11 documentation files into English before the fir
 Added `check:language` before typecheck/tests in the full Docker command. It first failed against untranslated documentation, then passed after translation: 42 text files, no Cyrillic. This is a repository-content guard, not an application behavior change or a restriction on Unicode user data.
 
 `make test` passed with **111 tests across 5 files**, TypeScript, and the language guard; exit 0. Both Compose configurations validated. A static comparison against the pre-translation documents found no removed requirement IDs or source links; local Markdown file links resolved in the original workspace. No images were rebuilt. This publication preparation does not complete M0.
+
+## 2026-10-12: Clean-runner dependency permissions
+
+The first GitHub Actions run failed during dependency installation. A separate clean checkout owned by UID 1001, with empty dependency volumes and the existing UID 1000 tooling image, reproduced `EACCES` while creating `packages/storage/node_modules` (installer exit 243). This exposed a permission assumption hidden by the original developer workspace.
+
+The workflow now gives UID 1000 ownership of its checkout before container operations and restores the runner's ownership in an always-run step before checkout cleanup. Application installation and tests remain non-root inside Docker. Applying the same ownership preparation to the isolated checkout made the frozen installation pass, followed by the language check, TypeScript, and **111 passing tests**. No tooling image rebuild was needed. Probe services and volumes are separate from the development environment.

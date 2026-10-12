@@ -72,7 +72,7 @@ make test
 
 This runs the repository language guard, TypeScript checks, then every unit/integration test. PostgreSQL and MQTT run as real containers with health checks, not mocks. A failed check or test returns a nonzero exit code. Beyond infrastructure smoke tests, the command journal has atomicity, concurrency, recovery, and fault-injection tests. These do not replace the future API, gateway, and firmware tests.
 
-The GitHub Actions workflow `.github/workflows/test.yml` builds the image, performs a frozen installation, runs `make test`, and stops the test services. All application checks run in containers. Remote Actions execution must be verified separately from local test results. The [official checkout action](https://github.com/actions/checkout) is pinned to a commit SHA with credential persistence disabled.
+The GitHub Actions workflow `.github/workflows/test.yml` builds the image, performs a frozen installation, runs `make test`, and stops the test services. All application checks run in containers. Hosted-runner checkout ownership is temporarily assigned to the container UID 1000 before installation and restored in an always-run cleanup step. This lets pnpm create workspace links without running application checks as root. Remote Actions execution must be verified separately from local test results. The [official checkout action](https://github.com/actions/checkout) is pinned to a commit SHA with credential persistence disabled.
 
 For individual checks:
 

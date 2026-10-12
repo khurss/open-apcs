@@ -17,6 +17,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      # The tooling container uses UID 1000; hosted runners may use another UID.
+      - name: Give the container ownership of the checkout
+        run: sudo chown -R 1000:1000 "$GITHUB_WORKSPACE"
       - name: Validate Compose
         run: make config
       - name: Build tool image
@@ -28,3 +31,6 @@ jobs:
       - name: Stop test services
         if: always()
         run: make stop
+      - name: Restore runner ownership before checkout cleanup
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"

@@ -18,3 +18,5 @@
 .operator-item[role=button]:not([aria-disabled=true]) { cursor: pointer; }
 .operator-item[aria-disabled=true] { opacity: .65; }
 .revision-list>div { align-items: center; flex-wrap: wrap; gap: 12px; }
+
+.revision-list>.field{margin:16px 0;max-width:520px}.revision-list .revision-row{align-items:center;gap:12px;flex-wrap:wrap}.revision-list>.table-scroll{display:block}.revision-list pre{max-width:300px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.revision-list td code{overflow-wrap:anywhere}.revision-list .revision-row button{font-size:11px}

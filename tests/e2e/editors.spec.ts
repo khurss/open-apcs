@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 test('edits, saves, simulates and prepares a graph, then persists an HMI with undo and redo', async ({ page }) => {
-  test.setTimeout(45000);
+  test.setTimeout(60000);
   await page.goto('/');
   await page.getByLabel('Username', { exact: true }).fill('operator');
   await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
@@ -37,6 +37,20 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Open LED automation', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
   await page.screenshot({ path: 'test-results/logic-editor.png', fullPage: true });
+  await page.getByRole('button', { name: 'Select Power', exact: true }).click();
+  await page.getByLabel('Constant value', { exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByText('Saved revision 3', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Compare revision 2', exact: true }).click();
+  await expect(page.getByRole('table', { name: 'Revision changes' })).toContainText('/document/nodes/0/value');
+  await page.getByLabel('Restore reason', { exact: true }).fill('Restore reviewed ON behavior');
+  await page.getByRole('button', { name: 'Restore revision 2 to draft', exact: true }).click();
+  await expect(page.getByText('Restored revision 2 as draft 4', { exact: true })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
+  await page.getByRole('button', { name: 'Select Power', exact: true }).click();
+  await expect(page.getByLabel('Constant value', { exact: true })).toBeChecked();
+  await page.screenshot({ path: 'test-results/revision-restore.png', fullPage: true });
+
   await page.getByLabel('Activation reason', { exact: true }).fill('End browser graph test');
   await page.getByRole('button', { name: 'Stop graph', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('stopped');

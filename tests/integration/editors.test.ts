@@ -21,6 +21,62 @@ const graph = () => ({ schemaVersion: 1, nodes: [{ id: 'source', kind: 'constant
 async function create(kind = 'graphs') { return app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/${kind}`, headers, payload: { name: 'LED logic' } }); }
 async function save(id: string, document: unknown, revision = 1, kind = 'graphs') { return app.inject({ method: 'PUT', url: `/api/v1/${kind}/${id}`, headers: { ...headers, 'if-match': `"${revision}"` }, payload: { name: 'LED logic', document } }); }
 describe('versioned editor documents with real PostgreSQL', () => {
+  it('compares a prepared graph with its draft and restores a new audited draft without activating equipment', async () => {
+    const id = (await create()).json().id; await save(id, graph());
+    await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+    const changed = graph(); changed.nodes[0]!.value = false; await save(id, changed, 2);
+    const compare = await app.inject({ url: `/api/v1/graphs/${id}/revisions/2/compare?target=draft`, headers: { ...headers, 'if-match': '"3"' } });
+    expect(compare.statusCode).toBe(200); expect(compare.json()).toMatchObject({ baseRevision: 2, targetRevision: 3, target: 'draft', total: 1, changes: [{ path: '/document/nodes/0/value', before: true, after: false }] });
+    const restore = () => app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/restore`, headers: { ...headers, 'if-match': '"3"' }, payload: { revision: 2, reason: 'Restore reviewed LED behavior' } });
+    const restored = await restore(); expect(restored.statusCode).toBe(200); expect(restored.headers.etag).toBe('"4"'); expect(restored.json().document).toEqual(graph());
+    expect((await restore()).statusCode).toBe(412);
+    expect((await app.inject({ url: `/api/v1/graphs/${id}/revisions`, headers })).json().items).toHaveLength(1);
+    expect(Number((await pool.query('SELECT count(*) FROM apcs_commands')).rows[0].count)).toBe(0);
+    expect((await pool.query("SELECT data FROM apcs_audit WHERE action='graph.restored'")).rows[0].data).toMatchObject({ sourceRevision: 2, previousRevision: 3, revision: 4, reason: 'Restore reviewed LED behavior' });
+  });
+  it('requires owner, CSRF, matching draft revision and a valid immutable checksum for restore or comparison', async () => {
+    const id = (await create()).json().id; await save(id, graph());
+    await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+    const url = `/api/v1/graphs/${id}/restore`; const payload = { revision: 2, reason: 'Reviewed revision' };
+    expect((await app.inject({ method: 'POST', url, headers, payload })).statusCode).toBe(428);
+    expect((await app.inject({ method: 'POST', url, headers: { cookie: headers.cookie! }, payload })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'POST', url, headers: { ...headers, 'if-match': '"2"' }, payload: { ...payload, actorId: 'forged' } })).statusCode).toBe(400);
+    expect((await app.inject({ url: `/api/v1/graphs/${id}/revisions/2/compare?target=draft`, headers: { ...headers, 'if-match': '"1"' } })).statusCode).toBe(412);
+    const owner = (await pool.query('SELECT owner_id FROM apcs_projects WHERE id=$1', [projectId])).rows[0].owner_id;
+    await pool.query('INSERT INTO apcs_document_revisions(document_id,revision,name,document,checksum,actor_id) VALUES($1,99,$2,$3,$4,$5)', [id, 'Corrupt', graph(), '0'.repeat(64), owner]);
+    expect((await app.inject({ method: 'POST', url, headers: { ...headers, 'if-match': '"2"' }, payload: { ...payload, revision: 99 } })).statusCode).toBe(422);
+    expect((await app.inject({ url: `/api/v1/graphs/${id}/revisions/99/compare?target=2`, headers })).statusCode).toBe(422);
+    const other = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'other','fixture')", [other]); await pool.query('UPDATE apcs_projects SET owner_id=$1 WHERE id=$2', [other, projectId]);
+    expect((await app.inject({ method: 'POST', url, headers: { ...headers, 'if-match': '"2"' }, payload })).statusCode).toBe(404);
+    expect((await app.inject({ url: `/api/v1/graphs/${id}/revisions/2/compare?target=2`, headers })).statusCode).toBe(404);
+  });
+  it('rolls back an unaudited restore and serializes concurrent restores with If-Match', async () => {
+    const id = (await create()).json().id; await save(id, graph());
+    await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+    await pool.query("CREATE FUNCTION deny_restore() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='graph.restored' THEN RAISE EXCEPTION 'Fixture audit unavailable'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER deny_restore BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_restore()');
+    const restore = () => app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/restore`, headers: { ...headers, 'if-match': '"2"' }, payload: { revision: 2, reason: 'Restore fixture' } });
+    expect((await restore()).statusCode).toBe(500); expect((await app.inject({ url: `/api/v1/graphs/${id}`, headers })).json().revision).toBe(2);
+    await pool.query('DROP TRIGGER deny_restore ON apcs_audit');
+    expect((await Promise.all([restore(), restore()])).map((response) => response.statusCode).sort()).toEqual([200, 412]);
+  });
+  it('compares and restores prepared HMI dimensions without altering the immutable screen', async () => {
+    const id = (await create('screens')).json().id; const screen = { schemaVersion: 1, width: 1200, height: 800, items: [] };
+    await save(id, screen, 1, 'screens'); await app.inject({ method: 'POST', url: `/api/v1/screens/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+    await save(id, { ...screen, width: 600 }, 2, 'screens'); await app.inject({ method: 'POST', url: `/api/v1/screens/${id}/revisions`, headers: { ...headers, 'if-match': '"3"' } });
+    const diff = await app.inject({ url: `/api/v1/screens/${id}/revisions/2/compare?target=3`, headers }); expect(diff.statusCode).toBe(200); expect(diff.json().changes).toEqual([{ path: '/document/width', kind: 'changed', before: 1200, after: 600 }]);
+    const restored = await app.inject({ method: 'POST', url: `/api/v1/screens/${id}/restore`, headers: { ...headers, 'if-match': '"3"' }, payload: { revision: 2, reason: 'Restore overview size' } });
+    expect(restored.statusCode).toBe(200); expect(restored.json().document).toEqual(screen);
+    expect((await app.inject({ url: `/api/v1/screens/${id}/revisions`, headers })).json().items[0].document.width).toBe(600);
+  });
+
+  it('refuses restoring a prepared binding whose signal no longer exists', async () => {
+    const id = (await create()).json().id; await save(id, graph());
+    await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+    await pool.query('DELETE FROM apcs_signals WHERE id=$1', [signalId]);
+    const restored = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/restore`, headers: { ...headers, 'if-match': '"2"' }, payload: { revision: 2, reason: 'Unavailable binding' } });
+    expect(restored.statusCode).toBe(422); expect((await app.inject({ url: `/api/v1/graphs/${id}`, headers })).json().revision).toBe(2);
+  });
   it('activates prepared logic through private IPC, audits the revision, and stops outputs if completion audit fails', async () => {
     await app.close();
     const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
@@ -39,6 +95,11 @@ describe('versioned editor documents with real PostgreSQL', () => {
     expect(events.rows[0].data).toMatchObject({ revision: 2, activationId: started.json().activationId });
     expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 99, reason: 'Missing revision' } })).statusCode).toBe(422);
     expect((await runtime.graphStatus(id)).state).toBe('running');
+    const changed = graph(); changed.nodes[0]!.value = false; await save(id, changed, 2);
+    const restored = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/restore`, headers: { ...headers, 'if-match': '"3"' }, payload: { revision: 2, reason: 'Restore draft while active' } });
+    expect(restored.statusCode).toBe(200); expect(restored.json().revision).toBe(4);
+    expect(await runtime.graphStatus(id)).toMatchObject({ state: 'running', revision: 2, activationId: started.json().activationId });
+
     await pool.query("CREATE FUNCTION deny_graph_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='graph.activate.completed' THEN RAISE EXCEPTION 'Fixture audit failure'; END IF; RETURN NEW; END $$");
     await pool.query('CREATE TRIGGER deny_graph_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_graph_audit()');
     expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 2, reason: 'Audit failure' } })).statusCode).toBe(503);

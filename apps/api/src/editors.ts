@@ -1,3 +1,4 @@
+import { diffDocuments } from '../../../packages/domain/src/document-diff.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
@@ -36,9 +37,45 @@ async function bindings(client: PoolClient, projectId: string, kind: Kind, docum
     if (signal.data_type !== 'boolean' || (['output', 'button'].includes(item.kind) && signal.direction !== 'output')) throw invalid('Signal type or direction does not match its binding');
   }
 }
+async function preparedSnapshot(client: PoolClient, id: string, revision: number, kind: Kind) {
+  const result = await client.query<{ name: string; document: LogicGraph | Screen; checksum: string }>('SELECT name,document,checksum FROM apcs_document_revisions WHERE document_id=$1 AND revision=$2', [id, revision]);
+  const saved = result.rows[0]; if (!saved) throw new EditorError(404, 'NOT_FOUND', 'Prepared revision not found');
+  if (createHash('sha256').update(canonicalJson({ name: saved.name, document: saved.document })).digest('hex') !== saved.checksum) throw invalid('Prepared revision checksum mismatch');
+  validate(kind, saved.document, true);
+  return saved;
+}
 export function registerEditors(app: FastifyInstance, pool: Pool) {
   for (const kind of ['graph', 'screen'] as const) {
     const route = `${kind}s`;
+    async function owned(client: PoolClient, id: string, actor: string, lock = false) {
+      const found = await client.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id=$1 AND kind=$2 AND project_id IN (SELECT id FROM apcs_projects WHERE owner_id=$3)${lock ? ' FOR UPDATE' : ''}`, [id, kind, actor]);
+      if (!found.rows[0]) throw missing(); return found.rows[0];
+    }
+    app.get<{ Params: { id: string; revision: string }; Querystring: { target?: string } }>(`/api/v1/${route}/:id/revisions/:revision/compare`, {
+      schema: { params: object({ id: uuid, revision: { type: 'string', pattern: '^[1-9][0-9]{0,8}$' } }), querystring: object({ target: { type: 'string', pattern: '^(draft|[1-9][0-9]{0,8})$' } }, []) },
+    }, async (request) => transaction(pool, async (client) => {
+      const row = await owned(client, request.params.id, request.sessionUser!.id);
+      const target = request.query.target ?? 'draft';
+      if (target === 'draft') conflict(row, precondition(request.headers['if-match']));
+      const baseRevision = Number(request.params.revision); const base = await preparedSnapshot(client, row.id, baseRevision, kind);
+      const other = target === 'draft' ? row : await preparedSnapshot(client, row.id, Number(target), kind);
+      return { baseRevision, target: target === 'draft' ? 'draft' : 'prepared', targetRevision: target === 'draft' ? row.revision : Number(target), baseChecksum: base.checksum, ...diffDocuments({ name: base.name, document: base.document }, { name: other.name, document: other.document }) };
+    }));
+    app.post<{ Params: { id: string }; Body: { revision: number; reason: string } }>(`/api/v1/${route}/:id/restore`, {
+      schema: { params, body: object({ revision: { type: 'integer', minimum: 1, maximum: 999999999 }, reason: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } }) },
+    }, async (request, reply) => {
+      const expected = precondition(request.headers['if-match']);
+      const restored = await transaction(pool, async (client) => {
+        const row = await owned(client, request.params.id, request.sessionUser!.id, true); conflict(row, expected);
+        if (row.revision >= 999999999) throw invalid('Document revision limit reached');
+        const saved = await preparedSnapshot(client, row.id, request.body.revision, kind); await bindings(client, row.projectId, kind, saved.document);
+        const updated = await client.query<Document>(`UPDATE apcs_documents SET name=$1,document=$2,revision=revision+1,updated_at=clock_timestamp() WHERE id=$3 RETURNING ${fields}`, [saved.name, saved.document, row.id]);
+        await audit(client, request.sessionUser!.id, `${kind}.restored`, row.id, { reason: request.body.reason, sourceRevision: request.body.revision, previousRevision: row.revision, revision: updated.rows[0]!.revision, checksum: saved.checksum });
+        return updated.rows[0]!;
+      });
+      return reply.header('ETag', `"${restored.revision}"`).send(restored);
+    });
+
     app.post<{ Params: { id: string }; Body: { name: string } }>(`/api/v1/projects/:id/${route}`, { schema: { params, body: object({ name }) } }, async (request, reply) => {
       const document = kind === 'graph' ? { schemaVersion: 1, nodes: [], edges: [] } : { schemaVersion: 1, width: 1200, height: 800, items: [] };
       const row = await transaction(pool, async (client) => {

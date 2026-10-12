@@ -1,6 +1,6 @@
-# Private virtual-device runtime
+# Private device runtime
 
-The current working path is web UI → authenticated API → durable PostgreSQL command journal → separate runtime process → MQTT → virtual LED acknowledgement. It is a simulation profile and cannot commission `esp32-led` or other physical devices. Compiled firmware and physical GPIO tests are still pending.
+The current working path is web UI → authenticated API → durable PostgreSQL command journal → separate runtime process → MQTT → virtual LED acknowledgement. Virtual profiles remain isolated by default. An explicitly configured ESP32 LED bench can now use a TLS broker; see [physical commissioning](physical-commissioning.md). Firmware is cross-compiled; physical GPIO tests remain pending.
 
 ## Operator workflow
 
@@ -8,7 +8,7 @@ Run `make dev`, sign in, register a project and a **Virtual LED** device, and ch
 
 The worker dispatches and renews sessions while the browser is closed. **Stop simulator** revokes the session and disconnects signal quality. Restarting a simulator creates a new boot/session and initializes its LED to OFF. A worker/API restart does not restore control authority: simulators must be started explicitly again. API source hot reload also restarts the worker and therefore requires rearming virtual devices.
 
-The initial profile permits 16 simultaneously running virtual devices. This is a bounded engineering profile, not the 10,000-device target. There is no persistent deployment manifest or autonomous remote gateway in this increment. Prepared graphs can now execute in the private worker against explicitly started virtual devices. Physical commissioning remains unavailable.
+The initial profile permits 16 simultaneously running devices. This is a bounded engineering profile, not the 10,000-device target. There is no persistent deployment manifest or autonomous remote gateway in this increment. Prepared graphs can now execute in the private worker against explicitly started virtual devices. ESP32 bench commissioning requires a private allowlist and explicit operator review.
 
 ## Process and ownership boundaries
 
@@ -26,15 +26,15 @@ A start request is audited before enabling its runtime, followed by a completion
 
 Transport configuration distinguishes the stable catalog `deviceId` from `protocolDeviceId`, its MQTT address. Signal sessions/disconnection use the catalog identity; MQTT topics use the address. A real transport test verifies the distinction.
 
-Production broker authentication, per-device ACLs, TLS/certificate provisioning, and physical profiles are not enabled by this simulation setup. The virtual peer does not execute an ESP32 binary. Its timing and safe-state limitations remain documented in [the LED contract](led-network.md).
+The simulation setup does not enable physical transport. The separate bench configuration requires TLS, broker credentials and an address allowlist; the administrator provisions the production CA and per-device broker ACLs. The virtual peer does not execute an ESP32 binary. Its timing and safe-state limitations remain documented in [the LED contract](led-network.md).
 
 ## API additions
 
 | Route under `/api/v1` | Behavior |
 |---|---|
-| `GET /devices/:id/runtime` | Simulation runtime state and diagnostics |
+| `GET /devices/:id/runtime` | Device runtime state, transport profile and diagnostics |
 | `POST /devices/:id/runtime` | Audited `start`/`stop` with a nonempty reason |
-| `GET /signals/:id/value` | Private-worker snapshot for running virtual devices |
+| `GET /signals/:id/value` | Private-worker snapshot for running devices |
 | `POST /commands` | Existing journal route, using trusted worker context |
 
 Physical profiles return 422 from the runtime mutation route. An unconfigured runtime returns 503. No request automatically starts an uncommissioned output. HTTP acceptance is distinct from application/verification; unknown or unavailable results must be inspected before issuing another command. Unresolved journal `Unknown` outcomes block the output. Explicit virtual LED reconciliation is now available after a new boot/session and a Good OFF observation; see [the recovery contract](command-journal.md#explicit-virtual-led-reconciliation).

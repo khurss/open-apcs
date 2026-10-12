@@ -50,3 +50,5 @@ USB flashing requires an explicitly selected serial device, the generated flash 
 Native protocol checks and cross-compilation do not establish hardware behavior. Physical LED operation, reset outputs, Wi-Fi loss, clock bounds, and watchdog response require HIL on the actual board. The local server currently has no detected USB serial board. M1 remains partial until its physical and load gates pass.
 
 API choices follow the pinned [ESP-MQTT documentation](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32/api-reference/protocols/mqtt.html) and [ESP-IDF container guide](https://docs.espressif.com/projects/esp-idf/en/v5.5.1/esp32/api-guides/tools/idf-docker-image.html). MQTT application deadlines and deduplication are still necessary because QoS 1 transport can retransmit messages.
+
+The server/browser commissioning workflow is documented in [physical commissioning](physical-commissioning.md). It has TLS protocol-simulator coverage; connecting and flashing the owner’s physical board is deferred at their request.

@@ -4,7 +4,10 @@ interface Status { state: 'running' | 'stopped' | 'faulted'; error: string | nul
 interface Command { id: string; state: string; reason: string | null; reconciliation?: { reason: string; at: string }; }
 interface History { items: Command[]; blocking: Command | null; nextCursor: string | null; }
 const pendingStates = new Set(['Requested', 'Accepted', 'Dispatched', 'DeviceAccepted']);
-export function VirtualDeviceControl({ deviceId }: { deviceId: string }) {
+export function VirtualDeviceControl({ deviceId }: { deviceId: string }) { return <DeviceControl deviceId={deviceId} physical={false} />; }
+export function PhysicalDeviceControl({ deviceId }: { deviceId: string }) { return <DeviceControl deviceId={deviceId} physical />; }
+function DeviceControl({ deviceId, physical }: { deviceId: string; physical: boolean }) {
+  const [gpio, setGpio] = useState(''); const [reason, setReason] = useState(''); const [reviewed, setReviewed] = useState(false);
   const [status, setStatus] = useState<Status | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const version = useRef(0);
   useEffect(() => {
@@ -12,18 +15,32 @@ export function VirtualDeviceControl({ deviceId }: { deviceId: string }) {
     const poll = async () => {
       const current = version.current;
       try { const result = await api<Status>(`/devices/${deviceId}/runtime`); if (!cancelled && current === version.current) setStatus(result); }
-      catch { if (!cancelled && current === version.current) setError('Runtime status unavailable'); }
+      catch { if (!cancelled && current === version.current) { setStatus(null); setError('Runtime status unavailable'); } }
       if (!cancelled) timer = setTimeout(() => { void poll(); }, 1000);
     };
     void poll(); return () => { cancelled = true; clearTimeout(timer); };
   }, [deviceId]);
   async function action() {
     const operation = status?.state === 'running' ? 'stop' : 'start'; version.current++; setBusy(true); setError('');
-    try { setStatus(await api<Status>(`/devices/${deviceId}/runtime`, { method: 'POST', body: { action: operation, reason: operation === 'start' ? 'Operator started virtual LED simulation' : 'Operator stopped virtual LED simulation' } })); }
+    try {
+      const body = physical ? { action: operation, reason, ...(operation === 'start' ? { gpio: Number(gpio), acknowledgeLedOnly: reviewed } : {}) } : { action: operation, reason: operation === 'start' ? 'Operator started virtual LED simulation' : 'Operator stopped virtual LED simulation' };
+      setStatus(await api<Status>(`/devices/${deviceId}/${physical ? 'commission' : 'runtime'}`, { method: 'POST', body }));
+      if (physical) setReviewed(false);
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Runtime action failed'); }
     finally { version.current++; setBusy(false); }
   }
-  return <div className="virtual-device-control"><span className={`badge ${status?.state === 'running' ? 'good' : 'warning'}`}><span className="dot" />{status ? `Simulation ${status.state}` : 'Checking runtime'}</span><button className="secondary" disabled={busy || !status} onClick={() => { void action(); }}>{busy ? 'Please wait…' : status?.state === 'running' ? 'Stop simulator' : 'Start simulator'}</button>{error && <p role="alert">{error}</p>}{status?.error && <small>{status.error}</small>}</div>;
+  const running = status?.state === 'running';
+  return <div className="virtual-device-control">
+    <span className={`badge ${running ? 'good' : 'warning'}`}><span className="dot" />{status ? `${physical ? 'Hardware bench' : 'Simulation'} ${status.state}` : 'Checking runtime'}</span>
+    {physical && <>
+      <p className="muted">Isolated LED bench. Disarming revokes the lease; OFF is not immediately verified.</p>
+      {!running && <><label className="field"><span>Reviewed GPIO</span><select aria-label="Reviewed GPIO" value={gpio} onChange={(event) => { setGpio(event.target.value); setReviewed(false); }}><option value="">Select pin</option>{[18, 19, 21, 22, 23, 25, 26, 27, 32, 33].map((pin) => <option key={pin} value={pin}>{pin}</option>)}</select></label><label className="checkbox-field"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />Only an isolated LED is connected</label></>}
+      <label className="field"><span>Commissioning reason</span><input maxLength={256} value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+    </>}
+    <button className="secondary" disabled={busy || !status || (physical && (!reason.trim() || (!running && (!gpio || !reviewed))))} onClick={() => { void action(); }}>{busy ? 'Please wait…' : physical ? (running ? 'Disarm LED bench' : 'Arm LED bench') : (running ? 'Stop simulator' : 'Start simulator')}</button>
+    {error && <p role="alert">{error}</p>}{status?.error && <small>{status.error}</small>}
+  </div>;
 }
 export function ManualControl({ signal, revision, quality, close }: { signal: Signal; revision: number; quality: string; close: () => void }) {
   const [reason, setReason] = useState(''); const [command, setCommand] = useState<Command | null>(null); const [busy, setBusy] = useState(false); const [error, setError] = useState('');

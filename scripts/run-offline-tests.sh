@@ -8,6 +8,8 @@ trap 'compose down --remove-orphans' EXIT INT TERM
 compose run --rm --no-deps deps
 compose run --rm firmware-test
 compose run --rm firmware-build
+compose run --rm mqtt-tls-cert
+compose run --rm mqtt-tls-users
 compose run --rm all
 compose run --rm offline-check
 compose run --rm backup-test

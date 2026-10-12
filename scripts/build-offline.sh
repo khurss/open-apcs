@@ -75,6 +75,15 @@ services:
   e2e:
     image: $browser_tag
     pull_policy: never
+  mqtt-tls-cert:
+    image: $firmware_tag
+    pull_policy: never
+  mqtt-tls-users:
+    image: $mqtt_tag
+    pull_policy: never
+  mqtt-tls:
+    image: $mqtt_tag
+    pull_policy: never
   firmware-test:
     image: $firmware_tag
     pull_policy: never

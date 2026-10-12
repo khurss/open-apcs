@@ -6,7 +6,7 @@ const connectionString = process.env.APCS_POSTGRES_URL;
 if (!connectionString) throw new Error('APCS_POSTGRES_URL is required');
 const pool = new Pool({ connectionString, max: 10, connectionTimeoutMillis: 2000, query_timeout: 6000 });
 const origin = process.env.APCS_ORIGIN ?? 'http://localhost:5173';
-const runtime = process.env.APCS_MQTT_URL ? new RuntimeProcess({ connectionString, mqttUrl: process.env.APCS_MQTT_URL }) : undefined;
+const runtime = process.env.APCS_MQTT_URL ? new RuntimeProcess({ connectionString, mqttUrl: process.env.APCS_MQTT_URL, ...(process.env.APCS_PHYSICAL_CONFIG ? { physicalConfigPath: process.env.APCS_PHYSICAL_CONFIG } : {}) }) : undefined;
 const app = await createApi({ pool, origin, secureCookies: origin.startsWith('https://'), ...(runtime ? { runtime } : {}) });
 let stopping = false;
 const stop = async () => {

@@ -1,6 +1,6 @@
 # Local API and catalog increment
 
-The Fastify API provides local authentication, projects, a basic LED device/signal catalog, audit records, and access to the durable command service. This is part of M0. The development process supports explicit virtual-device startup through a private worker. Physical profiles remain uncommissioned and rejected. See [runtime operation](runtime.md). Integration tests connect the API to the real MQTT gateway and simulator through explicit trusted application callbacks.
+The Fastify API provides local authentication, projects, a basic LED device/signal catalog, audit records, and access to the durable command service. This is part of M0. The development process supports explicit virtual-device startup through a private worker. Physical profiles require separate explicit [bench commissioning](physical-commissioning.md) and are disabled without private server configuration. See [runtime operation](runtime.md). Integration tests connect the API to the real MQTT gateway and simulator through explicit trusted application callbacks.
 
 ## Development startup
 
@@ -54,7 +54,7 @@ All paths use `/api/v1`.
 | `POST /commands` | Validate input, derive actor from session, persist Accepted/Rejected outcome |
 | `GET /commands/:id` | Durable command state and transition history |
 
-Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. GPIO assignment, profiles beyond the initial LED types, device editing, and physical commissioning are not yet implemented. Virtual startup is documented in the runtime contract.
+Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. Bench GPIO review is matched against the private server allowlist. Device editing and profiles beyond the initial LED types are not yet implemented. Virtual startup is documented in the runtime contract.
 
 Project updates return ETag and require the matching If-Match revision. Missing revision returns 428; a conflicting revision returns 412. Configuration mutation and audit insertion share a transaction; an audit failure rolls back the mutation. Audit is application-append-only, not protected against a database administrator.
 
@@ -64,4 +64,4 @@ Commands require `Idempotency-Key`; callers cannot supply a trusted actor ID. Th
 
 Docker tests verify salted credentials, bootstrap concurrency, migration checksums, session persistence/expiry/logout, origin and CSRF rejection, login throttling, strict input validation, pagination, optimistic revisions, atomic device/signal/audit creation, rollback on audit failure, command idempotency, and authenticated API → PostgreSQL → MQTT → virtual LED → Verified execution. API process reload and its health endpoint were also checked inside Docker.
 
-The web workspace, private simulation runtime, prepared graph activation, and foundation offline bundle are now available. Still pending: physical commissioning, durable deployment supervision, password recovery, detailed roles, WebSocket streaming, OpenAPI export, the complete production offline distribution, production broker/TLS configuration, and the remaining roadmap. M1 remains partial.
+The web workspace, private simulation runtime, prepared graph activation, and foundation offline bundle are now available. TLS bench commissioning now has protocol-simulator coverage. Still pending: physical HIL, durable deployment supervision, password recovery, detailed roles, WebSocket streaming, OpenAPI export, the complete production offline distribution, production broker/TLS configuration, and the remaining roadmap. M1 remains partial.

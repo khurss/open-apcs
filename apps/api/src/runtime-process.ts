@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type { RuntimeControl, RuntimeStatus, GraphRuntimeStatus } from './runtime-service.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
-export interface RuntimeProcessOptions { connectionString: string; mqttUrl: string; databaseOptions?: string; }
+export interface RuntimeProcessOptions { connectionString: string; mqttUrl: string; databaseOptions?: string; physicalConfigPath?: string; }
 interface Pending { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; }
 /** Bounded private IPC; restarting a worker never restores its control authority. */
 export class RuntimeProcess implements RuntimeControl {
@@ -22,6 +22,7 @@ export class RuntimeProcess implements RuntimeControl {
   stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('stopGraph', [graphId, activationId]); }
   graphStatus(graphId: string): Promise<GraphRuntimeStatus> { return this.call('graphStatus', [graphId]); }
   start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.call('start', [deviceId, actorId]); }
+  startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus> { return this.call('startPhysical', [deviceId, actorId, gpio]); }
   stop(deviceId: string): Promise<RuntimeStatus> { return this.call('stop', [deviceId]); }
   status(deviceId: string): Promise<RuntimeStatus> { return this.call('status', [deviceId]); }
   readSignal(signalId: string): Promise<SignalSnapshot> { return this.call('readSignal', [signalId]); }
@@ -39,7 +40,7 @@ export class RuntimeProcess implements RuntimeControl {
     const child = fork(new URL('./runtime-worker.ts', import.meta.url), [], {
       execArgv: ['--import', createRequire(import.meta.url).resolve('tsx')],
       stdio: ['ignore', 'ignore', 'inherit', 'ipc'], serialization: 'advanced',
-      env: { ...process.env, APCS_POSTGRES_URL: this.options.connectionString, APCS_MQTT_URL: this.options.mqttUrl, APCS_DB_OPTIONS: this.options.databaseOptions ?? '' },
+      env: { ...process.env, APCS_POSTGRES_URL: this.options.connectionString, APCS_MQTT_URL: this.options.mqttUrl, APCS_DB_OPTIONS: this.options.databaseOptions ?? '', APCS_PHYSICAL_CONFIG: this.options.physicalConfigPath ?? '' },
     });
     this.child = child;
     child.on('message', (value: unknown) => {

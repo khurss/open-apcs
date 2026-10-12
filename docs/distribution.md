@@ -63,3 +63,7 @@ This creates a separate offline test project, installs from the bundled cache, r
 ## Remaining distribution work
 
 Production certificates and broker ACL provisioning, signed update/package policy, unattended backup scheduling/retention, encrypted remote backup destinations, additional firmware SDK caches and guided USB/OTA workflows, ARM64, and hardware verification remain on the roadmap. The current backup/offline tools do not mark these requirements complete.
+
+## Verified firmware bundle drill
+
+On 2026-10-12, source tree `81a06719c123` (the functional firmware snapshot committed as `638468f`) was exported to a 5.1 GiB local bundle, installed into a new workspace with fresh Compose dependency volumes, and passed 311 TypeScript unit/integration tests, five Chromium scenarios, 227 native C assertions, ESP32 cross-compilation, typechecking, frontend/offline builds and database backup/restore. Image import reused the same Docker host; this was not a second-machine or hardware test. The fixed snapshot predates TLS bench commissioning. New bundle scripts also include generation of isolated TLS test fixtures from the bundled tool images; do not attribute those newer tests to this older drill.

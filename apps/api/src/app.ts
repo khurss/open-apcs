@@ -1,3 +1,4 @@
+import { registerPhysicalRuntime } from './physical-api.js';
 import { registerAlarms } from './alarm-api.js';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
@@ -214,6 +215,7 @@ export async function createApi(options: ApiOptions) {
   registerAlarms(app, pool, options.runtime);
   registerEditors(app, pool);
   registerGraphRuntime(app, pool, options.runtime);
+  registerPhysicalRuntime(app, pool, options.runtime);
   await app.ready(); return app;
 }
 

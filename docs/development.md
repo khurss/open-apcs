@@ -111,3 +111,7 @@ Before each completed phase is committed, update the specifications and status i
 ## ESP32 tooling
 
 `make firmware-test firmware-build` runs sanitized native C checks, generates the protocol harness used by integration tests, and cross-compiles the ESP32 application. Both services have networking disabled and use the pinned ESP-IDF image. `make test` includes them. After a fresh checkout, run `make firmware-test` before standalone integration/watch runs so the native harness exists. `make firmware-watch` rebuilds incrementally on C/header/configuration changes; firmware flashing is always a separate explicit operation. See [firmware scope](firmware.md).
+
+### TLS test fixtures
+
+`make test`, `make integration`, `make watch-integration` and `make e2e` prepare private throwaway certificates and fixed test-only accounts in `.cache/mqtt-tls-fixture`. The TLS broker has no published port and belongs to the internal test network. For a direct Compose integration command on a fresh checkout, run `make firmware-test mqtt-tls-fixture` first. Do not run manual integration suites against the same fixture while the integration watcher is executing them; the fixed protocol test address intentionally has a single owner. Source hot reload and the unit watcher remain available.

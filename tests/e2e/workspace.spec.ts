@@ -9,7 +9,7 @@ async function login(page: Page) {
 }
 
 test('creates a project and virtual device, verifies a command, and audits the workflow', async ({ page }) => {
-  test.setTimeout(45000);
+  test.setTimeout(60000);
   const errors: string[] = [];
   const external: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -74,6 +74,32 @@ test('creates a project and virtual device, verifies a command, and audits the w
   await expect(alarm).toContainText('Normal');
   await alarm.getByRole('button', { name: 'Inspect', exact: true }).click();
   await expect(page.getByRole('table', { name: 'Alarm events' })).toContainText('Returned');
+
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  await page.getByLabel('Device name', { exact: true }).fill('TLS LED bench');
+  await page.getByRole('combobox', { name: 'Device profile', exact: true }).selectOption('esp32-led');
+  await page.getByLabel('Site ID', { exact: true }).fill('tls-e2e');
+  await page.getByLabel('Device address', { exact: true }).fill('led');
+  await page.getByRole('button', { name: 'Add device', exact: true }).click();
+  const bench = page.getByRole('article').filter({ hasText: 'TLS LED bench' });
+  await expect(bench.getByRole('button', { name: 'Arm LED bench', exact: true })).toBeDisabled();
+  await bench.getByRole('combobox', { name: 'Reviewed GPIO', exact: true }).selectOption('18');
+  await bench.getByLabel('Commissioning reason', { exact: true }).fill('TLS protocol simulator test');
+  await bench.getByLabel('Only an isolated LED is connected').check();
+  await bench.getByRole('button', { name: 'Arm LED bench', exact: true }).click();
+  await expect(bench.getByText('Hardware bench running', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Signals', exact: true }).click();
+  const physicalRow = page.getByRole('row').filter({ hasText: 'TLS LED bench.led' });
+  await expect(physicalRow).toContainText('Good');
+  await physicalRow.getByRole('button', { name: 'Control', exact: true }).click();
+  await page.getByLabel('Command reason', { exact: true }).fill('TLS simulator output');
+  await page.getByRole('button', { name: 'Send ON', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Verified');
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  await bench.getByLabel('Commissioning reason', { exact: true }).fill('End TLS simulator test');
+  await bench.getByRole('button', { name: 'Disarm LED bench', exact: true }).click();
+  await expect(bench.getByText('Hardware bench stopped', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'test-results/physical-commissioning.png', fullPage: true });
 
   await page.getByRole('button', { name: 'Activity', exact: true }).click();
   await expect(page.getByText('Device created', { exact: true }).first()).toBeVisible();

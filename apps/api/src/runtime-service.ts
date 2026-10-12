@@ -6,13 +6,14 @@ import { SignalStore } from '../../../packages/domain/src/signals.js';
 import { PgCommandJournal } from '../../../packages/storage/src/command-journal.js';
 import { LedPeer } from '../../../packages/led-protocol/src/index.js';
 import { MqttLedGateway, MqttLedSimulator } from '../../../packages/gateway/src/mqtt-led.js';
+import { parsePhysicalConfig, physicalConnection, type PhysicalConfig } from '../../../packages/gateway/src/physical-config.js';
 import { GraphTask } from '../../../packages/gateway/src/graph-task.js';
 import { validateGraph } from '../../../packages/domain/src/logic.js';
 import { canonicalJson } from '../../../packages/domain/src/screen.js';
 import { LedRuntime } from '../../../packages/gateway/src/runtime.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
-export interface RuntimeStatus { deviceId: string; environment: 'Simulation'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
+export interface RuntimeStatus { deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
 export interface GraphRuntimeStatus { graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; }
 export interface RuntimeControl {
   alarmStatus(): Promise<AlarmServiceStatus>;
@@ -22,18 +23,19 @@ export interface RuntimeControl {
   stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus>;
   graphStatus(graphId: string): Promise<GraphRuntimeStatus>;
   start(deviceId: string, actorId: string): Promise<RuntimeStatus>;
+  startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus>;
   stop(deviceId: string): Promise<RuntimeStatus>;
   status(deviceId: string): Promise<RuntimeStatus>;
   readSignal(signalId: string): Promise<SignalSnapshot>;
   context(request: CommandRequest): Promise<CommandContext>;
   close(): Promise<void>;
 }
-interface Catalog { deviceId: string; signalId: string; projectId: string; kind: string; revision: number; ownerId: string; protocolDeviceId: string; }
-interface Entry { catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
+interface Catalog { siteId: string; deviceId: string; signalId: string; projectId: string; kind: string; revision: number; ownerId: string; protocolDeviceId: string; }
+interface Entry { catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator | null; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
 interface GraphEntry { revision: number; activationId: string; ownerId: string; task: GraphTask; }
 const disconnected = (): SignalSnapshot => ({ value: null, quality: 'Disconnected', bootId: null, sourceTime: null, receivedTime: null, sequence: null });
 const lockKey = "hashtextextended(current_schema() || ':open-apcs-simulation-runtime', 0)";
-/** Virtual devices only. Control authority is volatile and must be explicitly rearmed after restart. */
+/** Virtual devices and explicitly commissioned LED benches. Control authority is volatile and must be explicitly rearmed after restart. */
 export class SimulationRuntime implements RuntimeControl {
   private readonly clock = { monotonicNow: () => performance.now(), wallNow: () => new Date() };
   private readonly signals = new SignalStore(this.clock);
@@ -47,23 +49,32 @@ export class SimulationRuntime implements RuntimeControl {
   private closed = false;
   private lockLost = false;
   private operations: Promise<void> = Promise.resolve();
-  constructor(private readonly pool: Pool, private readonly mqttUrl: string) { this.alarms = new AlarmService(pool, (id) => this.registered.has(id) && !this.closed && !this.lockLost ? this.signals.get(id) : disconnected()); this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
+  private readonly physicalConfig: PhysicalConfig | undefined;
+  constructor(private readonly pool: Pool, private readonly mqttUrl: string, physicalConfig?: PhysicalConfig) { this.physicalConfig = physicalConfig ? parsePhysicalConfig(physicalConfig) : undefined; this.alarms = new AlarmService(pool, (id) => this.registered.has(id) && !this.closed && !this.lockLost ? this.signals.get(id) : disconnected()); this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
   private serial<T>(work: () => Promise<T>): Promise<T> { const result = this.operations.then(work); this.operations = result.then(() => {}, () => {}); return result; }
-  start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.serial(async () => {
+  start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.startDevice(deviceId, actorId); }
+  startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus> { return this.startDevice(deviceId, actorId, { gpio }); }
+  private startDevice(deviceId: string, actorId: string, physical?: { gpio: number }): Promise<RuntimeStatus> { return this.serial(async () => {
     if (this.closed || this.lockLost) throw new Error('Runtime is closed or lost ownership');
-    const found = await this.pool.query<Catalog>(`SELECT d.id AS "deviceId", s.id AS "signalId", d.project_id AS "projectId", d.kind, d.protocol_device_id AS "protocolDeviceId", p.revision, p.owner_id AS "ownerId" FROM apcs_devices d JOIN apcs_signals s ON s.device_id=d.id JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND s.direction='output'`, [deviceId]);
+    const found = await this.pool.query<Catalog>(`SELECT d.site_id AS "siteId", d.id AS "deviceId", s.id AS "signalId", d.project_id AS "projectId", d.kind, d.protocol_device_id AS "protocolDeviceId", p.revision, p.owner_id AS "ownerId" FROM apcs_devices d JOIN apcs_signals s ON s.device_id=d.id JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND s.direction='output'`, [deviceId]);
     const catalog = found.rows[0]; if (!catalog) throw new Error('Device not found');
     if (catalog.ownerId !== actorId) throw new Error('Project owner required');
-    if (catalog.kind !== 'virtual-led') throw new Error('Only virtual LED profiles are supported by the simulation runtime');
+    if (!physical && catalog.kind !== 'virtual-led') throw new Error('Only virtual LED profiles are supported by the simulation runtime');
+    if (physical && catalog.kind !== 'esp32-led') throw new Error('Physical commissioning requires an ESP32 LED profile');
+    if (physical && !this.physicalConfig) throw new Error('Physical connection is not configured');
+    // Validate the reviewed address and pin before even accepting an idempotent start.
+    const physicalLink = physical ? physicalConnection(this.physicalConfig!, { siteId: catalog.siteId, deviceId: catalog.protocolDeviceId, signalId: catalog.signalId }, physical.gpio) : null;
     const prior = this.entries.get(deviceId);
     if (prior?.runtime.status.state === 'running' && !prior.stopping) return this.status(deviceId);
-    if ([...this.entries.values()].filter((entry) => entry.runtime.status.state === 'running').length >= 16) throw new Error('Initial runtime limit is 16 active virtual devices');
+    if ([...this.entries.values()].filter((entry) => entry.runtime.status.state === 'running').length >= 16) throw new Error('Initial runtime limit is 16 active devices');
     await this.acquire();
     if (prior) await this.stopEntry(prior);
     if (!this.registered.has(catalog.signalId)) { this.signals.register({ id: catalog.signalId, deviceId, dataType: 'boolean', freshnessMs: 3000 }); this.registered.add(catalog.signalId); }
     // A random simulation namespace cannot target a catalog's physical MQTT address.
-    const connection = { url: this.mqttUrl, siteId: randomUUID(), deviceId, protocolDeviceId: catalog.protocolDeviceId, signalId: catalog.signalId };
-    const startAt = performance.now(); const simulator = new MqttLedSimulator(connection, new LedPeer(() => performance.now() - startAt, randomUUID()));
+    const connection = physicalLink ? { ...physicalLink, deviceId, protocolDeviceId: catalog.protocolDeviceId } : { url: this.mqttUrl, siteId: randomUUID(), deviceId, protocolDeviceId: catalog.protocolDeviceId, signalId: catalog.signalId };
+    // A surviving controller boot must never revive an old server intent.
+    if (physical) await this.journal.connectionLost(catalog.signalId);
+    const startAt = performance.now(); const simulator = physical ? null : new MqttLedSimulator(connection, new LedPeer(() => performance.now() - startAt, randomUUID()));
     const policy: Entry['policy'] = { ownerId: actorId, projectRevision: catalog.revision, maxTtlMs: 3000, interlockReason: null };
     const gateway = new MqttLedGateway(connection, this.signals, this.journal, this.clock, () => ({ ...policy, interlockReason: this.lockLost || this.closed ? 'Runtime ownership unavailable' : policy.interlockReason }));
     const entry = { catalog, simulator, gateway, policy, stopping: false, stopPromise: null } as Entry;
@@ -72,14 +83,19 @@ export class SimulationRuntime implements RuntimeControl {
       dispatchNext: async () => { await this.refresh(entry); return gateway.dispatchNext(); },
     }, () => performance.now());
     this.entries.set(deviceId, entry);
-    try { await simulator.start(); await entry.runtime.start(); this.history.start(); this.alarms.start(); }
+    try {
+      await simulator?.start(); await entry.runtime.start();
+      if (physical) { const initial = this.signals.get(catalog.signalId); if (initial.quality !== 'Good' || initial.value !== false) throw new Error('Physical commissioning did not verify an OFF output'); }
+      this.history.start(); this.alarms.start();
+    }
     catch (error) { await this.stopEntry(entry); throw error; }
     return this.status(deviceId);
   }); }
   stop(deviceId: string): Promise<RuntimeStatus> { return this.serial(async () => { const entry = this.entries.get(deviceId); if (entry) await this.stopEntry(entry); return this.status(deviceId); }); }
   async status(deviceId: string): Promise<RuntimeStatus> {
     const entry = this.entries.get(deviceId); const state = entry?.runtime.status ?? { state: 'stopped' as const, error: null };
-    return { deviceId, environment: 'Simulation', ...state, ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
+    const kind = entry?.catalog.kind ?? (await this.pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [deviceId])).rows[0]?.kind;
+    return { deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
   }
   async readSignal(signalId: string): Promise<SignalSnapshot> {
     if (!this.registered.has(signalId)) return disconnected();
@@ -89,7 +105,7 @@ export class SimulationRuntime implements RuntimeControl {
     const entry = [...this.entries.values()].find((item) => item.catalog.signalId === request.targetSignalId);
     if (entry && !entry.stopping && entry.runtime.status.state === 'running' && !this.closed && !this.lockLost) { await this.refresh(entry); return entry.gateway.context(request); }
     const found = await this.pool.query<{ revision: number }>('SELECT p.revision FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE s.id=$1', [request.targetSignalId]);
-    return { bootId: null, quality: 'Disconnected', ownerId: null, projectRevision: found.rows[0]?.revision ?? 1, maxTtlMs: 3000, interlockReason: 'Virtual device is not running' };
+    return { bootId: null, quality: 'Disconnected', ownerId: null, projectRevision: found.rows[0]?.revision ?? 1, maxTtlMs: 3000, interlockReason: 'Device is not running' };
   }
   close(): Promise<void> { return this.serial(async () => {
     if (this.closed) return; this.closed = true;
@@ -180,7 +196,7 @@ export class SimulationRuntime implements RuntimeControl {
   private stopEntry(entry: Entry): Promise<void> {
     if (entry.stopPromise) return entry.stopPromise;
     entry.stopping = true;
-    entry.stopPromise = (async () => { try { await entry.runtime.stop(); } finally { await entry.simulator.stop(); } })();
+    entry.stopPromise = (async () => { try { await entry.runtime.stop(); } finally { await entry.simulator?.stop(); } })();
     return entry.stopPromise;
   }
 }

@@ -17,10 +17,10 @@ watch:
 watch-bg:
 	docker compose -f compose.test.yml up -d unit-watch
 
-watch-integration:
+watch-integration: mqtt-tls-fixture
 	docker compose -f compose.test.yml up integration-watch
 
-test: firmware-test firmware-build
+test: firmware-test firmware-build mqtt-tls-fixture
 	docker compose -f compose.test.yml run --rm all
 	docker compose -f compose.test.yml run --rm offline-check
 	docker compose -f compose.test.yml run --rm backup-test
@@ -29,7 +29,7 @@ test: firmware-test firmware-build
 unit:
 	docker compose -f compose.test.yml run --rm unit
 
-integration:
+integration: firmware-test mqtt-tls-fixture
 	docker compose -f compose.test.yml run --rm integration
 
 typecheck:
@@ -56,7 +56,7 @@ dev-stop:
 	docker compose down --remove-orphans
 
 .PHONY: e2e
-e2e:
+e2e: mqtt-tls-fixture
 	docker compose -f compose.test.yml up -d --force-recreate e2e-api
 	docker compose -f compose.test.yml run --rm e2e
 
@@ -84,3 +84,9 @@ firmware-build:
 
 firmware-watch:
 	sh scripts/watch-firmware.sh
+
+.PHONY: mqtt-tls-fixture
+mqtt-tls-fixture:
+	docker compose -f compose.test.yml run --rm mqtt-tls-cert
+	docker compose -f compose.test.yml run --rm mqtt-tls-users
+	docker compose -f compose.test.yml up -d --force-recreate mqtt-tls

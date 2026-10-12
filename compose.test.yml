@@ -19,12 +19,39 @@ x-node: &node
     APCS_TEST_MQTT_URL: mqtt://mqtt:1883
 
 x-dependencies: &dependencies
+  mqtt-tls:
+    condition: service_healthy
   postgres:
     condition: service_healthy
   mqtt:
     condition: service_healthy
 
 services:
+  mqtt-tls-cert:
+    image: espressif/idf:v5.5.1@sha256:cbc2e2ec2afee95f1cfa14acfa3bb6cc69a51816537fe0234f4429e71a881066
+    profiles: [tools]
+    network_mode: none
+    user: "1000:1000"
+    entrypoint: [sh, /workspace/scripts/prepare-mqtt-tls-fixture.sh]
+    volumes: [".:/workspace"]
+  mqtt-tls-users:
+    image: eclipse-mosquitto:2.0.22@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
+    profiles: [tools]
+    network_mode: none
+    user: "1000:1000"
+    entrypoint: [sh, /workspace/scripts/prepare-mqtt-users-fixture.sh]
+    volumes: [".:/workspace"]
+  mqtt-tls:
+    image: eclipse-mosquitto:2.0.22@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
+    user: "1000:1000"
+    entrypoint: [mosquitto, -c, /fixtures/mosquitto.conf]
+    networks: [test]
+    volumes: ["./.cache/mqtt-tls-fixture:/fixtures:ro"]
+    healthcheck:
+      test: [CMD, mosquitto_pub, -h, localhost, -p, "8883", --cafile, /fixtures/ca.crt, -u, health, -P, fixture-health-password, -t, fixture/health, -m, ready]
+      interval: 2s
+      timeout: 3s
+      retries: 20
   firmware-test:
     image: espressif/idf:v5.5.1@sha256:cbc2e2ec2afee95f1cfa14acfa3bb6cc69a51816537fe0234f4429e71a881066
     profiles: [firmware]

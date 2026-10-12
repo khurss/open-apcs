@@ -1,3 +1,4 @@
+import { registerAggregates } from './aggregate-api.js';
 import { registerNotifications } from './notification-api.js';
 import type { ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { registerPhysicalRuntime } from './physical-api.js';
@@ -217,6 +218,7 @@ export async function createApi(options: ApiOptions) {
   registerHistory(app, pool, options.runtime);
   registerAlarms(app, pool, options.runtime);
   registerNotifications(app, pool);
+  registerAggregates(app, pool);
   registerEditors(app, pool, options.scripts);
   registerGraphRuntime(app, pool, options.runtime);
   registerPhysicalRuntime(app, pool, options.runtime);

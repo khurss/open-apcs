@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { migrateApplication } from '../../apps/api/src/store.js';
+import { PgHistoryAggregates } from '../../packages/storage/src/history-aggregates.js';
 import { PgSignalArchive } from '../../packages/storage/src/signal-archive.js';
 import type { HistoryRow } from '../../packages/domain/src/history.js';
 let admin: Pool; let pool: Pool; let schema: string; let archive: PgSignalArchive; let signalId: string;
@@ -49,6 +50,8 @@ describe('durable signal archive', () => {
   });
   it('prunes in bounded batches while retaining the exact cutoff sample', async () => {
     await archive.append([row(false, '2026-10-04T00:00:00Z'), row(true, '2026-10-04T01:00:00Z'), row(false, '2026-10-05T00:00:00Z')]);
+    const aggregates = new PgHistoryAggregates(pool); while (await aggregates.backfill()) {}
+    for (let i = 0; i < 40; i++) if (await aggregates.processNext(new Date('2026-10-06T00:00:00Z')) === 'idle') break;
     expect(await archive.prune(new Date('2026-10-05T00:00:00Z'), 1)).toBe(1);
     expect(await archive.prune(new Date('2026-10-05T00:00:00Z'), 1)).toBe(1);
     expect(await archive.prune(new Date('2026-10-05T00:00:00Z'), 1)).toBe(0);

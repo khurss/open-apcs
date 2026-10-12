@@ -1,3 +1,4 @@
+import { AggregateProcess } from '../../apps/api/src/aggregate-process.js';
 import { createServer } from 'node:http';
 import { NotificationProcess } from '../../apps/api/src/notification-process.js';
 import { ScriptClient } from '../../packages/script-runtime/src/client.js';
@@ -35,13 +36,14 @@ const recipientAddress = recipient.address(); if (!recipientAddress || typeof re
 const notificationConfigPath = '/tmp/apcs-e2e/notifications.json';
 await writeFile(notificationConfigPath, JSON.stringify({ version: 1, routes: [{ id: 'fixture', name: 'Local test receiver', kind: 'webhook', url: `http://127.0.0.1:${recipientAddress.port}/events`, secret: 'fixture-only-signing-secret-at-least-32', allowInsecure: true, priorities: ['low', 'medium', 'high'], events: ['Activated', 'Returned'], projectIds: [] }] }), { mode: 0o600 });
 const notifications = new NotificationProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, databaseOptions: `-c search_path=${schema}`, configPath: notificationConfigPath });
+const aggregates = new AggregateProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, databaseOptions: `-c search_path=${schema}` });
 await app.listen({ host: '0.0.0.0', port: 3000 });
 let stopped = false;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => {
   if (stopped) return;
   stopped = true;
   void (async () => {
-    await notifications.close(); recipient.closeAllConnections(); await new Promise<void>((resolve) => recipient.close(() => resolve()));
+    await aggregates.close(); await notifications.close(); recipient.closeAllConnections(); await new Promise<void>((resolve) => recipient.close(() => resolve()));
     await app.close(); await simulator.stop(); await pool.end();
     await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end();
   })();

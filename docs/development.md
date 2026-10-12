@@ -97,7 +97,7 @@ make stop
 
 The [roadmap](roadmap.md) is the milestone source of truth. M0 is accepted; M1 remains partial pending physical ESP32 acceptance and the L0 load gate. Both editors, live graph/HMI execution, simulator and TLS bench commissioning, Unknown reconciliation for virtual devices, raw history and basic alarms are implemented. An offline firmware bundle was verified against its documented historical source snapshot.
 
-M2 software increments proceed while the board is unavailable: revision comparison/restoration, isolated boolean JS/TS blocks, raw trends/CSV and local SMTP/webhook delivery are implemented. Numeric logic, annual aggregates, complete reports, OTA/ESPHome and remaining roadmap items are still pending. Notification configuration and Docker deployment are documented in [notifications](notifications.md); no recipient is enabled by default.
+M2 software increments proceed while the board is unavailable: revision comparison/restoration, isolated boolean JS/TS blocks, raw trends/CSV, minute/hour aggregates and local SMTP/webhook delivery are implemented. Numeric logic, complete reports, OTA/ESPHome and remaining roadmap items are still pending. Notification configuration and Docker deployment are documented in [notifications](notifications.md); no recipient is enabled by default.
 
 ## Phase commits and language
 
@@ -113,3 +113,5 @@ Before each completed phase is committed, update the specifications and status i
 `make test`, `make integration`, `make watch-integration` and `make e2e` prepare private throwaway certificates and fixed test-only accounts in `.cache/mqtt-tls-fixture`. The TLS broker has no published port and belongs to the internal test network. For a direct Compose integration command on a fresh checkout, run `make firmware-test mqtt-tls-fixture` first. Do not run manual integration suites against the same fixture while the integration watcher is executing them; the fixed protocol test address intentionally has a single owner. Source hot reload and the unit watcher remain available.
 
 The JS/TS runner uses the same Node tool image and its own internal network with read-only source/dependency mounts. After pulling a lockfile change, run `make install` and `make install-dev`; then `make dev` starts the runner dependency. Changes within its source package hot reload without an image rebuild. Reloading the interpreter during active control can fault a script graph, which requires explicit reactivation after review.
+
+A private aggregation worker starts with the API and requires no device arming or browser. It uses the same Node image, persists jobs/backfill in PostgreSQL and shares the raw archive retention boundary. Source edits restart it through API hot reload. See [aggregate operation and limits](history-aggregates.md); stopping the worker delays cleanup and never grants output authority.

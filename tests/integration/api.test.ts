@@ -2,6 +2,7 @@ import { enqueueNotifications, syncNotificationRoutes, claimNotification, finish
 import { transaction } from '../../apps/api/src/store.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { PgHistoryAggregates } from '../../packages/storage/src/history-aggregates.js';
 import { PgSignalArchive } from '../../packages/storage/src/signal-archive.js';
 import { SignalStore } from '../../packages/domain/src/signals.js';
 import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
@@ -47,6 +48,23 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('serves owner-only minute aggregates with explicit coverage and bounded ranges', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Aggregate LED', siteId: 'aggregate', deviceId: 'led', kind: 'virtual-led' } })).json();
+    const start = Math.floor(Date.now() / 3600000) * 3600000 - 3600000; const stamp = (seconds: number) => new Date(start + seconds * 1000).toISOString();
+    const archive = new PgSignalArchive(pool); const aggregates = new PgHistoryAggregates(pool);
+    await archive.append([0, 10, 40, 60].map((second, index) => ({ eventId: randomUUID(), signalId: device.signalId, observedAt: stamp(second), snapshot: { value: index === 1, quality: 'Good' as const, bootId: 'fixture', sequence: index, sourceTime: null, receivedTime: stamp(second) } })));
+    for (let i = 0; i < 20; i++) if (await aggregates.processNext(new Date(start + 7500000)) === 'idle') break;
+    const path = `/api/v1/signals/${device.signalId}/aggregates`; const url = `${path}?from=${stamp(0)}&to=${stamp(60)}&resolution=60`;
+    expect((await app!.inject({ url })).statusCode).toBe(401);
+    const result = await app!.inject({ url, headers: headers() }); expect(result.statusCode).toBe(200);
+    expect(result.json().items[0]).toMatchObject({ stale: false, aggregate: { trueMs: 30000, falseMs: 30000, qualityMs: { Good: 60000, Unknown: 0 } } });
+    expect((await app!.inject({ url: `${path}?from=${stamp(0)}&to=${stamp(366 * 86400)}&resolution=60`, headers: headers() })).statusCode).toBe(422);
+    expect((await app!.inject({ url: `${path}?from=${stamp(0)}&to=${stamp(60)}&resolution=1`, headers: headers() })).statusCode).toBe(400);
+    expect((await app!.inject({ url: '/api/v1/history/aggregates/status', headers: headers() })).json()).toMatchObject({ state: 'not running', blocked: 0 });
+    const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'foreign-aggregate','fixture')", [foreign]); await pool.query('UPDATE apcs_projects SET owner_id=$2 WHERE id=$1', [projectId, foreign]);
+    expect((await app!.inject({ url, headers: headers() })).statusCode).toBe(404);
+  });
   it('exposes secret-free notification logs and protects audited bounded retries', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Alarm LED', siteId: 'alarm', deviceId: 'led', kind: 'virtual-led' } })).json();

@@ -1,3 +1,4 @@
+import { AggregateProcess } from './aggregate-process.js';
 import { NotificationProcess } from './notification-process.js';
 import { syncNotificationRoutes } from './notification-store.js';
 import { ScriptClient } from '../../../packages/script-runtime/src/client.js';
@@ -14,11 +15,12 @@ const runtime = process.env.APCS_MQTT_URL ? new RuntimeProcess({ connectionStrin
 const app = await createApi({ pool, origin, ...(scripts ? { scripts } : {}), secureCookies: origin.startsWith('https://'), ...(runtime ? { runtime } : {}) });
 const notifications = process.env.APCS_NOTIFICATIONS_CONFIG ? new NotificationProcess({ connectionString, configPath: process.env.APCS_NOTIFICATIONS_CONFIG }) : undefined;
 if (!notifications) await syncNotificationRoutes(pool, []);
+const aggregates = new AggregateProcess({ connectionString });
 let stopping = false;
 const stop = async () => {
   if (stopping) return;
   stopping = true;
-  await notifications?.close(); await app.close(); await pool.end();
+  await aggregates.close(); await notifications?.close(); await app.close(); await pool.end();
 };
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { void stop(); });
 try {

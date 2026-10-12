@@ -1,3 +1,7 @@
+import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { PgSignalArchive } from '../../packages/storage/src/signal-archive.js';
 import { expect, test, type Page } from '@playwright/test';
 
 async function login(page: Page) {
@@ -63,6 +67,28 @@ test('creates a project and virtual device, verifies a command, and audits the w
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect.poll(() => page.locator('.sidebar').evaluate((element) => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
   await page.screenshot({ path: 'test-results/signal-history-phone.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  if (process.env.NODE_ENV !== 'test' || !process.env.APCS_TEST_POSTGRES_URL) throw new Error('Isolated aggregate fixture required');
+  const { schema } = JSON.parse(await readFile(new URL('../../.cache/e2e/schema.json', import.meta.url), 'utf8')) as { schema: string };
+  if (!/^e2e_[a-f0-9]{32}$/.test(schema)) throw new Error('Invalid aggregate fixture schema');
+  const aggregatePool = new Pool({ connectionString: process.env.APCS_TEST_POSTGRES_URL, options: `-c search_path=${schema}` });
+  const aggregateStart = Math.floor(Date.now() / 60000) * 60000 - 600000;
+  try {
+    const signalId = (await aggregatePool.query("SELECT s.id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id WHERE d.name='Workbench LED'")).rows[0].id;
+    await new PgSignalArchive(aggregatePool).append([0, 15, 45, 60].map((second, index) => ({ eventId: randomUUID(), signalId, observedAt: new Date(aggregateStart + second * 1000).toISOString(), snapshot: { value: index === 1, quality: 'Good' as const, bootId: 'aggregate-browser-fixture', sequence: index, sourceTime: null, receivedTime: new Date(aggregateStart + second * 1000).toISOString() } })));
+  } finally { await aggregatePool.end(); }
+  await page.getByRole('button', { name: 'Show aggregates', exact: true }).click();
+  const aggregateRow = page.locator(`[data-bucket-start="${new Date(aggregateStart).toISOString()}"]`);
+  await expect(aggregateRow).toContainText('30.000');
+  await expect(aggregateRow).toContainText('100.0%');
+  await expect(aggregateRow).toContainText('OFF');
+  await aggregateRow.getByText('Quality details', { exact: true }).click();
+  await expect(aggregateRow).toContainText('Bad: 0s');
+  await page.screenshot({ path: 'test-results/history-aggregates.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect.poll(() => page.locator('.sidebar').evaluate((element) => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: 'test-results/history-aggregates-phone.png', fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole('button', { name: 'Alarms', exact: true }).click();
   await page.getByLabel('Alarm name', { exact: true }).fill('LED offline');

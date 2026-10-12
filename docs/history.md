@@ -1,4 +1,4 @@
-# Signal history: initial raw archive
+# Signal history, trends and aggregates
 
 The private simulation worker records signal history without a browser. In Signals, choose **History** to inspect value and quality changes after a device has stopped. The default view follows the last hour and refreshes every two seconds; a manual date range pauses following. Times display in the browser's local timezone. The API stores UTC server observation times and retains original source/receipt metadata in each snapshot.
 
@@ -14,7 +14,7 @@ Command acceptance and acknowledgement do not depend on archive availability. Th
 
 ## Retention and query bounds
 
-Migration `003-signal-history.sql` introduces the raw history table and range/retention indexes. Every minute the running archive service removes records older than seven days, in up to ten batches of 1,000 rows. Maintenance is bounded and eventual; it does not run while the private worker is stopped. Annual aggregates, incident retention, analog deadband, and late-data recalculation remain M2 work. This increment retains raw samples only and must not be described as the complete seven-day/raw plus one-year/aggregate policy.
+Migration `003-signal-history.sql` introduces raw history. Migrations 007–008 add minute/hour calculations, dirty jobs, bounded backfill and the retention admission boundary. The application targets seven days of ordinary raw input and 365 days of minute/hour aggregates. Whole boundary hours and predecessor anchors extend raw retention by up to about 64 minutes. Backlog or blocked calculations retain raw source data longer; maintenance is bounded and eventual. A private aggregation worker runs without an armed device or browser. See [aggregate semantics and limits](history-aggregates.md). Disk quotas, target-scale sizing, counter profile configuration, incident retention and analog deadband remain pending.
 
 Server observation time is separate from device source time. Host wall-clock changes can change chronological display order; equal timestamps use the archive ordinal. Command/logic duration semantics remain monotonic. Dedicated historian clock-discontinuity handling and gap accounting across abrupt worker loss remain future work.
 
@@ -23,7 +23,7 @@ Server observation time is separate from device source time. Host wall-clock cha
 | `GET /signals/:id/history?from=<ISO>&to=<ISO>&limit=100&before=<ordinal>` | Authenticated project-owner query; up to seven days per range, 1–1,000 rows per page, newest first |
 | `GET /history/status` | Private worker archive status and bounded-buffer diagnostics |
 
-The UI requests 100 rows per page and limits its loaded table to 1,000 rows. Narrow the range to inspect a different interval. A cursor removed by retention must be replaced by a fresh query. Values with Bad, Stale, or Disconnected quality are displayed explicitly; absence of data is not OFF or zero. The loaded raw page also provides a bounded trend and CSV export as described below. Aggregate queries and PDF/scheduled reports remain later increments.
+The UI requests 100 rows per page and limits its loaded table to 1,000 rows. Narrow the range to inspect a different interval. A cursor removed by retention must be replaced by a fresh query. Values with Bad, Stale, or Disconnected quality are displayed explicitly; absence of data is not OFF or zero. The loaded raw page also provides a bounded trend and CSV export as described below. The same panel can open minute/hour aggregate queries. PDF/scheduled reports remain later increments.
 
 ## Verification scope
 
@@ -37,4 +37,4 @@ String values, including exact int64 decimals, are deliberately not converted to
 
 **Export loaded CSV** downloads the current loaded rows in ascending observation/ordinal order, including the signal identity/name/type, archive identity, UTC observation time, JSON-encoded value, quality, device boot/session, sequence and original source/receipt timestamps. JSON value encoding distinguishes boolean, null, number and exact string/int64 values. Cells use CSV quote escaping and CRLF records. Potential spreadsheet formulas in text metadata receive a leading apostrophe; consumers that require original metadata must account for that protective prefix. Negative numeric JSON values remain numbers; untrusted string values retain their JSON quotes. UTF-8 user-defined names are preserved.
 
-Export is local to the already authorized browser view and sends no commands. It does not fetch unshown pages or claim to export the entire requested period. The button and row count make that scope explicit. Complete server-side report jobs, annual aggregates, PDF output and scheduled summaries remain on the roadmap.
+Export is local to the already authorized browser view and sends no commands. It does not fetch unshown pages or claim to export the entire requested period. The button and row count make that scope explicit. Annual minute/hour aggregates are available separately through Show aggregates. Complete server-side report jobs, PDF output and scheduled summaries remain on the roadmap.

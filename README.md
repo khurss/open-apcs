@@ -36,3 +36,5 @@ Publication target: [khurss/open-apcs](https://github.com/khurss/open-apcs). Com
 JS/TS boolean blocks are edited in Logic and run by a separate bounded Docker service. See [script execution and current limits](docs/script-runtime.md).
 
 Alarm SMTP/webhook notifications run in a private background process with durable attempts, bounded retries and an audited delivery log in Alarms. Destinations are disabled by default; see [local configuration and delivery semantics](docs/notifications.md).
+
+Minute/hour history aggregates now run in a private background process with explicit quality/gap duration, protected late-data recalculation and annual cleanup. Open Signals → History → Show aggregates; see [semantics and current bounds](docs/history-aggregates.md).

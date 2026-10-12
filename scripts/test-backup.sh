@@ -19,6 +19,8 @@ psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/003-signal-history.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/004-alarms.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/005-notifications.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/006-notification-service.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/007-history-aggregates.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/008-history-retention-boundary.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
@@ -27,6 +29,7 @@ INSERT INTO apcs_projects (id,name,owner_id) VALUES ('00000000-0000-4000-8000-00
 INSERT INTO apcs_devices (id,project_id,name,kind,site_id,protocol_device_id) VALUES ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000002','Backup LED','virtual-led','backup','led');
 INSERT INTO apcs_signals (id,device_id,name,data_type,direction) VALUES ('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000004','LED','boolean','output');
 INSERT INTO apcs_signal_history (event_id,signal_id,observed_at,snapshot) VALUES ('backup-history','00000000-0000-4000-8000-000000000005','2026-10-12T12:00:00Z','{"value":true,"quality":"Good","bootId":"backup-boot","sequence":1,"sourceTime":null,"receivedTime":"2026-10-12T12:00:00Z"}');
+INSERT INTO apcs_history_aggregates(signal_id,resolution,bucket_start,aggregate) VALUES('00000000-0000-4000-8000-000000000005',60,'2026-10-12T12:00:00Z','{"profile":"digital","trueMs":30000,"falseMs":30000}');
 INSERT INTO apcs_alarms(id,project_id,signal_id,name,priority,definition,state) VALUES('00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000005','Backup alarm','high','{"condition":{"kind":"boolean","value":true},"activationDelayMs":0,"returnDelayMs":0}','{"occurrence":1,"active":true,"acknowledged":true,"available":true,"suppressedUntil":null,"version":1}');
 INSERT INTO apcs_alarm_events(alarm_id,version,kind,occurrence,actor_id,reason,at) VALUES('00000000-0000-4000-8000-000000000006',1,'Acknowledged',1,'00000000-0000-4000-8000-000000000001','Backup inspection',clock_timestamp());
 INSERT INTO apcs_notification_routes(id,metadata,fingerprint) VALUES('backup','{"id":"backup","kind":"webhook"}',repeat('a',64));
@@ -47,6 +50,8 @@ sh scripts/database-restore.sh "$file" "$restored"
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT reason FROM apcs_alarm_events')" = 'Backup inspection' ]
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT state FROM apcs_notification_deliveries')" = 'Pending' ]
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT outcome FROM apcs_notification_attempts')" = 'Retry' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT aggregate->>'trueMs' FROM apcs_history_aggregates")" = '30000' ]
+[ "$(psql -X -Atq --dbname="$restored" -c 'SELECT count(*)>0 FROM apcs_history_aggregate_jobs')" = 't' ]
 if psql -X -q -v ON_ERROR_STOP=1 --dbname="$restored" -c "UPDATE apcs_document_revisions SET name='tampered'" > /dev/null 2>&1; then
   echo 'FAIL: restored revision protection was lost' >&2; exit 1
 fi

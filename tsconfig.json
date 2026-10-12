@@ -11,7 +11,17 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "jsx": "react-jsx"
   },
-  "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "packages/**/*.ts",
+    "apps/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts",
+    "apps/**/*.tsx",
+    "playwright.config.ts"
+  ]
 }

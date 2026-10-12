@@ -47,7 +47,7 @@ services:
   all:
     <<: *node
     depends_on: *dependencies
-    command: [sh, -ec, "pnpm check:language && pnpm typecheck && pnpm test"]
+    command: [sh, -ec, "pnpm check:language && pnpm typecheck && pnpm test && pnpm --filter @open-apcs/web build"]
 
   unit-watch:
     <<: *node
@@ -65,6 +65,46 @@ services:
   toolbox:
     <<: *node
     command: [node, -e, "setInterval(() => {}, 3600000)"]
+
+  e2e-api:
+    <<: *node
+    command: [pnpm, --filter, '@open-apcs/api', exec, tsx, ../../tests/e2e/server.ts]
+    depends_on: *dependencies
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  e2e-web:
+    <<: *node
+    command: [pnpm, --filter, '@open-apcs/web', dev]
+    environment:
+      <<: *test-env
+      APCS_API_PROXY: http://e2e-api:3000
+    depends_on:
+      e2e-api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5173').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+    init: true
+    user: "1000:1000"
+    working_dir: /workspace
+    shm_size: 1gb
+    volumes:
+      - .:/workspace
+      - node_modules:/workspace/node_modules
+    network_mode: service:e2e-web
+    depends_on:
+      e2e-web:
+        condition: service_healthy
+    command: [node, node_modules/@playwright/test/cli.js, test]
 
   postgres:
     image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3

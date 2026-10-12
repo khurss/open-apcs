@@ -36,7 +36,7 @@ make watch
 
 ## Development without image rebuilds
 
-The `.:/workspace` bind mount makes file changes immediately available inside containers. `node_modules` and the pnpm store use named volumes, keeping container dependencies separate from host dependencies. Vitest watch reruns affected tests. The API uses tsx process watch; Vite HMR will accompany the web client.
+The `.:/workspace` bind mount makes file changes immediately available inside containers. `node_modules` and the pnpm store use named volumes, keeping container dependencies separate from host dependencies. Vitest watch reruns affected tests. The API uses tsx process watch; the React web client uses Vite HMR. Run `make install-dev && make dev`, then visit http://localhost:5173. Bootstrap the administrator using [API startup](api.md).
 
 `make watch` runs in the foreground; `make watch-bg` starts the same service in the background. Follow logs with `docker compose -f compose.test.yml logs -f unit-watch`. `make watch-integration` starts the PostgreSQL/MQTT watcher; use `docker compose -f compose.test.yml up -d integration-watch` for background mode. Hot reload was verified through RED → GREEN source edits. SQL migrations also trigger reruns.
 
@@ -70,7 +70,7 @@ Installation is an explicit operation, not part of every hot reload. Library cha
 make test
 ```
 
-This runs the repository language guard, TypeScript checks, then every unit/integration test. PostgreSQL and MQTT run as real containers with health checks, not mocks. A failed check or test returns a nonzero exit code. Beyond infrastructure smoke tests, the command journal has atomicity, concurrency, recovery, and fault-injection tests. These do not replace the future API, gateway, and firmware tests.
+This runs the repository language guard, TypeScript checks, then every unit/integration test, a production frontend build, and Chromium browser tests. `make e2e` runs only the browser suite against a fresh isolated database schema and real API. Its pinned Playwright image is pulled once; source changes do not rebuild it. PostgreSQL and MQTT run as real containers with health checks, not mocks. A failed check or test returns a nonzero exit code. Beyond infrastructure smoke tests, the command journal has atomicity, concurrency, recovery, and fault-injection tests. These do not replace the future API, gateway, and firmware tests.
 
 The GitHub Actions workflow `.github/workflows/test.yml` builds the image, performs a frozen installation, runs `make test`, and stops the test services. All application checks run in containers. Hosted-runner checkout ownership is temporarily assigned to the container UID 1000 before installation and restored in an always-run cleanup step. This lets pnpm create workspace links without running application checks as root. Remote Actions execution must be verified separately from local test results. The [official checkout action](https://github.com/actions/checkout) is pinned to a commit SHA with credential persistence disabled.
 
@@ -98,10 +98,10 @@ make stop
 1. Package the tested LED MQTT gateway, simulator, and runtime into runnable application processes; configure authenticated broker access.
 2. Extend the local API and basic catalog with commissioning/runtime supervision and the web client.
 3. Add explicit Unknown reconciliation, journal retention, and verified backups.
-4. Add the web interface with Vite HMR and container E2E tests, then both editors.
+4. Extend the working web workspace with both visual editors.
 5. Prepare the offline bundle and custom ESP32 firmware for the LED bench.
 
-M0 and M1 are not complete. Hardware tests, the offline bundle, a working web interface, and the remaining specification are future milestones.
+M0 and M1 are not complete. Hardware tests, the offline bundle, the editors, and the remaining specification are future milestones.
 
 ## Phase commits and language
 

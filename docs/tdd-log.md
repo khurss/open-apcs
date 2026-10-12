@@ -87,3 +87,11 @@ Initial Docker RED: **15 failed** across credential and API suites against expli
 Added migration drift/bootstrap concurrency, rejected-command idempotency, and an authenticated API → real PostgreSQL → real MQTT → virtual LED → Verified scenario. Final `make test`: **175 passed in 10 files**, TypeScript and language checks passed. Compose configurations validated. The API starts under `tsx watch`; touching its entry file produced a restart and a passing container health request without an image build.
 
 The development API uses host port 3100 because another existing application occupies port 3000. Its PostgreSQL volume is persistent and separate from temporary test storage. Broker/TLS deployment, runtime commissioning, web UI, offline delivery, and the rest of M0–M5 remain pending.
+
+## 2026-10-12: Responsive web workspace and browser TDD
+
+Observed RED: all **3 Chromium scenarios failed** against the initial page because the login fields were missing. Added the React workspace with authentication, projects, device registration, signal quality, cursor pagination, audit navigation, theme persistence, and responsive layouts.
+
+Final `make test`: **175 unit/integration tests and 3 browser tests passed**, along with TypeScript, the English-content guard, and a Vite production build. Browser tests use the real API and PostgreSQL in an internal Docker network, verify no external asset requests, and check desktop, 360 px phone, and 768 px tablet layouts. Desktop/light-theme/mobile screenshots were inspected. Browser authentication uses an isolated fixture account, not a development default password.
+
+The normal development workspace runs at http://localhost:5173. Both development services are healthy; editing the React entry point produced a Vite HMR update without rebuilding images. The pinned Playwright browser image is a separate one-time pull. `make test` now includes browser checks, so the existing CI command runs them as well. Physical outputs remain uncommissioned; neither editor nor the complete offline bundle is implemented yet.

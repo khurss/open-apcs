@@ -2,7 +2,7 @@
 
 An open automation platform with a web interface, an HMI editor, and an executable logic editor. Designed to run locally on Linux in Docker without mandatory internet access. The first target device is ESP-WROOM-32.
 
-Part of M0 is implemented: the signal model, command lifecycle, virtual LED with a watchdog, a PostgreSQL command journal with a transactional outbox, and a tested MQTT LED gateway/simulator with a headless runtime library. A local authenticated API and basic project/device catalog are also available. TypeScript checks and unit/integration tests run in Docker; watch mode picks up changes without rebuilding images. The web interface and connection to a physical ESP32 are still pending. See [API startup](docs/api.md). See [development and hot reload](docs/development.md), the [TDD log](docs/tdd-log.md), the [command storage contract](docs/command-journal.md), and the [LED network contract](docs/led-network.md).
+Part of M0 is implemented: the signal model, command lifecycle, virtual LED with a watchdog, a PostgreSQL command journal with a transactional outbox, and a tested MQTT LED gateway/simulator with a headless runtime library. A local authenticated API and basic project/device catalog are also available. TypeScript checks and unit/integration/browser tests and the frontend build run in Docker; watch mode picks up changes without rebuilding images. The responsive English web workspace provides local login, projects, devices, signal quality, and audit views with light/dark themes. Physical ESP32 commissioning and the editors remain pending. See [API startup](docs/api.md). See [development and hot reload](docs/development.md), the [TDD log](docs/tdd-log.md), the [command storage contract](docs/command-journal.md), and the [LED network contract](docs/led-network.md).
 
 ```bash
 cd open-apcs # If your current directory is the parent APCS directory.
@@ -11,6 +11,8 @@ make install
 make test
 make watch
 ```
+
+Run `make install-dev && make dev` to open the workspace at http://localhost:5173. Create the initial administrator using the local command in [API startup](docs/api.md); there is no default login. React uses Vite HMR and the API uses process watch.
 
 The specification is based on an analysis of the legacy supervisory control system and a 40-question requirements interview. The project name, Open APCS, was chosen by the customer.
 

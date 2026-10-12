@@ -22,6 +22,7 @@ watch-integration:
 
 test:
 	docker compose -f compose.test.yml run --rm all
+	$(MAKE) e2e
 
 unit:
 	docker compose -f compose.test.yml run --rm unit
@@ -47,7 +48,12 @@ install-dev:
 	docker compose run --rm deps
 
 dev:
-	docker compose up -d api
+	docker compose up -d api web
 
 dev-stop:
 	docker compose down --remove-orphans
+
+.PHONY: e2e
+e2e:
+	docker compose -f compose.test.yml up -d --force-recreate e2e-api
+	docker compose -f compose.test.yml run --rm e2e

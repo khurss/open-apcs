@@ -1,3 +1,4 @@
+import { ScriptClient } from '../../packages/script-runtime/src/client.js';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { MqttLedSimulator } from '../../packages/gateway/src/mqtt-led.js';
@@ -20,8 +21,8 @@ const physicalConfigPath = '/tmp/apcs-e2e/physical.json';
 await writeFile(physicalConfigPath, JSON.stringify({ url: 'mqtts://mqtt-tls:8883', username: 'e2e-gateway', password: 'fixture-e2e-gateway-password', ca, devices: [{ siteId: 'tls-e2e', deviceId: 'led', gpio: 18 }] }), { mode: 0o600 });
 const simulator = new MqttLedSimulator({ url: 'mqtts://mqtt-tls:8883', siteId: 'tls-e2e', deviceId: 'led', signalId: 'fixture', credentials: { ca, username: 'e2e-device', password: 'fixture-e2e-device-password' } }, new LedPeer(() => performance.now(), randomUUID()));
 await simulator.start();
-const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath });
-const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath, scriptUrl: process.env.APCS_SCRIPT_URL! });
+const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
 await mkdir(new URL('../../.cache/e2e/', import.meta.url), { recursive: true });
 await writeFile(new URL('../../.cache/e2e/schema.json', import.meta.url), JSON.stringify({ schema }), { mode: 0o600 });
 await app.listen({ host: '0.0.0.0', port: 3000 });

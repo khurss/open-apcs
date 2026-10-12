@@ -1,3 +1,4 @@
+import { ScriptClientError, type ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { diffDocuments } from '../../../packages/domain/src/document-diff.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
@@ -44,7 +45,7 @@ async function preparedSnapshot(client: PoolClient, id: string, revision: number
   validate(kind, saved.document, true);
   return saved;
 }
-export function registerEditors(app: FastifyInstance, pool: Pool) {
+export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: ScriptClient) {
   for (const kind of ['graph', 'screen'] as const) {
     const route = `${kind}s`;
     async function owned(client: PoolClient, id: string, actor: string, lock = false) {
@@ -111,6 +112,10 @@ export function registerEditors(app: FastifyInstance, pool: Pool) {
         if (!existing.rows[0]) throw missing(); const row = existing.rows[0]; conflict(row, expected);
         const document = validate(kind, row.document, true); await bindings(client, row.projectId, kind, document);
         if (kind === 'graph' && !(document as LogicGraph).nodes.length) throw invalid('An empty graph cannot be prepared');
+        if (kind === 'graph') for (const node of (document as LogicGraph).nodes.filter((node) => node.kind === 'script')) {
+          if (!scripts) throw new EditorError(503, 'SCRIPT_UNAVAILABLE', 'Script service unavailable');
+          await scripts.validate({ source: node.source!, language: node.language! });
+        }
         const checksum = createHash('sha256').update(canonicalJson({ name: row.name, document })).digest('hex');
         const inserted = await client.query(`INSERT INTO apcs_document_revisions (document_id, revision, name, document, checksum, actor_id) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, [row.id, row.revision, row.name, document, checksum, request.sessionUser!.id]);
         if (inserted.rowCount) await audit(client, request.sessionUser!.id, `${kind}.prepared`, row.id, { revision: row.revision, checksum });
@@ -129,13 +134,19 @@ export function registerEditors(app: FastifyInstance, pool: Pool) {
   }, async (request) => {
     const found = await pool.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = 'graph'`, [request.params.id]); if (!found.rows[0]) throw missing();
     const graph = validate('graph', found.rows[0].document, true) as LogicGraph;
-    const engine = new LogicEngine(graph);
+    const scripted = graph.nodes.some((node) => node.kind === 'script');
+    if (scripted && !scripts) throw new EditorError(503, 'SCRIPT_UNAVAILABLE', 'Script service unavailable');
+    if (scripted && request.body.steps.length > 10) throw invalid('Script simulations support at most 10 steps');
+    const engine = new LogicEngine(graph); const deadline = performance.now() + 3000;
     try {
-      return { revision: found.rows[0].revision, environment: 'Simulation', steps: request.body.steps.map((step) => {
+      const steps = [];
+      for (const step of request.body.steps) {
+        if (scripted && performance.now() >= deadline) throw invalid('Script simulation exceeded its time budget');
         const inputs: Record<string, LogicValue> = Object.create(null);
         for (const [id, value] of Object.entries(step.inputs)) inputs[id] = { value, quality: value === null ? 'Bad' : 'Good', reason: value === null ? 'Simulated disconnection' : null };
-        return { atMs: step.atMs, ...engine.tick(step.atMs, inputs) };
-      }) };
-    } catch (error) { throw invalid(error instanceof Error ? error.message : 'Simulation failed'); }
+        steps.push({ atMs: step.atMs, ...(scripted ? await engine.tickAsync(step.atMs, inputs, scripts!.evaluate.bind(scripts)) : engine.tick(step.atMs, inputs)) });
+      }
+      return { revision: found.rows[0].revision, environment: 'Simulation', steps };
+    } catch (error) { if (error instanceof ScriptClientError) throw error; throw invalid(error instanceof Error ? error.message : 'Simulation failed'); }
   });
 }

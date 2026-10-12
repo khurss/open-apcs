@@ -115,3 +115,5 @@ Before each completed phase is committed, update the specifications and status i
 ### TLS test fixtures
 
 `make test`, `make integration`, `make watch-integration` and `make e2e` prepare private throwaway certificates and fixed test-only accounts in `.cache/mqtt-tls-fixture`. The TLS broker has no published port and belongs to the internal test network. For a direct Compose integration command on a fresh checkout, run `make firmware-test mqtt-tls-fixture` first. Do not run manual integration suites against the same fixture while the integration watcher is executing them; the fixed protocol test address intentionally has a single owner. Source hot reload and the unit watcher remain available.
+
+The JS/TS runner uses the same Node tool image and its own internal network with read-only source/dependency mounts. After pulling a lockfile change, run `make install` and `make install-dev`; then `make dev` starts the runner dependency. Changes within its source package hot reload without an image rebuild. Reloading the interpreter during active control can fault a script graph, which requires explicit reactivation after review.

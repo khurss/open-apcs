@@ -32,3 +32,5 @@ The specification is based on an analysis of the legacy supervisory control syst
 All repository documentation, source comments, UI text, and commit messages must be in English. User-defined data retains Unicode support. `make test` checks repository text for Cyrillic before running TypeScript and tests. Confirmed requirements, architectural recommendations, and open parameters are distinguished in the specification; an unspecified parameter is not an approved decision.
 
 Publication target: [khurss/open-apcs](https://github.com/khurss/open-apcs). Completed implementation phases must be documented, checked in Docker, committed, and pushed. See [contributor instructions](AGENTS.md). The open-source license remains an explicit open decision; no license has been selected yet.
+
+JS/TS boolean blocks are edited in Logic and run by a separate bounded Docker service. See [script execution and current limits](docs/script-runtime.md).

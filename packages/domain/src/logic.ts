@@ -1,10 +1,12 @@
-export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output';
-export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean; delayMs?: number; }
+export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script';
+export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
+export interface ScriptEvaluation { source: string; language: 'javascript' | 'typescript'; inputs: { a: boolean; b: boolean }; nowMs: number; }
+export type ScriptEvaluator = (request: ScriptEvaluation) => Promise<boolean>;
 export interface LogicEdge { id: string; source: string; target: string; port: string; }
 export interface LogicGraph { schemaVersion: 1; nodes: LogicNode[]; edges: LogicEdge[]; }
 export interface LogicValue { value: boolean | null; quality: 'Good' | 'Bad'; reason: string | null; }
 export interface LogicResult { nodes: Record<string, LogicValue>; outputs: Record<string, LogicValue>; }
-export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'] };
+export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'] };
 const kinds = Object.keys(ports);
 const timers = new Set<BlockKind>(['ton', 'tof', 'pulse', 'debounce']);
 export function record(value: unknown, allowed: string[], context: string): Record<string, unknown> {
@@ -19,7 +21,7 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
   if (graph.schemaVersion !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 256 || graph.edges.length > 1024) throw new Error('Invalid graph version or size');
   const nodes = new Map<string, LogicNode>(); const writers = new Set<string>();
   for (const value of graph.nodes) {
-    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs'], 'node');
+    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language'], 'node');
     if (!identifier(n.id) || nodes.has(n.id) || typeof n.kind !== 'string' || !kinds.includes(n.kind) || !title(n.label) || !coordinate(n.x) || !coordinate(n.y)) throw new Error('Invalid or duplicate node');
     const kind = n.kind as BlockKind;
     if (kind === 'input' || kind === 'output') { if (!identifier(n.signalId)) throw new Error('Signal binding required'); }
@@ -28,9 +30,13 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
     else if ('value' in n) throw new Error('Unexpected constant value');
     if (timers.has(kind)) { if (!Number.isSafeInteger(n.delayMs) || (n.delayMs as number) < 0 || (n.delayMs as number) > 86400000) throw new Error('Invalid timer delay'); }
     else if ('delayMs' in n) throw new Error('Unexpected timer delay');
+    if (kind === 'script') {
+      if ((n.language !== 'javascript' && n.language !== 'typescript') || typeof n.source !== 'string' || !n.source.trim() || n.source.includes('\0') || new TextEncoder().encode(n.source).length > 16384) throw new Error('Invalid script source or language');
+    } else if ('source' in n || 'language' in n) throw new Error('Unexpected script fields');
     if (kind === 'output') { if (writers.has(n.signalId as string)) throw new Error('Multiple writers for an output'); writers.add(n.signalId as string); }
     nodes.set(n.id, n as unknown as LogicNode);
   }
+  if ([...nodes.values()].filter((n) => n.kind === 'script').length > 2) throw new Error('At most two script blocks are supported per graph');
   const edges = new Set<string>(); const connected = new Map<string, Set<string>>();
   for (const value of graph.edges) {
     const e = record(value, ['id', 'source', 'target', 'port'], 'edge');
@@ -67,12 +73,34 @@ export class LogicEngine {
   private readonly wires = new Map<string, Map<string, string>>();
   private readonly states = new Map<string, State>();
   private lastTime = 0;
+  private evaluating = false;
   constructor(graph: LogicGraph) {
     const safe = validateGraph(graph); this.ordered = order(safe);
     for (const n of this.ordered) { this.wires.set(n.id, new Map()); this.states.set(n.id, fresh()); }
     for (const e of safe.edges) this.wires.get(e.target)!.set(e.port, e.source);
   }
   tick(now: number, inputs: Record<string, LogicValue> = {}): LogicResult {
+    if (this.evaluating) throw new Error('An evaluation is already in progress');
+    if (this.ordered.some((n) => n.kind === 'script')) throw new Error('Script blocks require asynchronous evaluation');
+    const execution = this.evaluate(now, inputs);
+    try { return execution.next().value as LogicResult; } finally { execution.return({ nodes: {}, outputs: {} }); }
+  }
+  async tickAsync(now: number, inputs: Record<string, LogicValue>, execute: ScriptEvaluator): Promise<LogicResult> {
+    const execution = this.evaluate(now, inputs);
+    try {
+      let step = execution.next();
+      while (!step.done) {
+        const value = await execute(step.value);
+        if (typeof value !== 'boolean') throw new Error('Script result must be boolean');
+        step = execution.next(value);
+      }
+      return step.value;
+    } finally { execution.return({ nodes: {}, outputs: {} }); }
+  }
+  private *evaluate(now: number, inputs: Record<string, LogicValue>): Generator<ScriptEvaluation, LogicResult, boolean> {
+    if (this.evaluating) throw new Error('An evaluation is already in progress');
+    this.evaluating = true;
+    try {
     if (!Number.isFinite(now) || now < this.lastTime) throw new Error('Monotonic time must be finite and nondecreasing');
     this.lastTime = now;
     const nodes: Record<string, LogicValue> = Object.create(null); const outputs: Record<string, LogicValue> = Object.create(null);
@@ -92,6 +120,7 @@ export class LogicEngine {
         else if (n.kind === 'and') result = good(read('a') && read('b'));
         else if (n.kind === 'or') result = good(read('a') || read('b'));
         else if (n.kind === 'xor') result = good(read('a') !== read('b'));
+        else if (n.kind === 'script') result = good(yield { source: n.source!, language: n.language!, inputs: { a: read('a'), b: read('b') }, nowMs: now });
         else if (n.kind === 'output') result = good(read('in'));
         else if (n.kind === 'interlock' || n.kind === 'mode') result = !read('permit') ? bad('Interlock is not permitted') : good(n.kind === 'interlock' ? read('in') : read(read('isAuto') ? 'auto' : 'manual'));
         else if (n.kind === 'latch') { state.out = !read('reset') && (read('set') || state.out); result = good(state.out); }
@@ -108,5 +137,6 @@ export class LogicEngine {
       if (n.kind === 'output') outputs[n.signalId!] = { ...result };
     }
     return { nodes, outputs };
+    } finally { this.evaluating = false; }
   }
 }

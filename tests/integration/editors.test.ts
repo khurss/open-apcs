@@ -1,3 +1,4 @@
+import { ScriptClient } from '../../packages/script-runtime/src/client.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Pool } from 'pg';
@@ -182,4 +183,35 @@ describe('versioned editor documents with real PostgreSQL', () => {
     expect((await save(id, document, 2, 'screens')).statusCode).toBe(500);
     expect((await app.inject({ url: `/api/v1/screens/${id}`, headers })).json().revision).toBe(2);
   });
+});
+
+const scriptGraph = (source = 'const enabled: boolean = input.a; return enabled && !input.b;') => ({ schemaVersion: 1, nodes: [
+  { id: 'a', kind: 'constant', label: 'A', x: 0, y: 0, value: true },
+  { id: 'b', kind: 'constant', label: 'B', x: 0, y: 100, value: false },
+  { id: 'script', kind: 'script', label: 'Script', x: 150, y: 0, language: 'typescript', source },
+  { id: 'output', kind: 'output', label: 'LED', x: 300, y: 0, signalId },
+], edges: [{ id: 'a-s', source: 'a', target: 'script', port: 'a' }, { id: 'b-s', source: 'b', target: 'script', port: 'b' }, { id: 's-o', source: 'script', target: 'output', port: 'in' }] });
+it('validates, simulates and runs an isolated TypeScript block through private runtime IPC', async () => {
+  await app.close();
+  const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, scriptUrl: process.env.APCS_SCRIPT_URL! });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
+  const id = (await create()).json().id; expect((await save(id, scriptGraph())).statusCode).toBe(200);
+  const prepare = () => app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+  expect((await prepare()).statusCode).toBe(201);
+  const simulated = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [{ atMs: 0, inputs: {} }, { atMs: 1000, inputs: {} }] } });
+  expect(simulated.statusCode).toBe(200); expect(simulated.json().steps[1].outputs[signalId]).toMatchObject({ value: true, quality: 'Good' });
+  const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device}/runtime`, headers, payload: { action: 'start', reason: 'Script fixture' } })).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed script' } })).statusCode).toBe(200);
+  await expect.poll(async () => (await runtime.readSignal(signalId)).value, { timeout: 4000 }).toBe(true);
+  await runtime.stopGraph(id);
+  await save(id, scriptGraph('return (;'), 2);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"3"' } })).statusCode).toBe(422);
+  expect((await pool.query('SELECT revision FROM apcs_document_revisions WHERE document_id=$1', [id])).rows.map((r) => r.revision)).toEqual([2]);
+});
+it('keeps script drafts editable but refuses preparation and simulation without an isolated service', async () => {
+  const id = (await create()).json().id; expect((await save(id, scriptGraph())).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(503);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [{ atMs: 0, inputs: {} }] } })).statusCode).toBe(503);
+  expect((await pool.query('SELECT * FROM apcs_document_revisions WHERE document_id=$1', [id])).rowCount).toBe(0);
 });

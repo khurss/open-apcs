@@ -1,0 +1,15 @@
+{
+  "name": "@open-apcs/script-runtime",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --include 'src/*.ts' --exclude '**/*.test.ts' src/server.ts",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "quickjs-emscripten": "0.32.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

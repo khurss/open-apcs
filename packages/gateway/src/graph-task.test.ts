@@ -34,3 +34,32 @@ describe('headless graph task', () => {
   it('bounds a stalled cycle and ignores a late input result after revocation', async () => { const { task, io } = bench(); let release!: (v: Record<string, SignalSnapshot>) => void; vi.mocked(io.read).mockImplementationOnce(() => new Promise((r) => { release = r; })); const start = task.start(); await vi.advanceTimersByTimeAsync(2001); const state = task.status.state; release({ switch: sample(true), led: sample(false) }); await start; expect(state).toBe('faulted'); expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1); });
   it('faults on a journal error and keeps the original reason even when revocation fails', async () => { const { task, io } = bench(); vi.mocked(io.request).mockRejectedValueOnce(new Error('Journal offline')); vi.mocked(io.revoke).mockRejectedValueOnce(new Error('Cleanup offline')); await task.start(); expect(task.status).toMatchObject({ state: 'faulted', error: 'Journal offline; revocation failed' }); });
 });
+
+describe('isolated graph scripts', () => {
+  const scripted: LogicGraph = { schemaVersion: 1, nodes: [
+    { id: 'a', kind: 'constant', label: 'A', x: 0, y: 0, value: true },
+    { id: 'b', kind: 'constant', label: 'B', x: 0, y: 100, value: false },
+    { id: 'script', kind: 'script', label: 'Script', x: 100, y: 0, source: 'return input.a;', language: 'typescript' },
+    { id: 'out', kind: 'output', label: 'Output', x: 200, y: 0, signalId: 'led' },
+  ], edges: [{ id: 'a-s', source: 'a', target: 'script', port: 'a' }, { id: 'b-s', source: 'b', target: 'script', port: 'b' }, { id: 's-o', source: 'script', target: 'out', port: 'in' }] };
+  it('requires an evaluator before starting and uses a 1 Hz minimum script period', async () => {
+    const { io } = bench(); expect(() => new GraphTask(scripted, io, () => 0)).toThrow(/evaluator/i);
+    io.evaluate = vi.fn(async () => true); const task = new GraphTask(scripted, io, () => Date.now());
+    await task.start(); expect(io.request).toHaveBeenCalledWith('led', true);
+    await vi.advanceTimersByTimeAsync(999); expect(io.evaluate).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); expect(io.evaluate).toHaveBeenCalledTimes(2); await task.stop();
+  });
+  it('revokes and sends no command when a script fails', async () => {
+    const { io } = bench(); io.evaluate = async () => { throw new Error('Script execution rejected'); };
+    const task = new GraphTask(scripted, io, () => 0); await task.start();
+    expect(task.status.state).toBe('faulted'); expect(io.revoke).toHaveBeenCalledTimes(1); expect(io.request).not.toHaveBeenCalled();
+  });
+  it.each(['stop', 'deadline'])('fences a late script result after %s', async (action) => {
+    const { io } = bench(); let release!: (v: boolean) => void;
+    io.evaluate = () => new Promise((resolve) => { release = resolve; });
+    const task = new GraphTask(scripted, io, () => 0); const start = task.start(); await vi.advanceTimersByTimeAsync(0);
+    const stop = action === 'stop' ? task.stop() : vi.advanceTimersByTimeAsync(2001);
+    await vi.advanceTimersByTimeAsync(0); release(true); await Promise.all([start, stop]);
+    expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1);
+  });
+});

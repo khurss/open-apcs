@@ -1,7 +1,8 @@
-import { LogicEngine, validateGraph, type LogicGraph, type LogicResult } from '../../domain/src/logic.js';
+import { LogicEngine, validateGraph, type LogicGraph, type LogicResult, type ScriptEvaluator } from '../../domain/src/logic.js';
 import type { SignalSnapshot } from '../../domain/src/signals.js';
 import type { CommandSnapshot } from '../../domain/src/commands.js';
 export interface GraphIo {
+  evaluate?: ScriptEvaluator;
   read(ids: string[]): Promise<Record<string, SignalSnapshot>>;
   request(signalId: string, value: boolean): Promise<CommandSnapshot>;
   command(id: string): Promise<CommandSnapshot>;
@@ -10,6 +11,7 @@ export interface GraphIo {
 export interface GraphTaskStatus { state: 'stopped' | 'running' | 'paused' | 'faulted'; cycles: number; error: string | null; pending: string[]; last: LogicResult | null; }
 export class GraphTask {
   private readonly engine: LogicEngine;
+  private readonly periodMs: number;
   private readonly ids: string[];
   private readonly boots = new Map<string, string>();
   private readonly pending = new Map<string, string>();
@@ -24,9 +26,12 @@ export class GraphTask {
   private revoked = false;
   private starting = false;
   private pausing = false;
-  constructor(graph: LogicGraph, private readonly io: GraphIo, private readonly now: () => number, private readonly periodMs = 100) {
+  constructor(graph: LogicGraph, private readonly io: GraphIo, private readonly now: () => number, periodMs = 100) {
     if (!Number.isSafeInteger(periodMs) || periodMs < 100 || periodMs > 60000) throw new Error('Graph period must be an integer from 100 to 60000 ms');
     const safe = validateGraph(graph); this.engine = new LogicEngine(safe);
+    const scripted = safe.nodes.some((node) => node.kind === 'script');
+    if (scripted && !io.evaluate) throw new Error('Script evaluator is unavailable');
+    this.periodMs = scripted ? Math.max(1000, periodMs) : periodMs;
     this.ids = [...new Set(safe.nodes.flatMap((node) => node.signalId ? [node.signalId] : []))].sort();
   }
   async start(): Promise<void> {
@@ -86,7 +91,9 @@ export class GraphTask {
         if (command.state === 'Verified') this.pending.delete(id);
         else if (!['Accepted', 'Dispatched', 'DeviceAccepted'].includes(command.state)) throw new Error(`Command ${commandId} ended as ${command.state}`);
       }
-      this.last = this.engine.tick(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean, quality: 'Good' as const, reason: null }]))); this.cycles++;
+      this.last = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }));
+      if (!this.active()) return;
+      this.cycles++;
       for (const [id, value] of Object.entries(this.last.outputs)) {
         if (!this.active()) return;
         if (value.quality !== 'Good' || value.value === null) throw new Error(value.reason ?? `Output ${id} is inhibited`);

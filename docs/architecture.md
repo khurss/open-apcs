@@ -285,3 +285,7 @@ docs                     Specifications and guides
 ```
 
 This is a structural plan, not a list of completed applications. PostgreSQL migrations, OpenAPI, and detailed JSON Schemas are implemented through TDD in their respective phases; this specification defines their semantic contract. The initial command-journal migration is documented separately in the [journal contract](command-journal.md).
+
+## Initial isolated script service
+
+JS/TS boolean graph blocks execute in a separate Docker service with QuickJS WebAssembly, fresh guest contexts, an externally bounded worker and a bounded queue. API and private runtime processes use a typed HTTP client; they never evaluate user code. See [script architecture, limits and failure semantics](script-runtime.md). This initial service uses the existing pinned Node image and internal sandbox network; it is not the final scale profile.

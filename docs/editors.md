@@ -6,11 +6,11 @@ This increment provides basic graph and HMI editing, durable drafts, immutable p
 
 Register a project and a virtual LED device. Open **Logic**, create a graph, and start with **LED template**, or add blocks individually. Move blocks on the canvas, connect their handles, and configure the selected block in Properties. A keyboard/touch connection form is also available. Delete connections there, or select an edge on the canvas and use Delete. Delete a selected block through Properties; its incident edges are removed.
 
-Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments. Input blocks accept OFF, ON, or simulated disconnection. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
+Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments, or six 1000 ms samples for script graphs. Input blocks accept OFF, ON, or simulated disconnection. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
 
 Open **Screens** to arrange labels, indicators, buttons, and groups on an SVG scene. Configure signal bindings, coordinates, dimensions, and parent groups. Drag a group to move its descendants; coordinates are absolute scene coordinates. Arrow keys move a selected item by 10 px, or 1 px with Shift. Removing a group ungroups direct children. The design canvas never dispatches commands and its indicators are placeholders. Prepare a screen revision and choose Operate revision to see current signal values and open command controls.
 
-Both editors provide bounded undo/redo and a JSON document editor. JSON is a portable data representation; it is not JavaScript/TypeScript script execution or Structured Text support. Saved scenes and graphs survive API/browser restarts. Navigation prompts before discarding modified document state. A prepared revision does not activate equipment. Complex editing is oriented toward desktop/tablet; the phone interface provides controls and an internally scrollable HMI canvas.
+Script blocks additionally provide an English JS/TS source editor; see [isolated script contracts](script-runtime.md). Both editors provide bounded undo/redo and a JSON document editor. JSON is a portable data representation; it is not JavaScript/TypeScript script execution or Structured Text support. Saved scenes and graphs survive API/browser restarts. Navigation prompts before discarding modified document state. A prepared revision does not activate equipment. Complex editing is oriented toward desktop/tablet; the phone interface provides controls and an internally scrollable HMI canvas.
 
 ## Boolean graph contract
 
@@ -18,7 +18,7 @@ Schema version 1 contains `nodes` and `edges`. Node IDs and signal bindings are 
 
 Draft validation permits unconnected input ports so incomplete work can be saved. Execution and revision preparation require all declared ports to be connected. All modes reject duplicate IDs, unknown fields/kinds/versions, cycles, invalid coordinates, and multiple output blocks bound to one signal. Cyclic feedback is not supported; latch state is internal to the block. These limits are an initial engineering profile, not the final scale target.
 
-The engine copies its input graph, uses a deterministic topological order, and evaluates one synchronous snapshot per tick. Equal graphs, inputs, time sequences, and initial state produce equal results. Time must be finite, nonnegative, and nondecreasing. The engine uses no wall clock or I/O and does not perform catch-up ticks. A new engine resets all state; retained-state migration remains future work.
+The engine copies its input graph, uses a deterministic topological order, and evaluates one snapshot per tick, awaiting isolated script results when present. Equal graphs, inputs, time sequences, and initial state produce equal results. Time must be finite, nonnegative, and nondecreasing. The engine uses no wall clock or I/O and does not perform catch-up ticks. A new engine resets all state; retained-state migration remains future work.
 
 | Block | Ports and behavior |
 |---|---|
@@ -33,6 +33,7 @@ The engine copies its input graph, uses a deterministic topological order, and e
 | Latch | `set`, `reset`; reset dominates |
 | Interlock | `in`, `permit`; false permit produces an inhibited result |
 | Auto / Manual | `auto`, `manual`, `isAuto`, `permit`; Manual cannot bypass permit |
+| JS / TS script | `a`, `b`; pure boolean function with explicit monotonic time; at most two per graph |
 | Output | `in`; maps the result to a bound signal, without sending a command |
 
 Missing, nonboolean, or non-Good input samples propagate `Bad`, `value: null`, and a reason; they never become a fabricated false reading. Stateful blocks reset their volatile state on invalid inputs. False permit produces `Bad` with `Interlock is not permitted`. This inhibits an output intent; it does not assert that an actuator moved to its safe state. Device watchdogs and independent protections remain necessary. The LED-specific physical policy is separate from the pure engine.

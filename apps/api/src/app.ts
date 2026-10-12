@@ -1,3 +1,4 @@
+import type { ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { registerPhysicalRuntime } from './physical-api.js';
 import { registerAlarms } from './alarm-api.js';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -19,6 +20,7 @@ import type { RuntimeControl } from './runtime-service.js';
 export interface ApiOptions {
   pool: Pool; origin: string; secureCookies: boolean;
   runtime?: RuntimeControl;
+  scripts?: ScriptClient;
   resolveContext?: (request: CommandRequest) => CommandContext | Promise<CommandContext>;
   readSignal?: (id: string) => SignalSnapshot | Promise<SignalSnapshot>;
 }
@@ -213,7 +215,7 @@ export async function createApi(options: ApiOptions) {
   registerCommandRecovery(app, pool, journal, options.runtime);
   registerHistory(app, pool, options.runtime);
   registerAlarms(app, pool, options.runtime);
-  registerEditors(app, pool);
+  registerEditors(app, pool, options.scripts);
   registerGraphRuntime(app, pool, options.runtime);
   registerPhysicalRuntime(app, pool, options.runtime);
   await app.ready(); return app;

@@ -1,3 +1,4 @@
+import { ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import type { AlarmAction } from './alarm-service.js';
 import { loadPhysicalConfig } from './physical-file.js';
 import { Pool } from 'pg';
@@ -5,7 +6,7 @@ import { SimulationRuntime } from './runtime-service.js';
 import type { CommandRequest } from '../../../packages/domain/src/commands.js';
 if (!process.send || !process.env.APCS_POSTGRES_URL || !process.env.APCS_MQTT_URL) throw new Error('Private runtime worker configuration required');
 const pool = new Pool({ connectionString: process.env.APCS_POSTGRES_URL, options: process.env.APCS_DB_OPTIONS ?? '', max: 10, connectionTimeoutMillis: 2000, query_timeout: 2000 });
-const runtime = new SimulationRuntime(pool, process.env.APCS_MQTT_URL, await loadPhysicalConfig(process.env.APCS_PHYSICAL_CONFIG));
+const runtime = new SimulationRuntime(pool, process.env.APCS_MQTT_URL, await loadPhysicalConfig(process.env.APCS_PHYSICAL_CONFIG), process.env.APCS_SCRIPT_URL ? new ScriptClient(process.env.APCS_SCRIPT_URL) : undefined);
 let stopping = false;
 let queue: Promise<void> = Promise.resolve(); let queued = 0;
 const stop = async () => { if (stopping) return; stopping = true; await runtime.close(); await pool.end(); };

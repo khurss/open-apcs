@@ -1,3 +1,4 @@
+import { ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { AlarmService, type AlarmAction, type AlarmServiceStatus } from './alarm-service.js';
 import { HistoryService, type HistoryStatus } from './history-service.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -50,7 +51,7 @@ export class SimulationRuntime implements RuntimeControl {
   private lockLost = false;
   private operations: Promise<void> = Promise.resolve();
   private readonly physicalConfig: PhysicalConfig | undefined;
-  constructor(private readonly pool: Pool, private readonly mqttUrl: string, physicalConfig?: PhysicalConfig) { this.physicalConfig = physicalConfig ? parsePhysicalConfig(physicalConfig) : undefined; this.alarms = new AlarmService(pool, (id) => this.registered.has(id) && !this.closed && !this.lockLost ? this.signals.get(id) : disconnected()); this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
+  constructor(private readonly pool: Pool, private readonly mqttUrl: string, physicalConfig?: PhysicalConfig, private readonly scripts?: ScriptClient) { this.physicalConfig = physicalConfig ? parsePhysicalConfig(physicalConfig) : undefined; this.alarms = new AlarmService(pool, (id) => this.registered.has(id) && !this.closed && !this.lockLost ? this.signals.get(id) : disconnected()); this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
   private serial<T>(work: () => Promise<T>): Promise<T> { const result = this.operations.then(work); this.operations = result.then(() => {}, () => {}); return result; }
   start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.startDevice(deviceId, actorId); }
   startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus> { return this.startDevice(deviceId, actorId, { gpio }); }
@@ -124,6 +125,10 @@ export class SimulationRuntime implements RuntimeControl {
     if (createHash('sha256').update(canonicalJson({ name: saved.name, document: saved.document })).digest('hex') !== saved.checksum) throw new Error('Prepared graph revision checksum mismatch');
     const graph = validateGraph(saved.document);
     if (!graph.nodes.length) throw new Error('Prepared graph revision is empty');
+    for (const node of graph.nodes.filter((node) => node.kind === 'script')) {
+      if (!this.scripts) throw new Error('Script evaluator is unavailable');
+      await this.scripts.validate({ source: node.source!, language: node.language! });
+    }
     const prior = this.graphs.get(id); const outputs: Entry[] = [];
     for (const node of graph.nodes) {
       if (!node.signalId) continue;
@@ -136,6 +141,7 @@ export class SimulationRuntime implements RuntimeControl {
     }
     const ownerId = `graph:${id}:${activationId}`;
     const task = new GraphTask(graph, {
+      ...(this.scripts ? { evaluate: this.scripts.evaluate.bind(this.scripts) } : {}),
       read: async (ids) => Object.fromEntries(await Promise.all(ids.map(async (signalId) => [signalId, await this.readSignal(signalId)]))),
       request: async (targetSignalId, value) => {
         const entry = outputs.find((item) => item.catalog.signalId === targetSignalId);

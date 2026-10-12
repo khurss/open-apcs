@@ -20,3 +20,7 @@
 .revision-list>div { align-items: center; flex-wrap: wrap; gap: 12px; }
 
 .revision-list>.field{margin:16px 0;max-width:520px}.revision-list .revision-row{align-items:center;gap:12px;flex-wrap:wrap}.revision-list>.table-scroll{display:block}.revision-list pre{max-width:300px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.revision-list td code{overflow-wrap:anywhere}.revision-list .revision-row button{font-size:11px}
+
+.script-editor { display: grid; gap: 12px; min-width: 0; }
+.script-editor textarea { width: 100%; min-height: 240px; resize: vertical; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.script-editor .muted { font-size: 12px; line-height: 1.5; }

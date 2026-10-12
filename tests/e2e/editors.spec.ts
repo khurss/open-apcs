@@ -51,6 +51,33 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await expect(page.getByLabel('Constant value', { exact: true })).toBeChecked();
   await page.screenshot({ path: 'test-results/revision-restore.png', fullPage: true });
 
+  await page.getByLabel('Block type', { exact: true }).selectOption('script');
+  await page.getByRole('button', { name: 'Add block', exact: true }).click();
+  await page.getByLabel('Script language', { exact: true }).selectOption('typescript');
+  await page.getByLabel('Script source', { exact: true }).fill('const enabled: boolean = input.a || input.b;\nreturn enabled;');
+  await page.getByText('Connections · keyboard and touch', { exact: true }).click();
+  await page.getByRole('button', { name: 'Remove connection power-led', exact: true }).click();
+  for (const port of ['a', 'b']) {
+    await page.getByLabel('Connection source', { exact: true }).selectOption({ label: 'Power' });
+    await page.getByLabel('Connection target', { exact: true }).selectOption({ label: 'JS / TS script' });
+    await page.getByLabel('Connection port', { exact: true }).selectOption(port);
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  }
+  await page.getByLabel('Connection source', { exact: true }).selectOption({ label: 'JS / TS script' });
+  await page.getByLabel('Connection target', { exact: true }).selectOption({ label: 'LED' });
+  await page.getByLabel('Connection port', { exact: true }).selectOption('in');
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByText('Saved revision 5', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('ON');
+  await page.getByRole('button', { name: 'Prepare revision', exact: true }).click();
+  await expect(page.getByText('Revision 5 prepared', { exact: true })).toBeVisible();
+  await page.getByLabel('Activation reason', { exact: true }).fill('Reviewed isolated TypeScript behavior');
+  await page.getByRole('button', { name: 'Activate revision 5', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r5');
+  await page.screenshot({ path: 'test-results/script-editor.png', fullPage: true });
+
   await page.getByLabel('Activation reason', { exact: true }).fill('End browser graph test');
   await page.getByRole('button', { name: 'Stop graph', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('stopped');

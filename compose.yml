@@ -14,6 +14,30 @@ x-node: &node
     - pnpm_store:/pnpm/store
 
 services:
+  script-runner:
+    image: ${DEV_IMAGE:-open-apcs-dev:node24-pnpm10}
+    init: true
+    user: "1000:1000"
+    working_dir: /workspace/packages/script-runtime
+    command: [pnpm, dev]
+    environment: { HOME: /tmp, NODE_ENV: production }
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=67108864"]
+    volumes:
+      - ./packages/script-runtime:/workspace/packages/script-runtime:ro
+      - ./package.json:/workspace/package.json:ro
+      - node_modules:/workspace/node_modules:ro
+    networks: [sandbox]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
   # Explicit initialization only; never installs dependencies on a watch restart.
   deps:
     <<: *node
@@ -31,10 +55,13 @@ services:
       APCS_POSTGRES_URL: postgres://apcs_dev:apcs_dev@postgres:5432/apcs_dev
       APCS_ORIGIN: http://localhost:5173
       APCS_MQTT_URL: mqtt://simulation-mqtt:1883
+      APCS_SCRIPT_URL: http://script-runner:4000
       API_PORT: 3000
     ports: ["127.0.0.1:${API_PORT:-3100}:3000"]
-    networks: [development, frontend]
+    networks: [development, frontend, sandbox]
     depends_on:
+      script-runner:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       simulation-mqtt:
@@ -117,6 +144,8 @@ volumes:
   postgres_data:
 
 networks:
+  sandbox:
+    internal: true
   frontend: {}
   development:
     internal: true

@@ -31,6 +31,26 @@ async function prepared(value: boolean, id = randomUUID(), revision = 1) {
   return id;
 }
 describe('catalog-driven simulation runtime', () => {
+  it('archives signal edges and disconnection without browser reads', async () => {
+    await runtime.start(deviceId, actorId);
+    const input = request(); await journal.request(input, await runtime.context(input));
+    await waitFor(async () => (await journal.get(input.id)).state === 'Verified');
+    await waitFor(async () => !!(await pool.query("SELECT 1 FROM apcs_signal_history WHERE signal_id=$1 AND snapshot->>'value'='true'", [signalId])).rowCount);
+    await runtime.stop(deviceId);
+    await waitFor(async () => !!(await pool.query("SELECT 1 FROM apcs_signal_history WHERE signal_id=$1 AND snapshot->>'quality'='Disconnected' AND snapshot->>'value'='true'", [signalId])).rowCount);
+    expect((await runtime.historyStatus()).written).toBeGreaterThan(0);
+  });
+  it('keeps control running when history storage fails and retries its bounded buffer after recovery', async () => {
+    await pool.query("CREATE FUNCTION deny_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Fixture archive offline'; END $$");
+    await pool.query('CREATE TRIGGER deny_history BEFORE INSERT ON apcs_signal_history FOR EACH ROW EXECUTE FUNCTION deny_history()');
+    await runtime.start(deviceId, actorId); const input = request(); await journal.request(input, await runtime.context(input));
+    await waitFor(async () => (await journal.get(input.id)).state === 'Verified');
+    await waitFor(async () => (await runtime.historyStatus()).failures > 0);
+    expect((await runtime.status(deviceId)).state).toBe('running');
+    await pool.query('DROP TRIGGER deny_history ON apcs_signal_history');
+    await waitFor(async () => { const status = await runtime.historyStatus(); return status.written > 0 && status.queued === 0; });
+  });
+
   it('executes a prepared graph headlessly and prevents manual control from bypassing graph ownership', async () => {
     const id = await prepared(true); await runtime.start(deviceId, actorId);
     expect(await runtime.activateGraph(id, 1, actorId)).toMatchObject({ state: 'running', revision: 1 });

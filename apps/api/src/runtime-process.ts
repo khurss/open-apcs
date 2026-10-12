@@ -1,3 +1,4 @@
+import type { HistoryStatus } from './history-service.js';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
@@ -13,6 +14,7 @@ export class RuntimeProcess implements RuntimeControl {
   private closed = false;
   constructor(private readonly options: RuntimeProcessOptions) {}
   get pid(): number | undefined { return this.child?.pid; }
+  historyStatus(): Promise<HistoryStatus> { return this.call('historyStatus', []); }
   activateGraph(graphId: string, revision: number, actorId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('activateGraph', [graphId, revision, actorId, activationId ?? randomUUID()]); }
   stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('stopGraph', [graphId, activationId]); }
   graphStatus(graphId: string): Promise<GraphRuntimeStatus> { return this.call('graphStatus', [graphId]); }

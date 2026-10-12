@@ -32,12 +32,15 @@ export interface SignalSnapshot {
   sequence: number | null;
 }
 
+export interface SignalObservation { signalId: string; snapshot: SignalSnapshot; observedAt: string; }
+
 export type IngestResult = 'accepted' | 'duplicate' | 'out-of-order' | 'stale-session';
 
 interface SignalState {
   definition: SignalDefinition;
   snapshot: SignalSnapshot;
   receivedAt: number | null;
+  publishedQuality: SignalQuality;
 }
 
 function validateValue(type: SignalDefinition['dataType'], value: SignalValue): void {
@@ -62,6 +65,13 @@ export class SignalStore {
   private readonly sessions = new Map<string, string>();
   private readonly devices = new Map<string, Set<string>>();
 
+  private readonly observers = new Set<(event: SignalObservation) => void>();
+  private failures = 0;
+  get observerFailures(): number { return this.failures; }
+  /** Observers must enqueue synchronously; asynchronous I/O belongs to their worker. */
+  subscribe(observer: (event: SignalObservation) => void): () => void {
+    this.observers.add(observer); return () => { this.observers.delete(observer); };
+  }
   constructor(private readonly clock: Clock) {}
 
   register(definition: SignalDefinition): void {
@@ -77,13 +87,14 @@ export class SignalStore {
       throw new Error('freshnessMs must be positive and finite');
     }
     this.signals.set(definition.id, {
-      definition: { ...definition }, receivedAt: null,
+      definition: { ...definition }, receivedAt: null, publishedQuality: 'Disconnected',
       snapshot: { value: null, quality: 'Disconnected', sourceTime: null,
         receivedTime: null, bootId: null, sequence: null },
     });
     const ids = this.devices.get(definition.deviceId) ?? new Set<string>();
     ids.add(definition.id);
     this.devices.set(definition.deviceId, ids);
+    this.observe(definition.id, this.state(definition.id).snapshot);
   }
 
   beginSession(deviceId: string, bootId: string): void {
@@ -93,6 +104,7 @@ export class SignalStore {
     this.sessions.set(deviceId, bootId);
     for (const id of this.devices.get(deviceId) ?? []) {
       this.state(id).snapshot.quality = 'Disconnected';
+      this.get(id);
     }
   }
 
@@ -100,6 +112,7 @@ export class SignalStore {
     this.sessions.delete(deviceId);
     for (const id of this.devices.get(deviceId) ?? []) {
       this.state(id).snapshot.quality = 'Disconnected';
+      this.get(id);
     }
   }
 
@@ -120,6 +133,7 @@ export class SignalStore {
     state.snapshot = { value: sample.value, quality: sample.quality, sourceTime: sample.sourceTime,
       receivedTime, bootId: sample.bootId, sequence: sample.sequence };
     state.receivedAt = this.clock.monotonicNow();
+    this.observe(sample.signalId, state.snapshot);
     return 'accepted';
   }
 
@@ -130,7 +144,17 @@ export class SignalStore {
         this.clock.monotonicNow() - state.receivedAt >= state.definition.freshnessMs) {
       snapshot.quality = 'Stale';
     }
+    if (snapshot.quality !== state.publishedQuality) this.observe(signalId, snapshot);
     return snapshot;
+  }
+
+  private observe(signalId: string, snapshot: SignalSnapshot) {
+    this.state(signalId).publishedQuality = snapshot.quality;
+    const observedAt = this.clock.wallNow().toISOString();
+    for (const observer of this.observers) {
+      try { observer({ signalId, snapshot: { ...snapshot }, observedAt }); }
+      catch { this.failures++; }
+    }
   }
 
   private state(signalId: string): SignalState {

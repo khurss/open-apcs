@@ -45,6 +45,12 @@ test('creates a project and virtual device, verifies a command, and audits the w
   await page.getByRole('button', { name: 'Devices', exact: true }).click();
   await card.getByRole('button', { name: 'Stop simulator', exact: true }).click();
   await expect(card.getByText('Simulation stopped', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Signals', exact: true }).click();
+  await row.getByRole('button', { name: 'History', exact: true }).click();
+  const history = page.getByRole('table', { name: 'Signal history' });
+  await expect(history).toContainText('ON');
+  await expect(history).toContainText('Disconnected');
+  await page.screenshot({ path: 'test-results/signal-history.png', fullPage: true });
   await page.getByRole('button', { name: 'Activity', exact: true }).click();
   await expect(page.getByText('Device created', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Overview', exact: true }).click();

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { PgSignalArchive } from '../../packages/storage/src/signal-archive.js';
 import { SignalStore } from '../../packages/domain/src/signals.js';
 import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
 import { LedPeer } from '../../packages/led-protocol/src/index.js';
@@ -44,6 +45,20 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('serves protected bounded history pages with value and quality intact', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'History LED', siteId: 'history', deviceId: 'led', kind: 'virtual-led' } })).json();
+    const archive = new PgSignalArchive(pool); const at = '2026-10-12T12:00:00.000Z';
+    await archive.append([false, true].map((value, index) => ({ eventId: randomUUID(), signalId: device.signalId, observedAt: at, snapshot: { value, quality: 'Good' as const, bootId: 'boot', sequence: index, receivedTime: at, sourceTime: null } })));
+    const url = `/api/v1/signals/${device.signalId}/history?from=2026-10-12T00:00:00Z&to=2026-10-13T00:00:00Z&limit=1`;
+    expect((await app!.inject({ url })).statusCode).toBe(401);
+    const result = await app!.inject({ url, headers: headers() }); expect(result.statusCode).toBe(200);
+    expect(result.json().items[0].snapshot).toMatchObject({ value: true, quality: 'Good' });
+    expect((await app!.inject({ url: `${url}&before=${result.json().nextBefore}`, headers: headers() })).json().items[0].snapshot.value).toBe(false);
+    expect((await app!.inject({ url: `/api/v1/signals/${device.signalId}/history?from=2026-10-12T00:00:00Z&to=2026-11-12T00:00:00Z`, headers: headers() })).statusCode).toBe(422);
+    expect((await app!.inject({ url: '/api/v1/history/status', headers: headers() })).json().active).toBe(false);
+  });
+
   it('lists blocking commands and atomically audits explicit recovery using the real restarted simulator', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Recovery LED', siteId: 'recovery', deviceId: 'led', kind: 'virtual-led' } })).json();

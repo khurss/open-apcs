@@ -21,6 +21,7 @@ process.on('message', (message: unknown) => {
       if (method === 'start' && args.length === 2 && args.every((v) => typeof v === 'string')) result = await runtime.start(args[0] as string, args[1] as string);
       else if (method === 'activateGraph' && args.length === 4 && typeof args[0] === 'string' && Number.isSafeInteger(args[1]) && typeof args[2] === 'string' && typeof args[3] === 'string') result = await runtime.activateGraph(args[0], args[1] as number, args[2], args[3]);
       else if (method === 'stopGraph' && typeof args[0] === 'string') result = await runtime.stopGraph(args[0], typeof args[1] === 'string' ? args[1] : undefined);
+      else if (method === 'historyStatus') result = await runtime.historyStatus();
       else if (method === 'graphStatus' && typeof args[0] === 'string') result = await runtime.graphStatus(args[0]);
       else if (method === 'stop' && typeof args[0] === 'string') result = await runtime.stop(args[0]);
       else if (method === 'status' && typeof args[0] === 'string') result = await runtime.status(args[0]);

@@ -21,7 +21,7 @@ export async function audit(client: PoolClient, actorId: string | null, action: 
 }
 
 export async function migrateApplication(pool: Pool): Promise<void> {
-  const migrations = await Promise.all(['001-application.sql', '002-editors.sql'].map(async (name, index) => {
+  const migrations = await Promise.all(['001-application.sql', '002-editors.sql', '003-signal-history.sql'].map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, sql, checksum: createHash('sha256').update(sql).digest('hex') };
   }));

@@ -8,6 +8,7 @@ import type { CommandContext, CommandRequest } from '../../../packages/domain/sr
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 import { audit, migrateApplication, transaction } from './store.js';
 import { verifyPassword } from './security.js';
+import { registerHistory } from './history-api.js';
 import { registerCommandRecovery } from './command-recovery.js';
 import { registerGraphRuntime } from './graph-runtime.js';
 import { registerEditors } from './editors.js';
@@ -208,6 +209,7 @@ export async function createApi(options: ApiOptions) {
   });
   if (options.runtime) app.addHook('onClose', () => options.runtime!.close());
   registerCommandRecovery(app, pool, journal, options.runtime);
+  registerHistory(app, pool, options.runtime);
   registerEditors(app, pool);
   registerGraphRuntime(app, pool, options.runtime);
   await app.ready(); return app;

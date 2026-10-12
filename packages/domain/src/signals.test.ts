@@ -214,3 +214,38 @@ describe('AT-02: signal quality, chronology and exact values', () => {
     ), { seed: 42, numRuns: 100 });
   });
 });
+
+describe('signal observations for independent history consumers', () => {
+  it('observes every accepted transition but never duplicate or out-of-order samples', () => {
+    const { store } = fixture({ dataType: 'boolean' }); const values: unknown[] = [];
+    store.subscribe((event) => values.push(event.snapshot.value));
+    store.ingest(sample({ value: false })); store.ingest(sample({ value: true, sequence: 2 })); store.ingest(sample({ value: false, sequence: 3 }));
+    store.ingest(sample({ value: true, sequence: 3 })); store.ingest(sample({ value: true, sequence: 1 }));
+    expect(values).toEqual([false, true, false]);
+  });
+  it('observes a stale transition once and preserves the last value and receipt time', () => {
+    const { store, advance } = fixture(); const events: Array<{ snapshot: { quality: string; value: unknown }; observedAt: string }> = [];
+    store.subscribe((event) => events.push(event)); store.ingest(sample()); advance(3000);
+    store.get('temperature'); store.get('temperature');
+    expect(events.map((event) => event.snapshot.quality)).toEqual(['Good', 'Stale']);
+    expect(events[1]).toMatchObject({ observedAt: '2026-10-12T12:00:03.000Z', snapshot: { value: 21.5 } });
+  });
+  it('observes disconnect and new-session discontinuities without inventing a value', () => {
+    const { store } = fixture(); const qualities: string[] = [];
+    store.subscribe((event) => qualities.push(event.snapshot.quality)); store.ingest(sample());
+    store.disconnect('esp32-demo'); store.disconnect('esp32-demo');
+    store.beginSession('esp32-demo', 'boot-2'); store.ingest(sample({ bootId: 'boot-2' })); store.beginSession('esp32-demo', 'boot-3');
+    expect(qualities).toEqual(['Good', 'Disconnected', 'Good', 'Disconnected']);
+  });
+  it('isolates throwing and mutating observers from acquisition and other consumers', () => {
+    const { store } = fixture(); const values: unknown[] = [];
+    store.subscribe((event) => { event.snapshot.value = 999; throw new Error('Archive failed'); });
+    store.subscribe((event) => values.push(event.snapshot.value));
+    expect(store.ingest(sample())).toBe('accepted'); expect(store.get('temperature').value).toBe(21.5);
+    expect(values).toEqual([21.5]); expect(store.observerFailures).toBe(1);
+  });
+  it('unsubscribes a consumer without affecting acquisition', () => {
+    const { store } = fixture(); let events = 0; const unsubscribe = store.subscribe(() => { events++; });
+    store.ingest(sample()); unsubscribe(); store.ingest(sample({ sequence: 2 })); expect(events).toBe(1);
+  });
+});

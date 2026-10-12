@@ -45,6 +45,28 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('validates alarm rules, ownership, authentication and bounded lifecycle reads', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Alarm LED', siteId: 'alarm', deviceId: 'led', kind: 'virtual-led' } })).json();
+    const url = `/api/v1/projects/${projectId}/alarms`;
+    const payload = { name: 'LED offline', signalId: device.signalId, priority: 'high', definition: { condition: { kind: 'quality', values: ['Disconnected'] }, activationDelayMs: 0, returnDelayMs: 0 } };
+    expect((await app!.inject({ url })).statusCode).toBe(401);
+    expect((await app!.inject({ method: 'POST', url, headers: { cookie }, payload })).statusCode).toBe(403);
+    expect((await app!.inject({ method: 'POST', url, headers: headers(), payload: { ...payload, signalId: randomUUID() } })).statusCode).toBe(422);
+    expect((await app!.inject({ method: 'POST', url, headers: headers(), payload: { ...payload, definition: { ...payload.definition, activationDelayMs: -1 } } })).statusCode).toBe(422);
+    const created = await app!.inject({ method: 'POST', url, headers: headers(), payload }); expect(created.statusCode).toBe(201);
+    const id = created.json().id;
+    const listed = (await app!.inject({ url, headers: headers() })).json().items;
+    expect(listed).toHaveLength(1); expect(listed[0]).toMatchObject({ id, phase: 'Normal', evaluationStale: true });
+    expect((await app!.inject({ url: `/api/v1/alarms/${id}/events`, headers: headers() })).json().items).toEqual([]);
+    expect((await app!.inject({ method: 'POST', url: `/api/v1/alarms/${id}/actions`, headers: headers(), payload: { kind: 'acknowledge', occurrence: 1, reason: 'Inspected', actorId: 'forged' } })).statusCode).toBe(400);
+    expect((await app!.inject({ method: 'POST', url: `/api/v1/alarms/${id}/actions`, headers: headers(), payload: { kind: 'acknowledge', occurrence: 1, reason: 'Inspected' } })).statusCode).toBe(409);
+    const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'foreign','fixture')", [foreign]);
+    await pool.query('UPDATE apcs_projects SET owner_id=$2 WHERE id=$1', [projectId, foreign]);
+    expect((await app!.inject({ url, headers: headers() })).statusCode).toBe(404);
+    expect((await app!.inject({ url: `/api/v1/alarms/${id}/events`, headers: headers() })).statusCode).toBe(404);
+  });
+
   it('serves protected bounded history pages with value and quality intact', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'History LED', siteId: 'history', deviceId: 'led', kind: 'virtual-led' } })).json();

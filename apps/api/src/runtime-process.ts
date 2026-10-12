@@ -1,3 +1,4 @@
+import type { AlarmAction, AlarmServiceStatus } from './alarm-service.js';
 import type { HistoryStatus } from './history-service.js';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -14,6 +15,8 @@ export class RuntimeProcess implements RuntimeControl {
   private closed = false;
   constructor(private readonly options: RuntimeProcessOptions) {}
   get pid(): number | undefined { return this.child?.pid; }
+  alarmStatus(): Promise<AlarmServiceStatus> { return this.call('alarmStatus', []); }
+  alarmAction(id: string, actor: string, action: AlarmAction): Promise<void> { return this.call('alarmAction', [id, actor, action]); }
   historyStatus(): Promise<HistoryStatus> { return this.call('historyStatus', []); }
   activateGraph(graphId: string, revision: number, actorId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('activateGraph', [graphId, revision, actorId, activationId ?? randomUUID()]); }
   stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('stopGraph', [graphId, activationId]); }

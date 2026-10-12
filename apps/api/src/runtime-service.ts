@@ -1,3 +1,4 @@
+import { AlarmService, type AlarmAction, type AlarmServiceStatus } from './alarm-service.js';
 import { HistoryService, type HistoryStatus } from './history-service.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
@@ -14,6 +15,8 @@ import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 export interface RuntimeStatus { deviceId: string; environment: 'Simulation'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
 export interface GraphRuntimeStatus { graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; }
 export interface RuntimeControl {
+  alarmStatus(): Promise<AlarmServiceStatus>;
+  alarmAction(id: string, actor: string, action: AlarmAction): Promise<void>;
   historyStatus(): Promise<HistoryStatus>;
   activateGraph(graphId: string, revision: number, actorId: string, activationId?: string): Promise<GraphRuntimeStatus>;
   stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus>;
@@ -38,12 +41,13 @@ export class SimulationRuntime implements RuntimeControl {
   private readonly entries = new Map<string, Entry>();
   private readonly graphs = new Map<string, GraphEntry>();
   private readonly journal: PgCommandJournal;
+  private readonly alarms: AlarmService;
   private readonly history: HistoryService;
   private lock: PoolClient | null = null;
   private closed = false;
   private lockLost = false;
   private operations: Promise<void> = Promise.resolve();
-  constructor(private readonly pool: Pool, private readonly mqttUrl: string) { this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
+  constructor(private readonly pool: Pool, private readonly mqttUrl: string) { this.alarms = new AlarmService(pool, (id) => this.registered.has(id) && !this.closed && !this.lockLost ? this.signals.get(id) : disconnected()); this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
   private serial<T>(work: () => Promise<T>): Promise<T> { const result = this.operations.then(work); this.operations = result.then(() => {}, () => {}); return result; }
   start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.serial(async () => {
     if (this.closed || this.lockLost) throw new Error('Runtime is closed or lost ownership');
@@ -68,7 +72,7 @@ export class SimulationRuntime implements RuntimeControl {
       dispatchNext: async () => { await this.refresh(entry); return gateway.dispatchNext(); },
     }, () => performance.now());
     this.entries.set(deviceId, entry);
-    try { await simulator.start(); await entry.runtime.start(); this.history.start(); }
+    try { await simulator.start(); await entry.runtime.start(); this.history.start(); this.alarms.start(); }
     catch (error) { await this.stopEntry(entry); throw error; }
     return this.status(deviceId);
   }); }
@@ -91,6 +95,7 @@ export class SimulationRuntime implements RuntimeControl {
     if (this.closed) return; this.closed = true;
     await Promise.allSettled([...this.graphs.values()].map((entry) => entry.task.stop()));
     await Promise.allSettled([...this.entries.values()].map((entry) => this.stopEntry(entry)));
+    await this.alarms.close();
     await this.history.close();
     const lock = this.lock; this.lock = null;
     if (lock) { try { await lock.query(`SELECT pg_advisory_unlock(${lockKey})`); } catch {} finally { lock.release(true); } }
@@ -147,6 +152,8 @@ export class SimulationRuntime implements RuntimeControl {
     return this.graphStatus(id);
   }); }
   stopGraph(id: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.serial(async () => { const graph = this.graphs.get(id); if (graph && (!activationId || activationId === graph.activationId)) await graph.task.stop(); return this.graphStatus(id); }); }
+  async alarmStatus(): Promise<AlarmServiceStatus> { return this.alarms.status; }
+  async alarmAction(id: string, actor: string, action: AlarmAction): Promise<void> { await this.alarms.action(id, actor, action); }
   async historyStatus(): Promise<HistoryStatus> { return this.history.status; }
   async graphStatus(id: string): Promise<GraphRuntimeStatus> {
     const graph = this.graphs.get(id); const status = graph?.task.status;

@@ -1,3 +1,4 @@
+import { registerAlarms } from './alarm-api.js';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import cookiePlugin from '@fastify/cookie';
@@ -210,6 +211,7 @@ export async function createApi(options: ApiOptions) {
   if (options.runtime) app.addHook('onClose', () => options.runtime!.close());
   registerCommandRecovery(app, pool, journal, options.runtime);
   registerHistory(app, pool, options.runtime);
+  registerAlarms(app, pool, options.runtime);
   registerEditors(app, pool);
   registerGraphRuntime(app, pool, options.runtime);
   await app.ready(); return app;

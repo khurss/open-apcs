@@ -6,3 +6,15 @@
 .graph-runtime-panel { padding: 20px; }
 .graph-runtime-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
 .graph-runtime-panel .panel-heading { flex-wrap: wrap; gap: 12px; }
+
+.operator-heading { padding: 20px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+.operator-heading h2 { margin: 8px 0; }
+.operator-heading p { font-size: 12px; }
+.operator-scene { min-width: 0; overflow: hidden; }
+.operator-controls { padding: 20px; }
+.operator-controls>div { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.operator-controls button { min-height: 44px; }
+.operator-item { cursor: default; }
+.operator-item[role=button]:not([aria-disabled=true]) { cursor: pointer; }
+.operator-item[aria-disabled=true] { opacity: .65; }
+.revision-list>div { align-items: center; flex-wrap: wrap; gap: 12px; }

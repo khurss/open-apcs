@@ -5,6 +5,7 @@ import { ports, validateGraph, type BlockKind, type LogicGraph, type LogicNode, 
 import { canonicalJson, EditHistory, validateScreen, type Screen, type ScreenItem } from '../../../packages/domain/src/screen.js';
 import { api, type Project, type Device, type Signal, type Page } from './api.js';
 import './editors.css';
+import { ScreenOperator } from './screen-operator.js';
 import { GraphRuntimePanel } from './graph-runtime.js';
 
 type Document = LogicGraph | Screen;
@@ -31,6 +32,7 @@ export function EditorWorkspace({ kind, projects, devices, signals, initialProje
   const [text, setText] = useState('');
   const [simInputs, setSimInputs] = useState<Record<string, boolean | null>>({});
   const [revisions, setRevisions] = useState<Array<{ revision: number; checksum: string }>>([]);
+  const [operator, setOperator] = useState<{ document: Screen; revision: number } | null>(null);
   const [blockKind, setBlockKind] = useState<BlockKind>('constant');
   const dirty = !!draft && canonicalJson(document) !== canonicalJson(draft.document);
   const available = signals.filter((s) => devices.some((d) => d.id === s.deviceId && d.projectId === projectId));
@@ -79,6 +81,7 @@ export function EditorWorkspace({ kind, projects, devices, signals, initialProje
     setSelected('');
   }
   const selectedItem = document && (kind === 'graph' ? (document as LogicGraph).nodes : (document as Screen).items).find((n) => n.id === selected);
+  if (operator) return <ScreenOperator screen={operator.document} revision={operator.revision} projectRevision={projects.find((p) => p.id === projectId)?.revision ?? 0} close={() => setOperator(null)} />;
   return <div className="engineering">
     <section className="panel scheme-browser"><div className="scheme-browser-heading"><Field label="Editor project"><select value={projectId} onChange={(e) => { if (discardAllowed()) { setProjectId(e.target.value); setDraft(null); setDocument(null); } }}>{projects.map((p) => <option value={p.id} key={p.id}>{p.name}</option>)}</select></Field><form onSubmit={create}><Field label="Scheme name"><input required maxLength={128} value={name} placeholder={kind === 'graph' ? 'e.g. LED automation' : 'e.g. Operator overview'} onChange={(e) => setName(e.target.value)} /></Field><button className="primary" disabled={busy || !projectId}>Create {kind}</button></form></div><div className="scheme-tabs">{list.items.map((item) => <button key={item.id} className={draft?.id === item.id ? 'scheme-tab selected' : 'scheme-tab'} aria-label={`Open ${item.name}`} onClick={() => open(item.id)}>{item.name}<small>r{item.revision}</small></button>)}{list.nextCursor && <button className="secondary" onClick={() => { void perform(async () => { const next = await api<Page<Draft>>(`/projects/${projectId}/${kind}s?cursor=${list.nextCursor}`); setList({ items: [...list.items, ...next.items], nextCursor: next.nextCursor }); }); }}>More schemes</button>}</div></section>
     {error && <div role="alert" className="alert">{error}</div>}{message && <div role="status" className="editor-message">{message}</div>}
@@ -99,7 +102,7 @@ export function EditorWorkspace({ kind, projects, devices, signals, initialProje
         const result = await api<{ steps: LogicResult[] }>(`/graphs/${draft.id}/simulate`, { method: 'POST', body: { steps: Array.from({ length: 51 }, (_, i) => ({ atMs: i * 100, inputs })) } }); setSimulation(result.steps.at(-1)!);
       }); }}>Run simulation</button>{simulation && <div role="status" aria-label="Simulation result" className="simulation-result">{Object.entries(simulation.outputs).map(([id, value]) => <span key={id}><strong>{available.find((s) => s.id === id)?.name ?? id}</strong><span className={`badge ${value.quality === 'Good' ? 'good' : 'warning'}`}>{value.value === null ? 'No output' : value.value ? 'ON' : 'OFF'}</span>{value.reason && <small>{value.reason}</small>}</span>)}{!Object.keys(simulation.outputs).length && <span>Graph evaluated; no output blocks configured.</span>}</div>}</section>}
       {kind === 'graph' && <GraphRuntimePanel key={draft.id} id={draft.id} revisions={revisions.map((r) => r.revision)} dirty={dirty} />}
-      {!!revisions.length && <section className="panel revision-list"><h2>Prepared revisions</h2><p className="muted">Immutable snapshots. Preparation does not activate equipment.</p>{revisions.map((r) => <div key={r.revision}>Revision {r.revision}<code>{r.checksum.slice(0, 16)}</code></div>)}</section>}
+      {!!revisions.length && <section className="panel revision-list"><h2>Prepared revisions</h2><p className="muted">Immutable snapshots. Preparation does not activate equipment.</p>{revisions.map((r) => <div key={r.revision}>Revision {r.revision}<code>{r.checksum.slice(0, 16)}</code>{kind === 'screen' && <button className="secondary" disabled={busy || dirty} onClick={() => { void perform(async () => { const found = await api<{ items: Array<{ revision: number; document: Screen }> }>(`/screens/${draft.id}/revisions?before=${r.revision + 1}`); const saved = found.items.find((item) => item.revision === r.revision); if (!saved) throw new Error('Prepared screen not found'); setOperator({ revision: saved.revision, document: validateScreen(saved.document) }); }); }}>Operate revision {r.revision}</button>}</div>)}</section>}
     </>}
   </div>;
 }

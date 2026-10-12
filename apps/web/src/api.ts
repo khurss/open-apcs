@@ -8,9 +8,10 @@ export interface Page<T> { items: T[]; nextCursor: string | null; }
 export class ApiError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 let csrfToken = '';
 export const setSession = (user: User | null) => { csrfToken = user?.csrfToken ?? ''; };
-export async function api<T>(path: string, options: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
+export async function api<T>(path: string, options: { method?: string; body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {}): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: options.method ?? 'GET', credentials: 'same-origin',
+    ...(options.signal ? { signal: options.signal } : {}),
     headers: { ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(options.method ? { 'X-CSRF-Token': csrfToken } : {}), ...options.headers },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),

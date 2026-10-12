@@ -8,7 +8,7 @@ Register a project and a virtual LED device. Open **Logic**, create a graph, and
 
 Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments. Input blocks accept OFF, ON, or simulated disconnection. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
 
-Open **Screens** to arrange labels, indicators, buttons, and groups on an SVG scene. Configure signal bindings, coordinates, dimensions, and parent groups. Drag a group to move its descendants; coordinates are absolute scene coordinates. Arrow keys move a selected item by 10 px, or 1 px with Shift. Removing a group ungroups direct children. Buttons are design elements in this increment; they do not dispatch commands. Indicators explicitly show that live data is unavailable.
+Open **Screens** to arrange labels, indicators, buttons, and groups on an SVG scene. Configure signal bindings, coordinates, dimensions, and parent groups. Drag a group to move its descendants; coordinates are absolute scene coordinates. Arrow keys move a selected item by 10 px, or 1 px with Shift. Removing a group ungroups direct children. The design canvas never dispatches commands and its indicators are placeholders. Prepare a screen revision and choose Operate revision to see current signal values and open command controls.
 
 Both editors provide bounded undo/redo and a JSON document editor. JSON is a portable data representation; it is not JavaScript/TypeScript script execution or Structured Text support. Saved scenes and graphs survive API/browser restarts. Navigation prompts before discarding modified document state. A prepared revision does not activate equipment. Complex editing is oriented toward desktop/tablet; the phone interface provides controls and an internally scrollable HMI canvas.
 
@@ -68,3 +68,11 @@ Graph interaction uses the pinned [React Flow library](https://reactflow.dev/lea
 ## Server activation
 
 Prepared graph revisions can now be activated against running virtual devices from the editor. The operator must supply a reason. The active revision and state remain visible after reopening the graph, while editing continues against its draft. See [runtime execution and revision-switch contracts](runtime.md#prepared-graph-execution). This does not enable physical profiles or convert the isolated five-second simulation bench into a device runtime.
+
+## Operator screens
+
+Choose **Operate revision N** from a prepared screen to open an immutable scene with current values. Later edits to its draft do not change that scene. Indicators include ON/OFF/No data and quality text as well as color. Buttons open the existing reasoned ON/OFF command panel; they never publish MQTT directly. The same backend ownership, interlock, freshness, revision, and journal checks apply, including rejection while a graph owns the output.
+
+Polling has at most eight concurrent requests, a two-second request deadline, and no overlapping rounds. Each round waits one second before the next. Failed reads retain the last displayed value with Disconnected quality. Independently, a Good browser sample becomes Stale after three seconds without a successful refresh (checked every 500 ms). Controls are disabled unless displayed quality is Good; the server still rechecks authority. This bounded polling implementation is for the current simulation profile, not the eventual high-volume subscription architecture.
+
+Equipment controls are also exposed as normal, touch-sized HTML buttons below the scene. The SVG canvas scrolls inside its own container on phones; the page itself does not require horizontal scrolling. Runtime signals are simulation-only until physical commissioning is implemented. Screen publication currently means selecting a prepared immutable revision; persistent operator landing-screen assignments and faceplates remain future work.

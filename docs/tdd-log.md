@@ -137,3 +137,11 @@ Observed RED: 16 scheduler cases failed against the initial stub; two additional
 Final `make test`: **246 unit/integration tests and 4 Chromium scenarios passed**, with TypeScript, the English-content check, frontend build, networkless fresh dependency installation/build, and PostgreSQL backup/restore. Integration checks include preserved device sessions during a revision switch, rejection of invalid/corrupt revisions without interrupting the old graph, competing/manual owner rejection, and generation-scoped compensation after audit failure. Chromium starts prepared logic, reloads the browser, confirms the same active revision, and stops it. The resulting editor screenshot was inspected.
 
 No development image was rebuilt. M1 remains partial: execution targets virtual devices, active authority is volatile, and physical firmware/HIL, operator HMI control, history/alarms, Unknown reconciliation, and subsequent roadmap features remain pending. Unexpected feedback drift after command verification has no dedicated divergence alarm yet.
+
+## 2026-10-12: Prepared HMI operator view
+
+Observed RED: Chromium timed out waiting for the missing Operate revision action. Added an operator view of immutable prepared screens, current value/quality indicators, touch and keyboard controls, and the shared audited command panel. Reads have bounded concurrency/deadlines; failed reads preserve the last value with Disconnected quality, and the browser independently ages unrefreshed Good samples to Stale.
+
+`make test` passed **246 unit/integration tests and 4 Chromium scenarios**, TypeScript, the English guard, frontend build, offline install/build, and backup/restore. The expanded browser workflow verifies a disconnected control is disabled, an HMI command reaches Verified and ON, network loss preserves ON with Disconnected quality and disables control, reconnection restores Good, and OFF works from a 360 px phone layout. A browser rerun passed all 4 scenarios after making screenshot capture wait for the responsive sidebar transition. The mobile operator screenshot was inspected. No images were rebuilt.
+
+This completes the basic virtual HMI operator path, not the full M1 release. Persistent landing-screen assignment, faceplates, physical hardware commissioning, history/alarms, and subsequent roadmap scope remain pending.

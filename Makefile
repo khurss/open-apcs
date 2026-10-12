@@ -20,7 +20,7 @@ watch-bg:
 watch-integration:
 	docker compose -f compose.test.yml up integration-watch
 
-test:
+test: firmware-test firmware-build
 	docker compose -f compose.test.yml run --rm all
 	docker compose -f compose.test.yml run --rm offline-check
 	docker compose -f compose.test.yml run --rm backup-test
@@ -74,3 +74,13 @@ offline-check:
 
 offline-bundle:
 	sh scripts/build-offline.sh
+
+.PHONY: firmware-test firmware-build firmware-watch
+firmware-test:
+	docker compose -f compose.test.yml run --rm firmware-test
+
+firmware-build:
+	docker compose -f compose.test.yml run --rm firmware-build
+
+firmware-watch:
+	sh scripts/watch-firmware.sh

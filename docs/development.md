@@ -106,3 +106,8 @@ The M0 foundation gate has passed; M1 remains incomplete. Hardware tests, the of
 ## Phase commits and language
 
 Before each completed phase is committed, update the specifications and status in English, run `make test`, review the changes, and push the phase commit to the configured project repository. The language guard scans authored text for Cyrillic and skips dependencies, generated outputs, Git internals, and private environment files. It is a supplementary guard: contributors must still write clear English. Unicode remains supported in user-defined data.
+
+
+## ESP32 tooling
+
+`make firmware-test firmware-build` runs sanitized native C checks, generates the protocol harness used by integration tests, and cross-compiles the ESP32 application. Both services have networking disabled and use the pinned ESP-IDF image. `make test` includes them. After a fresh checkout, run `make firmware-test` before standalone integration/watch runs so the native harness exists. `make firmware-watch` rebuilds incrementally on C/header/configuration changes; firmware flashing is always a separate explicit operation. See [firmware scope](firmware.md).

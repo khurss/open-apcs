@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --include 'src/*.ts' --include '../../packages/**/src/*.ts' --exclude '**/*.test.ts' src/main.ts",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "firmware:provision": "tsx src/provision-firmware.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.3",

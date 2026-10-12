@@ -1,6 +1,6 @@
 # Backups and the offline engineering bundle
 
-These tools cover the current Linux x86-64 engineering workspace. They do not constitute the complete future production/offline distribution: OS and Docker installers, device firmware toolchains, plugin trust/update management, and additional architectures remain pending.
+These tools cover the current Linux x86-64 engineering workspace. They do not constitute the complete future production/offline distribution: OS and Docker installers, additional firmware toolchains, plugin trust/update management, and additional architectures remain pending.
 
 ## PostgreSQL backup and recovery
 
@@ -30,7 +30,7 @@ The bundle contains:
 
 - Source archive and the frozen pnpm lockfile.
 - The prepared pnpm content-addressed store for the current platform.
-- Local Docker archives for the Node/pnpm tool image, PostgreSQL, Mosquitto, and Chromium/Playwright.
+- Local Docker archives for the Node/pnpm tool image, PostgreSQL, Mosquitto, Chromium/Playwright, and the pinned ESP-IDF firmware toolchain.
 - Compose overrides with local image tags and no image pulls for the distribution services.
 - An installer, source-tree/platform manifest, and SHA-256 checksums.
 
@@ -56,10 +56,10 @@ Run the entire test suite from the installed workspace:
 sh scripts/run-offline-tests.sh
 ```
 
-This creates a separate offline test project, installs from the bundled cache, runs TypeScript, unit/integration tests, builds the web client, verifies offline dependencies and backup/restore, and executes Chromium scenarios. Its application-test network is internal. The script stops only that test project on exit; dependency caches are preserved.
+This creates a separate offline test project, installs from the bundled cache, runs sanitized native firmware tests and cross-compilation, TypeScript and unit/integration tests, builds the web client, verifies offline dependencies and backup/restore, and executes Chromium scenarios. Its application-test network is internal. The script stops only that test project on exit; dependency caches are preserved.
 
 `make offline-check` performs an additional smaller check in the normal repository: a container with **network_mode: none**, a copied source tree without installed modules, and a fresh anonymous pnpm-store volume installs from the prepared archive, typechecks, and builds the frontend. It runs as part of `make test`. The separate clean-workspace distribution drill verifies the exported bundle/installer and the complete suite; this does not prove installation on every possible offline host.
 
 ## Remaining distribution work
 
-Production certificates and broker ACL provisioning, signed update/package policy, unattended backup scheduling/retention, encrypted remote backup destinations, firmware SDK caches and USB/OTA workflows, ARM64, and hardware verification remain on the roadmap. The current backup/offline tools do not mark these requirements complete.
+Production certificates and broker ACL provisioning, signed update/package policy, unattended backup scheduling/retention, encrypted remote backup destinations, additional firmware SDK caches and guided USB/OTA workflows, ARM64, and hardware verification remain on the roadmap. The current backup/offline tools do not mark these requirements complete.

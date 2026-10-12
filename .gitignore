@@ -11,3 +11,6 @@ playwright-report/
 .DS_Store
 
 .cache/
+firmware/esp32-led/sdkconfig
+firmware/esp32-led/sdkconfig.old
+firmware/esp32-led/managed_components/

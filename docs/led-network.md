@@ -42,4 +42,4 @@ Gateway shutdown immediately invalidates its session and disconnects signal qual
 
 Container tests cover independent clock origins, stale setup, retained/malformed packets, deadline mapping, duplicate writes, lease expiry, boot changes, reconnect, lost ACK, interlock revalidation, per-output claim isolation, and startup/stop races. Real PostgreSQL/Mosquitto integration is combined with deterministic unit clocks. No physical ESP32 verification is claimed.
 
-Still pending: application API and authentication, runnable deployment processes, device catalog, explicit Unknown reconciliation, hardware firmware, broker access-control deployment, offline distribution, editors, and the rest of M0–M5. This increment does not complete M0.
+Later increments added the authenticated application, catalog, private runtime, editors, explicit Unknown reconciliation, and offline engineering distribution. A compiled C LED endpoint now shares this wire contract; see [firmware scope](firmware.md). Physical commissioning, broker access-control deployment, HIL, and the broader M1–M5 requirements remain pending. See the [current roadmap](roadmap.md) for milestone status.

@@ -26,7 +26,7 @@ Scope:
 
 Exit: AT-01–05, AT-07, AT-09–11, AT-14–18, and AT-20 for implemented scope; physical LED scenario, network failure, no replay after reconnect, and load profile L0. Complete coverage of the future block library is not claimed.
 
-Current M1 status: **partially implemented**. Both basic editors, prepared revisions, boolean blocks, isolated virtual-time simulation, and web-controlled virtual LEDs running in a private worker are available. Firmware/HIL, live runtime publication, operator HMI control, history/alarms remain pending. Database backup/restore is now verified. See [editor contracts](editors.md).
+Current M1 status: **partially implemented**. Both basic editors, prepared revisions, boolean blocks, isolated virtual-time simulation, and web-controlled virtual LEDs running in a private worker are available. Prepared graph activation and controlled revision switching now run headlessly in that worker. Firmware/HIL, operator HMI control, history/alarms remain pending. Database backup/restore is now verified. See [editor contracts](editors.md).
 
 ## M2: Engineering release
 

@@ -1,7 +1,7 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
-import type { RuntimeControl, RuntimeStatus } from './runtime-service.js';
+import type { RuntimeControl, RuntimeStatus, GraphRuntimeStatus } from './runtime-service.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 export interface RuntimeProcessOptions { connectionString: string; mqttUrl: string; databaseOptions?: string; }
@@ -13,6 +13,9 @@ export class RuntimeProcess implements RuntimeControl {
   private closed = false;
   constructor(private readonly options: RuntimeProcessOptions) {}
   get pid(): number | undefined { return this.child?.pid; }
+  activateGraph(graphId: string, revision: number, actorId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('activateGraph', [graphId, revision, actorId, activationId ?? randomUUID()]); }
+  stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('stopGraph', [graphId, activationId]); }
+  graphStatus(graphId: string): Promise<GraphRuntimeStatus> { return this.call('graphStatus', [graphId]); }
   start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.call('start', [deviceId, actorId]); }
   stop(deviceId: string): Promise<RuntimeStatus> { return this.call('stop', [deviceId]); }
   status(deviceId: string): Promise<RuntimeStatus> { return this.call('status', [deviceId]); }

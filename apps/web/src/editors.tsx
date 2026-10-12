@@ -5,6 +5,7 @@ import { ports, validateGraph, type BlockKind, type LogicGraph, type LogicNode, 
 import { canonicalJson, EditHistory, validateScreen, type Screen, type ScreenItem } from '../../../packages/domain/src/screen.js';
 import { api, type Project, type Device, type Signal, type Page } from './api.js';
 import './editors.css';
+import { GraphRuntimePanel } from './graph-runtime.js';
 
 type Document = LogicGraph | Screen;
 type Kind = 'graph' | 'screen';
@@ -46,7 +47,7 @@ export function EditorWorkspace({ kind, projects, devices, signals, initialProje
   function edit(next: Document) { history.current!.set(next); setDocument(history.current!.current); setMessage(''); setSimulation(null); }
   function discardAllowed() { return !dirty || window.confirm('Discard unsaved changes to this draft?'); }
   function create(event: FormEvent) { event.preventDefault(); if (!discardAllowed()) return; void perform(async () => { const row = await api<Draft>(`/projects/${projectId}/${kind}s`, { method: 'POST', body: { name } }); accept(row); setName(''); setList(await api(`/projects/${projectId}/${kind}s`)); }); }
-  function open(id: string) { if (!discardAllowed()) return; void perform(async () => { accept(await api<Draft>(`/${kind}s/${id}`)); }); }
+  function open(id: string) { if (!discardAllowed()) return; void perform(async () => { accept(await api<Draft>(`/${kind}s/${id}`)); setRevisions((await api<{ items: Array<{ revision: number; checksum: string }> }>(`/${kind}s/${id}/revisions`)).items); }); }
   async function save() { if (!draft || !document) return; const row = await api<Draft>(`/${kind}s/${draft.id}`, { method: 'PUT', headers: { 'If-Match': `"${draft.revision}"` }, body: { name: draft.name, document } }); setDraft(row); setMessage(`Saved revision ${row.revision}`); setList(await api(`/projects/${projectId}/${kind}s`)); }
   function undo(redo = false) { setDocument(redo ? history.current!.redo() : history.current!.undo()); setMessage(''); setSimulation(null); }
   function addBlock() {
@@ -97,6 +98,7 @@ export function EditorWorkspace({ kind, projects, devices, signals, initialProje
         const inputs = Object.fromEntries((document as LogicGraph).nodes.filter((n) => n.kind === 'input').map((n) => [n.signalId!, Object.hasOwn(simInputs, n.signalId!) ? simInputs[n.signalId!] : false]));
         const result = await api<{ steps: LogicResult[] }>(`/graphs/${draft.id}/simulate`, { method: 'POST', body: { steps: Array.from({ length: 51 }, (_, i) => ({ atMs: i * 100, inputs })) } }); setSimulation(result.steps.at(-1)!);
       }); }}>Run simulation</button>{simulation && <div role="status" aria-label="Simulation result" className="simulation-result">{Object.entries(simulation.outputs).map(([id, value]) => <span key={id}><strong>{available.find((s) => s.id === id)?.name ?? id}</strong><span className={`badge ${value.quality === 'Good' ? 'good' : 'warning'}`}>{value.value === null ? 'No output' : value.value ? 'ON' : 'OFF'}</span>{value.reason && <small>{value.reason}</small>}</span>)}{!Object.keys(simulation.outputs).length && <span>Graph evaluated; no output blocks configured.</span>}</div>}</section>}
+      {kind === 'graph' && <GraphRuntimePanel key={draft.id} id={draft.id} revisions={revisions.map((r) => r.revision)} dirty={dirty} />}
       {!!revisions.length && <section className="panel revision-list"><h2>Prepared revisions</h2><p className="muted">Immutable snapshots. Preparation does not activate equipment.</p>{revisions.map((r) => <div key={r.revision}>Revision {r.revision}<code>{r.checksum.slice(0, 16)}</code></div>)}</section>}
     </>}
   </div>;

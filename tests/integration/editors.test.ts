@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Pool } from 'pg';
 import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { RuntimeProcess } from '../../apps/api/src/runtime-process.js';
 import { createApi } from '../../apps/api/src/app.js';
 import { bootstrapAdmin, migrateApplication } from '../../apps/api/src/store.js';
 let admin: Pool; let pool: Pool; let schema: string; let app: Awaited<ReturnType<typeof createApi>>; let headers: Record<string, string>; let projectId: string; let signalId: string;
@@ -20,6 +21,30 @@ const graph = () => ({ schemaVersion: 1, nodes: [{ id: 'source', kind: 'constant
 async function create(kind = 'graphs') { return app.inject({ method: 'POST', url: `/api/v1/projects/${projectId}/${kind}`, headers, payload: { name: 'LED logic' } }); }
 async function save(id: string, document: unknown, revision = 1, kind = 'graphs') { return app.inject({ method: 'PUT', url: `/api/v1/${kind}/${id}`, headers: { ...headers, 'if-match': `"${revision}"` }, payload: { name: 'LED logic', document } }); }
 describe('versioned editor documents with real PostgreSQL', () => {
+  it('activates prepared logic through private IPC, audits the revision, and stops outputs if completion audit fails', async () => {
+    await app.close();
+    const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+    app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+    const id = (await create()).json().id; await save(id, graph());
+    const device = await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId]);
+    expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device.rows[0].device_id}/runtime`, headers, payload: { action: 'start', reason: 'Graph test' } })).statusCode).toBe(200);
+    const url = `/api/v1/graphs/${id}/runtime`;
+    expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 2, reason: 'Unprepared' } })).statusCode).toBe(422);
+    await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } });
+    expect((await app.inject({ method: 'POST', url, headers: { cookie: headers.cookie! }, payload: { action: 'activate', revision: 2, reason: 'No CSRF' } })).statusCode).toBe(403);
+    const started = await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 2, reason: 'Test headless graph' } });
+    expect(started.statusCode).toBe(200); expect(started.json()).toMatchObject({ revision: 2, state: 'running' });
+    expect((await app.inject({ url, headers })).json()).toMatchObject({ revision: 2, state: 'running' });
+    const events = await pool.query("SELECT data FROM apcs_audit WHERE action='graph.activate.completed' AND resource_id=$1", [id]);
+    expect(events.rows[0].data).toMatchObject({ revision: 2, activationId: started.json().activationId });
+    expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 99, reason: 'Missing revision' } })).statusCode).toBe(422);
+    expect((await runtime.graphStatus(id)).state).toBe('running');
+    await pool.query("CREATE FUNCTION deny_graph_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='graph.activate.completed' THEN RAISE EXCEPTION 'Fixture audit failure'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER deny_graph_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_graph_audit()');
+    expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 2, reason: 'Audit failure' } })).statusCode).toBe(503);
+    expect((await runtime.readSignal(signalId)).quality).toBe('Disconnected');
+  });
+
   it('creates isolated drafts, persists a graph, and lists project documents after restart', async () => {
     const created = await create(); expect(created.statusCode).toBe(201); const id = created.json().id;
     expect(created.json()).toMatchObject({ revision: 1, document: { schemaVersion: 1, nodes: [], edges: [] } });

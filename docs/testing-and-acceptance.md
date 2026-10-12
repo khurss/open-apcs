@@ -19,7 +19,7 @@ Baseline rules:
 
 ## 2. Container environment
 
-The target development interface provides the following commands. Unit and integration services are implemented; contract, E2E, fault, load, firmware, and HIL services remain planned. Do not treat an absent service as a completed test.
+The target development interface provides the following commands. Unit, integration, browser E2E, networkless dependency checks, and backup/restore services are implemented. Failure scenarios run in the unit/integration suites; separate contract/fault/load/firmware/HIL services remain planned. Do not treat an absent service as a completed test.
 
 ```bash
 docker compose -f compose.test.yml run --rm unit

@@ -1,6 +1,6 @@
 # Editor documents and isolated logic simulation
 
-This increment provides basic graph and HMI editing, durable drafts, immutable prepared revisions, and isolated simulation. It does not activate a graph on a gateway, enable physical outputs, or implement a complete M1 release.
+This increment provides basic graph and HMI editing, durable drafts, immutable prepared revisions, and isolated simulation. Prepared graphs also execute in the private simulation worker. Physical outputs, autonomous remote gateways, and the complete M1 release remain pending.
 
 ## Web workflow
 
@@ -59,8 +59,12 @@ All endpoints require the existing authenticated session and mutation Origin/CSR
 
 PUT and revision preparation require a quoted `If-Match` draft revision. Missing preconditions return 428, stale revisions 412, and invalid documents/bindings 422. Unknown resources return 404. Draft writes and their audit records commit atomically under a row lock. Signal references cannot cross project boundaries. Request bodies retain the 64 KiB API limit, which may constrain a verbose document before its item-count limit.
 
-Prepared revisions contain the document, name, actor, timestamp, and SHA-256 of canonical JSON containing name/document. Preparing the same revision is idempotent. Later draft edits cannot overwrite a prepared revision; database triggers reject update/delete of revision rows. Database administrators are not part of this immutability threat model. Lists return up to 20 revisions, with `nextBefore` pagination. Prepared is distinct from Active; controlled runtime activation and state migration remain pending.
+Prepared revisions contain the document, name, actor, timestamp, and SHA-256 of canonical JSON containing name/document. Preparing the same revision is idempotent. Later draft edits cannot overwrite a prepared revision; database triggers reject update/delete of revision rows. Database administrators are not part of this immutability threat model. Lists return up to 20 revisions, with `nextBefore` pagination. Prepared is distinct from Active; activation is an explicit, audited operation. Revision switches reset volatile state; retained-state migration remains pending.
 
 Application migration 002 adds document/revision tables. The migration runner verifies the complete applied checksum prefix and upgrades version 1 in place; it does not alter the previously applied migration. Integration tests verify upgrade preservation, concurrent save conflicts, immutable history, cross-project binding rejection, audit rollback, and simulation isolation.
 
 Graph interaction uses the pinned [React Flow library](https://reactflow.dev/learn), while validation and execution remain independent domain code. The HMI uses native SVG. All assets needed by these editors are local dependencies; no CDN or external font is required.
+
+## Server activation
+
+Prepared graph revisions can now be activated against running virtual devices from the editor. The operator must supply a reason. The active revision and state remain visible after reopening the graph, while editing continues against its draft. See [runtime execution and revision-switch contracts](runtime.md#prepared-graph-execution). This does not enable physical profiles or convert the isolated five-second simulation bench into a device runtime.

@@ -2,3 +2,7 @@
 @media(min-width:1700px){.editor-grid{grid-template-columns:minmax(0,1fr) 290px}.graph-canvas{height:570px}}
 @media(max-width:1150px){.editor-grid{grid-template-columns:minmax(0,1fr)}.inspector-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.inspector-fields>.eyebrow{grid-column:1/-1}.scheme-browser-heading{align-items:stretch;flex-direction:column;gap:12px}.scheme-browser-heading>.field{min-width:0}.editor-toolbar{gap:12px}}
 @media(max-width:600px){.scheme-browser{padding:15px}.scheme-browser-heading form{flex-direction:column;align-items:stretch}.graph-canvas{height:380px}.inspector-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.inspector-fields>.field:first-of-type{grid-column:1/-1}.editor-toolbar strong{width:100%;margin-bottom:4px}.editor-toolbar .badge{font-size:10px}.editor-toolbar button{font-size:11px;padding:10px}.simulation-panel{padding:16px}.simulation-panel>div:first-child{min-width:0;flex-basis:100%}.screen-canvas,.screen-canvas>svg{min-height:290px}.screen-canvas>svg{min-width:540px}.canvas-footer{font-size:9px}.revision-list code{font-size:9px}}
+
+.graph-runtime-panel { padding: 20px; }
+.graph-runtime-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.graph-runtime-panel .panel-heading { flex-wrap: wrap; gap: 12px; }

@@ -8,7 +8,7 @@ Run `make dev`, sign in, register a project and a **Virtual LED** device, and ch
 
 The worker dispatches and renews sessions while the browser is closed. **Stop simulator** revokes the session and disconnects signal quality. Restarting a simulator creates a new boot/session and initializes its LED to OFF. A worker/API restart does not restore control authority: simulators must be started explicitly again. API source hot reload also restarts the worker and therefore requires rearming virtual devices.
 
-The initial profile permits 16 simultaneously running virtual devices. This is a bounded engineering profile, not the 10,000-device target. There is no persistent deployment manifest or autonomous remote gateway in this increment. Graphs can still be simulated and prepared, but live graph activation is the next step.
+The initial profile permits 16 simultaneously running virtual devices. This is a bounded engineering profile, not the 10,000-device target. There is no persistent deployment manifest or autonomous remote gateway in this increment. Prepared graphs can now execute in the private worker against explicitly started virtual devices. Physical commissioning remains unavailable.
 
 ## Process and ownership boundaries
 
@@ -46,3 +46,20 @@ The main API creates the worker only when `APCS_MQTT_URL` is configured. API tes
 Docker tests cover demand-only startup, physical-profile rejection, actor ownership, two competing executors, current project revisions, stop/cancellation, a changed boot after restart, real IPC, forced process termination, and terminated PostgreSQL ownership sessions. The API suite verifies the durable command path and revokes newly enabled control when completion audit insertion fails. Chromium creates a device, starts its simulator, issues a reasoned command, observes Verified/ON, and stops the simulator.
 
 No physical hardware state, electrical interlock, independent safety function, or final scale profile is inferred from these tests.
+
+## Prepared graph execution
+
+In Logic, save and prepare a revision, enter an activation reason, and choose **Activate revision N**. The graph keeps executing after page navigation, logout, or closing the browser. The runtime panel distinguishes the running revision from the editable draft. Unsaved changes never change the active graph. **Stop graph** stops the graph and revokes its output devices' sessions; restart those simulators explicitly before another activation.
+
+Activation validates the immutable revision checksum, complete graph, project owner, signal bindings, Good quality, and running devices. Each activation receives a unique private service principal. Output ownership excludes manual commands and other graphs. Activation of a nonexistent or corrupted revision leaves the current graph unchanged. The API audits the authenticated operator, reason, revision, and activation ID. Completion audit failure revokes only that generation, so delayed compensation cannot stop a newer activation.
+
+The scheduler defaults to a 100 ms delay after each completed cycle, without overlapping cycles or catch-up bursts. It is not a hard-real-time scheduler. A cycle has a 2,000 ms asynchronous budget. It requires Good boolean snapshots and stable device boot identities, emits changed targets through the durable command journal, and waits for each output's previous command to be Verified before issuing its next target. Rejected, expired, unknown, or failed commands fault the graph and revoke its output sessions. Current telemetry is not a substitute for command acknowledgement. Unexpected feedback drift after a Verified result does not yet have a dedicated divergence alarm or automatic resend.
+
+A revision switch validates the replacement before pausing the previous graph. It drains pending commands for up to 2,500 ms, transfers shared output ownership, revokes removed outputs, and starts the new graph with fresh volatile timer/latch state. Shared devices retain their boot/session. If pending outcomes cannot be verified, the previous generation is stopped rather than replayed. The IPC deadline still bounds the whole operation; timeout kills the worker and leaves control unarmed. Stop/restart, bad quality, and worker failures require explicit operator rearming.
+
+| Route under `/api/v1` | Behavior |
+|---|---|
+| `GET /graphs/:id/runtime` | Active revision, activation ID, state, cycle count, and fault |
+| `POST /graphs/:id/runtime` | Audited `activate` with a prepared revision and reason, or `stop` with a reason |
+
+Prepared revisions and audit history are durable. Active ownership and timer state are deliberately volatile and are not restored after worker/API restart. There is no durable deployment manifest or automatic resume in this profile. The scheduler and revision-switch tests use virtual LEDs only; physical timing, independent safety functions, and full load profiles remain unverified.

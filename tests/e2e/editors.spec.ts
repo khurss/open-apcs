@@ -15,6 +15,8 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByLabel('Device address', { exact: true }).fill('virtual-1');
   await page.getByRole('button', { name: 'Add device', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Editor LED', exact: true })).toBeVisible();
+  await page.getByRole('article').filter({ hasText: 'Editor LED' }).getByRole('button', { name: 'Start simulator', exact: true }).click();
+  await expect(page.getByText('Simulation running', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Logic', exact: true }).click();
   await page.getByLabel('Scheme name', { exact: true }).fill('LED automation');
   await page.getByRole('button', { name: 'Create graph', exact: true }).click();
@@ -27,7 +29,17 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('ON');
   await page.getByRole('button', { name: 'Prepare revision', exact: true }).click();
   await expect(page.getByText('Revision 2 prepared', { exact: true })).toBeVisible();
+  await page.getByLabel('Activation reason', { exact: true }).fill('Browser headless LED workflow');
+  await page.getByRole('button', { name: 'Activate revision 2', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
+  await page.reload();
+  await page.getByRole('button', { name: 'Logic', exact: true }).click();
+  await page.getByRole('button', { name: 'Open LED automation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
   await page.screenshot({ path: 'test-results/logic-editor.png', fullPage: true });
+  await page.getByLabel('Activation reason', { exact: true }).fill('End browser graph test');
+  await page.getByRole('button', { name: 'Stop graph', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('stopped');
   await page.getByRole('button', { name: 'Screens', exact: true }).click();
   await page.getByLabel('Scheme name', { exact: true }).fill('LED overview');
   await page.getByRole('button', { name: 'Create screen', exact: true }).click();

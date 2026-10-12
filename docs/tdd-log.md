@@ -95,3 +95,15 @@ Observed RED: all **3 Chromium scenarios failed** against the initial page becau
 Final `make test`: **175 unit/integration tests and 3 browser tests passed**, along with TypeScript, the English-content guard, and a Vite production build. Browser tests use the real API and PostgreSQL in an internal Docker network, verify no external asset requests, and check desktop, 360 px phone, and 768 px tablet layouts. Desktop/light-theme/mobile screenshots were inspected. Browser authentication uses an isolated fixture account, not a development default password.
 
 The normal development workspace runs at http://localhost:5173. Both development services are healthy; editing the React entry point produced a Vite HMR update without rebuilding images. The pinned Playwright browser image is a separate one-time pull. `make test` now includes browser checks, so the existing CI command runs them as well. Physical outputs remain uncommissioned; neither editor nor the complete offline bundle is implemented yet.
+
+## 2026-10-12: Basic graph/HMI editors and isolated simulation
+
+Observed RED against explicit domain stubs: **17 failed / 3 passed** for logic, **5 failed / 2 passed** for HMI/history. Seven API integration scenarios then failed because the editor routes did not exist. The browser workflow failed waiting for the missing Logic navigation entry.
+
+Implemented deterministic validated boolean graphs, monotonic timers, volatile latch/debounce state, Auto/Manual interlocks, bounded scene/history models, transactional editor drafts, and immutable prepared revisions. Added React Flow graph interaction, SVG scene editing, bindings, undo/redo, JSON editing, and a virtual-time simulation bench with no command-service dependency.
+
+Browser testing found a saved draft incorrectly remained dirty after PostgreSQL reordered JSONB keys. A new history regression reproduced the same issue; canonical object-key comparison fixed both. Added migration-upgrade preservation, actual cross-project binding rejection, immutable database revision enforcement, and bounded/reversed-time simulation checks.
+
+Final `make test`: **212 unit/integration tests and 4 Chromium scenarios passed**, plus TypeScript, the language guard, and the production frontend build. The browser scenario saves/prepares/simulates a graph, edits an HMI with undo/redo, reloads the browser, and reopens the persisted scene. Logic/HMI screenshots were inspected. Dependencies were installed into both development/test volumes without an image rebuild.
+
+This completes the basic editor increment, not M0 or M1 as a whole. Live runtime activation, physical LED commissioning, firmware/HIL, alarms/history, backups, and offline distribution remain pending. See the precise supported contracts and limitations in `docs/editors.md`.

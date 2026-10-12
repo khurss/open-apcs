@@ -2,11 +2,13 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, ApiError, setSession, type User, type Project, type Device, type Signal, type Sample, type Audit, type Page } from './api.js';
 import './style.css';
+import { EditorWorkspace } from './editors.js';
 
-const views = ['Overview', 'Projects', 'Devices', 'Signals', 'Activity', 'System'] as const;
+const views = ['Overview', 'Projects', 'Devices', 'Signals', 'Logic', 'Screens', 'Activity', 'System'] as const;
 type View = typeof views[number];
 const empty = <T,>(): Page<T> => ({ items: [], nextCursor: null });
 const paths: Record<string, string> = {
+  Logic: 'M3 3h6v6H3z M15 15h6v6h-6z M9 6h9v9 M6 9v9h9', Screens: 'M2 3h20v15H2z M8 22h8 M12 18v4',
   Overview: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
   Projects: 'M3 7h7l2-3h9v16H3z', Devices: 'M6 6h12v12H6z M9 1v5m6-5v5M9 18v5m6-5v5M1 9h5m-5 6h5m12-6h5m-5 6h5',
   Signals: 'M2 12h4l3-8 6 16 3-8h4', Activity: 'M5 3h14v18H5z M8 8h8M8 12h8M8 16h5',
@@ -24,6 +26,7 @@ const actionNames: Record<string, string> = { 'admin.created': 'Administrator cr
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [editorDirty, setEditorDirty] = useState(false);
   const [view, setView] = useState<View>('Overview');
   const [theme, setTheme] = useState(() => localStorage.getItem('open-apcs-theme') === 'light' ? 'light' : 'dark');
   const [menu, setMenu] = useState(false);
@@ -78,7 +81,7 @@ function App() {
     void poll();
     return () => { cancelled = true; clearTimeout(timer); };
   }, [user, view, signals]);
-  function navigate(next: View) { setView(next); setMenu(false); setError(''); }
+  function navigate(next: View) { if (next !== view && editorDirty && !window.confirm('Discard unsaved changes to this draft?')) return; setView(next); setMenu(false); setError(''); }
   async function perform(action: () => Promise<void>) {
     setBusy(true); setError('');
     try { await action(); } catch (reason) { failure(reason); } finally { setBusy(false); }
@@ -121,7 +124,7 @@ function App() {
       <div className="sidebar-footer"><div className="local-note"><span className="dot" />Local operation<small>No cloud connection required</small></div><div className="user-row"><span className="avatar">{user.username.slice(0, 1).toUpperCase()}</span><div>{user.username}<small>Administrator</small></div><button className="icon-button" aria-label="Sign out" onClick={() => { void perform(async () => { await api('/auth/logout', { method: 'POST' }); authenticate(null); }); }}><Icon name="logout" /></button></div></div>
     </aside>
     <div className="main-column"><header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" aria-label="Open navigation" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon name="menu" /></button><span>Workspace</span><span className="divider">/</span><strong>{view}</strong></div><div className="topbar-actions"><Badge tone={connected ? 'good' : 'warning'}>{connected ? 'API connected' : 'Connecting'}</Badge>{themeButton}</div></header>
-      <main className="content"><div className="page-heading"><div><span className="eyebrow">YOUR AUTOMATION, AT A GLANCE</span><h1>{view}</h1><p className="muted">{{ Overview: 'A clear view of your projects, devices, and system activity.', Projects: 'Organize your automation into focused workspaces.', Devices: 'Connect your equipment and virtual test devices.', Signals: 'Inspect current values and the quality of every reading.', Activity: 'A record of account and configuration changes.', System: 'Your local platform and development environment.' }[view]}</p></div><button className="secondary" disabled={busy} onClick={() => { void perform(refresh); }}><Icon name="refresh" />Refresh</button></div>
+      <main className="content"><div className="page-heading"><div><span className="eyebrow">YOUR AUTOMATION, AT A GLANCE</span><h1>{view}</h1><p className="muted">{{ Overview: 'A clear view of your projects, devices, and system activity.', Projects: 'Organize your automation into focused workspaces.', Devices: 'Connect your equipment and virtual test devices.', Signals: 'Inspect current values and the quality of every reading.', Logic: 'Design, test, and prepare executable control graphs.', Screens: 'Arrange your operator screens and connect their signals.', Activity: 'A record of account and configuration changes.', System: 'Your local platform and development environment.' }[view]}</p></div><button className="secondary" disabled={busy} onClick={() => { void perform(refresh); }}><Icon name="refresh" />Refresh</button></div>
       {errorBanner}
       {view === 'Overview' && <>
         <div className="stats">{[{ title: 'Loaded projects', value: projects.items.length, icon: 'Projects', note: 'Organized workspaces' }, { title: 'Loaded devices', value: devices.items.length, icon: 'Devices', note: 'Registered in the catalog' }, { title: 'Loaded signals', value: signals.items.length, icon: 'Signals', note: 'Configured I/O points' }].map((stat) => <section className="stat-card" key={stat.title}><div><span className="muted">{stat.title}</span><strong>{stat.value}</strong><small>{stat.note}</small></div><span className="stat-icon"><Icon name={stat.icon} /></span></section>)}</div>
@@ -138,8 +141,9 @@ function App() {
         <div className="form-action"><button className="primary" disabled={busy || !selectedProject}><Icon name="plus" />Add device</button></div>
       </form>{!projects.items.length && <p className="muted">Create a project before adding a device.</p>}<p className="form-note">Registration adds a catalog entry. Control stays disabled until commissioning is available and completed.</p></section><section className="panel"><div className="panel-heading"><h2>Device catalog</h2><span className="count">{devices.items.length}</span></div>{devices.items.length ? <div className="device-grid">{devices.items.map((device) => <article className="device-card" key={device.id}><div className="device-top"><span className="list-icon"><Icon name="Devices" /></span><Badge tone="warning">Not commissioned</Badge></div><h3>{device.name}</h3><p className="muted">{device.kind === 'virtual-led' ? 'Virtual LED' : 'ESP32 LED'}</p><dl><div><dt>Site</dt><dd>{device.siteId}</dd></div><div><dt>Address</dt><dd>{device.deviceId}</dd></div></dl></article>)}</div> : <Empty title="No devices registered">Add a device to create its first output signal.</Empty>}{devices.nextCursor && <button className="secondary load-more" onClick={() => { void perform(() => more('devices')); }}>Load more devices</button>}</section></>}
       {view === 'Signals' && <section className="panel"><div className="panel-heading"><h2>Signal monitor</h2><Badge>Refreshes every second</Badge></div>{signals.items.length ? <div className="table-scroll"><table><thead><tr><th>Signal</th><th>Value</th><th>Quality</th><th>Type</th><th>Direction</th></tr></thead><tbody>{signals.items.map((signal) => { const sample = values[signal.id]; const quality = !connected ? 'Disconnected' : sample?.quality ?? 'Loading'; return <tr key={signal.id}><td><strong>{signal.name}</strong></td><td className="signal-value">{sample?.value == null ? 'No data' : sample.value ? 'ON' : 'OFF'}</td><td><Badge tone={quality === 'Good' ? 'good' : 'warning'}>{quality}</Badge></td><td>{signal.dataType}</td><td>{signal.direction}</td></tr>; })}</tbody></table></div> : <Empty title="No signals configured">Register a device to inspect its signals here.</Empty>}{signals.nextCursor && <button className="secondary load-more" onClick={() => { void perform(() => more('signals')); }}>Load more signals</button>}</section>}
+      {(view === 'Logic' || view === 'Screens') && <EditorWorkspace key={view} kind={view === 'Logic' ? 'graph' : 'screen'} projects={projects.items} devices={devices.items} signals={signals.items} initialProject={selectedProject} onDirty={setEditorDirty} />}
       {view === 'Activity' && <section className="panel"><div className="panel-heading"><h2>Audit trail</h2><span className="muted">Times shown in your local timezone</span></div><ActivityList items={activity.items} />{activity.nextCursor && <button className="secondary load-more" onClick={() => { void perform(() => more('audit')); }}>Load more activity</button>}</section>}
-      {view === 'System' && <div className="overview-grid"><section className="panel"><div className="panel-heading"><h2>Platform</h2><Badge tone="good">Local</Badge></div><dl className="system-details"><div><dt>Application</dt><dd>Open APCS</dd></div><div><dt>API</dt><dd>{connected ? 'Connected' : 'Unavailable'}</dd></div><div><dt>Account</dt><dd>{user.username}</dd></div><div><dt>Current release</dt><dd>Foundation preview</dd></div></dl></section><section className="panel"><div className="panel-heading"><h2>Workspace status</h2></div><div className="system-copy"><p>Projects, the device catalog, and the audit trail are stored locally.</p><p className="muted">Visual editors, commissioning, and live runtime supervision are the next delivery increments. Catalog entries do not enable physical outputs.</p></div></section></div>}
+      {view === 'System' && <div className="overview-grid"><section className="panel"><div className="panel-heading"><h2>Platform</h2><Badge tone="good">Local</Badge></div><dl className="system-details"><div><dt>Application</dt><dd>Open APCS</dd></div><div><dt>API</dt><dd>{connected ? 'Connected' : 'Unavailable'}</dd></div><div><dt>Account</dt><dd>{user.username}</dd></div><div><dt>Current release</dt><dd>Foundation preview</dd></div></dl></section><section className="panel"><div className="panel-heading"><h2>Workspace status</h2></div><div className="system-copy"><p>Projects, the device catalog, and the audit trail are stored locally.</p><p className="muted">Visual editors support saved drafts and isolated simulation. Commissioning and live runtime supervision are the next delivery increments. Catalog entries do not enable physical outputs.</p></div></section></div>}
       <footer className="content-footer"><span>Open APCS</span><span>Local automation workspace · Foundation preview</span></footer></main>
     </div>
   </div>;

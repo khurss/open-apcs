@@ -21,18 +21,21 @@ export async function audit(client: PoolClient, actorId: string | null, action: 
 }
 
 export async function migrateApplication(pool: Pool): Promise<void> {
-  const sql = await readFile(new URL('../migrations/001-application.sql', import.meta.url), 'utf8');
-  const checksum = createHash('sha256').update(sql).digest('hex');
+  const migrations = await Promise.all(['001-application.sql', '002-editors.sql'].map(async (name, index) => {
+    const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
+    return { version: index + 1, sql, checksum: createHash('sha256').update(sql).digest('hex') };
+  }));
   await transaction(pool, async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(9021002)');
     await client.query('CREATE TABLE IF NOT EXISTS apcs_app_migrations (version integer PRIMARY KEY, checksum text NOT NULL)');
-    const rows = await client.query<{ version: number; checksum: string }>('SELECT version, checksum FROM apcs_app_migrations');
-    if (rows.rows.length) {
-      if (rows.rows.length !== 1 || rows.rows[0]!.version !== 1 || rows.rows[0]!.checksum !== checksum) throw new Error('Application migration version or checksum mismatch');
-      return;
+    const applied = await client.query<{ version: number; checksum: string }>('SELECT version, checksum FROM apcs_app_migrations ORDER BY version');
+    for (const [index, row] of applied.rows.entries()) {
+      if (row.version !== index + 1 || migrations[index]?.checksum !== row.checksum) throw new Error('Application migration version or checksum mismatch');
     }
-    await client.query(sql);
-    await client.query('INSERT INTO apcs_app_migrations VALUES (1, $1)', [checksum]);
+    for (const migration of migrations.slice(applied.rows.length)) {
+      await client.query(migration.sql);
+      await client.query('INSERT INTO apcs_app_migrations VALUES ($1, $2)', [migration.version, migration.checksum]);
+    }
   });
 }
 

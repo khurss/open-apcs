@@ -98,10 +98,10 @@ make stop
 1. Package the tested LED MQTT gateway, simulator, and runtime into runnable application processes; configure authenticated broker access.
 2. Extend the local API and basic catalog with commissioning/runtime supervision and the web client.
 3. Add explicit Unknown reconciliation, journal retention, and verified backups.
-4. Extend the working web workspace with both visual editors.
+4. Connect the basic graph/HMI editors and prepared revisions to controlled runtime activation.
 5. Prepare the offline bundle and custom ESP32 firmware for the LED bench.
 
-M0 and M1 are not complete. Hardware tests, the offline bundle, the editors, and the remaining specification are future milestones.
+M0 and M1 are not complete. Hardware tests, the offline bundle, live graph/HMI execution, and the remaining specification are future milestones.
 
 ## Phase commits and language
 

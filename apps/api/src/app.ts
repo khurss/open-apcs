@@ -8,6 +8,7 @@ import type { CommandContext, CommandRequest } from '../../../packages/domain/sr
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 import { audit, migrateApplication, transaction } from './store.js';
 import { verifyPassword } from './security.js';
+import { registerEditors } from './editors.js';
 
 export interface ApiOptions {
   pool: Pool; origin: string; secureCookies: boolean;
@@ -177,6 +178,7 @@ export async function createApi(options: ApiOptions) {
     try { return await journal.get(request.params.id); }
     catch (error) { if (error instanceof Error && error.message.startsWith('Unknown command:')) throw new HttpError(404, 'NOT_FOUND', 'Command not found'); throw error; }
   });
+  registerEditors(app, pool);
   await app.ready(); return app;
 }
 

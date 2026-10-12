@@ -26,6 +26,8 @@ Scope:
 
 Exit: AT-01–05, AT-07, AT-09–11, AT-14–18, and AT-20 for implemented scope; physical LED scenario, network failure, no replay after reconnect, and load profile L0. Complete coverage of the future block library is not claimed.
 
+Current M1 status: **partially implemented**. Both basic editors, prepared revisions, boolean blocks, and isolated virtual-time simulation are available. Firmware/HIL, live runtime publication, operator HMI control, history/alarms, and verified backups remain pending. See [editor contracts](editors.md).
+
 ## M2: Engineering release
 
 Scope: JS/TS editor and isolated runner, formulas/filters/counters/PID, schedules, initial sequences and recipes, full versions/diff/rollback, OTA, ESPHome, faceplates, trends, pre/post-event incident capture, SMTP/webhooks, CSV/PDF and summaries, LED/tank/thermostat templates.

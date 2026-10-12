@@ -30,7 +30,9 @@ Passwords use Node's asynchronous scrypt with independent 32-byte salts and para
 
 Sessions use random 32-byte tokens; PostgreSQL stores token hashes and an eight-hour expiry. Cookies are HttpOnly and SameSite=Strict; HTTPS deployments require Secure cookies. Insecure cookies are permitted only for loopback origins. Logout revokes the server-side record. Login is limited to five attempts per minute per client IP by the current API process; multi-node rate limits are not implemented.
 
-Every mutation requires the exact configured Origin. Authenticated mutations also require the session's `X-CSRF-Token`, returned by login or `/auth/me`. There is no permissive CORS policy. The configured development origin is `http://localhost:5173`, reserved for the upcoming web client. Direct API clients must supply it explicitly. Request bodies are limited to 64 KiB, validated against application-owned JSON Schemas, and reject unknown fields or type coercion. User schemas are never compiled by Fastify. See [Fastify validation](https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/) and the [cookie plugin](https://github.com/fastify/fastify-cookie).
+Every mutation requires the exact configured Origin. Authenticated mutations also require the session's `X-CSRF-Token`, returned by login or `/auth/me`. There is no permissive CORS policy. The configured development origin is `http://localhost:5173`, used by the web client. Direct API clients must supply it explicitly. Request bodies are limited to 64 KiB, validated against application-owned JSON Schemas, and reject unknown fields or type coercion. User schemas are never compiled by Fastify. See [Fastify validation](https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/) and the [cookie plugin](https://github.com/fastify/fastify-cookie).
+
+Graph/HMI drafts, prepared revisions, and simulation routes are described in [editor contracts](editors.md).
 
 ## Implemented routes
 

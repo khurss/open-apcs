@@ -26,10 +26,10 @@ test('creates a project and virtual device, shows unknown signal quality, and au
   await expect(page.getByText('Workbench LED', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Signals', exact: true }).click();
   await expect(page.getByText('Workbench LED.led', { exact: true })).toBeVisible();
-  await expect(page.getByText('Disconnected', { exact: true })).toBeVisible();
-  await expect(page.getByText('No data', { exact: true })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'Workbench LED.led' })).toContainText('Disconnected');
+  await expect(page.getByRole('row').filter({ hasText: 'Workbench LED.led' })).toContainText('No data');
   await page.getByRole('button', { name: 'Activity', exact: true }).click();
-  await expect(page.getByText('Device created', { exact: true })).toBeVisible();
+  await expect(page.getByText('Device created', { exact: true }).first()).toBeVisible();
   await page.getByRole('button', { name: 'Overview', exact: true }).click();
   await page.screenshot({ path: 'test-results/overview-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Switch to light theme' }).click();

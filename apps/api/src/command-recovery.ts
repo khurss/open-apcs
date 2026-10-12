@@ -40,6 +40,7 @@ export function registerCommandRecovery(app: FastifyInstance, pool: Pool, journa
         return { ...context, value: typeof sample.value === 'boolean' ? sample.value : null };
       }, (client, receipt) => audit(client, actor, 'command.reconciled', request.params.id, receipt));
     } catch (error) {
+      if (error instanceof Error && error.message === 'Live context timeout') throw new RecoveryError(409, 'RECOVERY_BLOCKED', 'Good output context could not be verified in time');
       if (error instanceof Error && /^(Output owner|Good output|Output interlock|A new device|The LED safe|Only an Unknown|Reconciliation conflict)/.test(error.message)) throw new RecoveryError(409, 'RECOVERY_BLOCKED', error.message);
       throw error;
     }

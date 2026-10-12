@@ -23,8 +23,18 @@ Server observation time is separate from device source time. Host wall-clock cha
 | `GET /signals/:id/history?from=<ISO>&to=<ISO>&limit=100&before=<ordinal>` | Authenticated project-owner query; up to seven days per range, 1–1,000 rows per page, newest first |
 | `GET /history/status` | Private worker archive status and bounded-buffer diagnostics |
 
-The UI requests 100 rows per page and limits its loaded table to 1,000 rows. Narrow the range to inspect a different interval. A cursor removed by retention must be replaced by a fresh query. Values with Bad, Stale, or Disconnected quality are displayed explicitly; absence of data is not OFF or zero. Plotting, aggregate queries, and reports are later increments.
+The UI requests 100 rows per page and limits its loaded table to 1,000 rows. Narrow the range to inspect a different interval. A cursor removed by retention must be replaced by a fresh query. Values with Bad, Stale, or Disconnected quality are displayed explicitly; absence of data is not OFF or zero. The loaded raw page also provides a bounded trend and CSV export as described below. Aggregate queries and PDF/scheduled reports remain later increments.
 
 ## Verification scope
 
 Domain tests cover observation ordering, stale/disconnect events, subscriber isolation, and unsubscribe. Buffer tests cover rapid changes, checkpoints, capacity exhaustion, stable retry IDs, writer failures, and non-overlap. PostgreSQL tests cover transactional batches, identity conflicts, exact strings, tied timestamps, cursor bounds, and retention cutoffs. Runtime tests verify archival without browser reads and successful control through an archive outage. API and browser tests inspect persisted value/quality data, and the backup drill restores an actual history sample.
+
+## Loaded-page trend and CSV export
+
+The history panel plots the loaded observations, up to its existing 1,000-row limit. The horizontal extent is the oldest to newest loaded timestamp, not an assertion of complete coverage of the requested range. Boolean values use 0/1 with OFF/ON labels; finite numeric values are shown without unit conversion. Good observations have point markers. A horizontal segment holds a value only until the next observation, provided that both observations belong to the same nonempty device session and are no more than 120 seconds apart. Bad/Stale/Disconnected observations, session changes and longer gaps break the trace. Nothing is extrapolated past the latest observation. A tooltip gives local time/value; the table remains the accessible detailed representation.
+
+String values, including exact int64 decimals, are deliberately not converted to floating point for plotting. They remain exact in the table and export. Equal observation timestamps use the archive ordinal as a deterministic tie-breaker. A chart does not reconstruct edges dropped before archival or data outside the loaded page.
+
+**Export loaded CSV** downloads the current loaded rows in ascending observation/ordinal order, including the signal identity/name/type, archive identity, UTC observation time, JSON-encoded value, quality, device boot/session, sequence and original source/receipt timestamps. JSON value encoding distinguishes boolean, null, number and exact string/int64 values. Cells use CSV quote escaping and CRLF records. Potential spreadsheet formulas in text metadata receive a leading apostrophe; consumers that require original metadata must account for that protective prefix. Negative numeric JSON values remain numbers; untrusted string values retain their JSON quotes. UTF-8 user-defined names are preserved.
+
+Export is local to the already authorized browser view and sends no commands. It does not fetch unshown pages or claim to export the entire requested period. The button and row count make that scope explicit. Complete server-side report jobs, annual aggregates, PDF output and scheduled summaries remain on the roadmap.

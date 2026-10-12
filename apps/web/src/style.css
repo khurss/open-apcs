@@ -13,3 +13,12 @@
 .recovery-panel{display:grid;gap:16px;padding:22px;border-top:1px solid var(--border)}.recovery-panel p{font-size:12px;color:var(--muted);line-height:1.7}.recovery-panel button{justify-self:start}.command-history{padding:20px;border-top:1px solid var(--border);font-size:12px}.command-history summary{cursor:pointer;margin-bottom:12px}.command-history>div{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0}.command-history code{font-size:10px;overflow-wrap:anywhere}.command-status code{overflow-wrap:anywhere}
 
 .history-panel .panel-heading{flex-wrap:wrap;gap:12px}.history-filters{padding:20px;display:flex;align-items:end;flex-wrap:wrap;gap:12px}.history-filters .field{flex:1;min-width:190px}.history-status{padding:12px 22px;font-size:12px;color:var(--muted);line-height:1.8}.history-panel time{white-space:nowrap}.history-panel code{font-size:10px}.signal-control-button+.signal-control-button{margin-left:8px}
+
+.history-export { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 20px 22px 8px; }
+.history-export p, .history-trend p { font-size: 12px; line-height: 1.6; }
+.history-trend { margin: 16px 22px 24px; padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
+.history-trend svg { display: block; width: 100%; min-width: 640px; height: auto; }
+.history-trend text { fill: var(--muted); font: 14px ui-monospace, monospace; }
+.trend-grid { stroke: var(--border); stroke-dasharray: 4 4; }
+.trend-value { stroke: var(--accent); stroke-width: 2; }
+.trend-point { fill: var(--accent); }

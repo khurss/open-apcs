@@ -34,7 +34,7 @@ Scope: JS/TS editor and isolated runner, formulas/filters/counters/PID, schedule
 
 Exit: PID and Auto/Manual semantic tests, sandbox/fault suite, successful and failed OTA on the bench, ESPHome contract and hardware tests, exports/reports, backup/restore, and complete offline builds/updates/package installation. Verify the seven-day/one-year policy with virtual time and a bounded real dataset; measure disk capacity. Load profile L1.
 
-Current M2 status: **partially implemented**. Structural comparison of prepared graph/HMI revisions and audited restoration into a new draft are available. Restoring a draft does not switch active control. This independent software increment proceeds while M1 physical acceptance is deferred; it does not complete M1 or M2. The initial JS/TS source editor and isolated boolean script runner are also implemented; see [script limits](script-runtime.md). Numeric/stateful scripts and the other M2 features remain pending.
+Current M2 status: **partially implemented**. Structural comparison of prepared graph/HMI revisions and audited restoration into a new draft are available. Restoring a draft does not switch active control. This independent software increment proceeds while M1 physical acceptance is deferred; it does not complete M1 or M2. The initial JS/TS source editor and isolated boolean script runner are also implemented; see [script limits](script-runtime.md). A loaded-page raw trend and typed CSV export are also available; complete reports, annual aggregates, numeric/stateful scripts and the other M2 features remain pending.
 
 ## M3: Extended editors and integrations
 

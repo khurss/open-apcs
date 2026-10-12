@@ -1,0 +1,26 @@
+{
+  "name": "open-apcs",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.18.3",
+  "engines": { "node": ">=24 <25" },
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:watch": "vitest --project unit",
+    "test:integration:watch": "vitest --project integration",
+    "typecheck": "tsc --noEmit",
+    "check:language": "node scripts/check-english.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/pg": "8.15.5",
+    "fast-check": "4.3.0",
+    "mqtt": "5.14.1",
+    "pg": "8.16.3",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}

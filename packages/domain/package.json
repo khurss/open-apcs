@@ -1,0 +1,11 @@
+{
+  "name": "@open-apcs/domain",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    "./signals": "./src/signals.ts",
+    "./commands": "./src/commands.ts",
+    "./virtual-led": "./src/virtual-led.ts"
+  }
+}

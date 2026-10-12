@@ -1,0 +1,103 @@
+name: open-apcs-test
+
+x-node: &node
+  image: ${DEV_IMAGE:-open-apcs-dev:node24-pnpm10}
+  build:
+    context: .
+    dockerfile: docker/dev.Dockerfile
+  init: true
+  working_dir: /workspace
+  user: "1000:1000"
+  volumes:
+    - .:/workspace
+    - node_modules:/workspace/node_modules
+    - pnpm_store:/pnpm/store
+  networks: [test]
+  environment: &test-env
+    NODE_ENV: test
+    APCS_TEST_POSTGRES_URL: postgres://apcs_test:apcs_test@postgres:5432/apcs_test
+    APCS_TEST_MQTT_URL: mqtt://mqtt:1883
+
+x-dependencies: &dependencies
+  postgres:
+    condition: service_healthy
+  mqtt:
+    condition: service_healthy
+
+services:
+  deps:
+    <<: *node
+    profiles: [tools]
+    networks: [bootstrap]
+    command: [sh, scripts/install-deps.sh]
+
+  unit:
+    <<: *node
+    command: [pnpm, test:unit]
+
+  typecheck:
+    <<: *node
+    command: [pnpm, typecheck]
+
+  integration:
+    <<: *node
+    depends_on: *dependencies
+    command: [pnpm, test:integration]
+
+  all:
+    <<: *node
+    depends_on: *dependencies
+    command: [sh, -ec, "pnpm check:language && pnpm typecheck && pnpm test"]
+
+  unit-watch:
+    <<: *node
+    command: [pnpm, test:watch]
+    stdin_open: true
+    tty: true
+
+  integration-watch:
+    <<: *node
+    depends_on: *dependencies
+    command: [pnpm, test:integration:watch]
+    stdin_open: true
+    tty: true
+
+  toolbox:
+    <<: *node
+    command: [node, -e, "setInterval(() => {}, 3600000)"]
+
+  postgres:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    environment:
+      POSTGRES_USER: apcs_test
+      POSTGRES_PASSWORD: apcs_test
+      POSTGRES_DB: apcs_test
+    networks: [test]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U apcs_test -d apcs_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  mqtt:
+    image: eclipse-mosquitto:2.0.22@sha256:199ea8ef2e35ec2b1b37e59cfd1dbae538ed4dfa4a2251a121a52215a6248a21
+    networks: [test]
+    volumes:
+      - ./docker/mosquitto.test.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: [CMD, mosquitto_pub, -h, localhost, -t, health, -m, ready]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  node_modules:
+  pnpm_store:
+
+networks:
+  # Application tests cannot reach the public internet.
+  test:
+    internal: true
+  # Only the explicit dependency-installation task uses this network.
+  bootstrap: {}

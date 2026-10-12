@@ -1,0 +1,30 @@
+name: Docker tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # actions/checkout v7, pinned from its official repository on 2026-10-12.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Validate Compose
+        run: make config
+      - name: Build tool image
+        run: make image
+      - name: Install locked dependencies in Docker
+        run: make install
+      - name: Typecheck and all tests in Docker
+        run: make test
+      - name: Stop test services
+        if: always()
+        run: make stop

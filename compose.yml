@@ -1,0 +1,35 @@
+name: open-apcs-dev
+
+x-node: &node
+  image: ${DEV_IMAGE:-open-apcs-dev:node24-pnpm10}
+  build:
+    context: .
+    dockerfile: docker/dev.Dockerfile
+  init: true
+  working_dir: /workspace
+  user: "1000:1000"
+  volumes:
+    - .:/workspace
+    - node_modules:/workspace/node_modules
+    - pnpm_store:/pnpm/store
+
+services:
+  # Explicit initialization only; never installs dependencies on a watch restart.
+  deps:
+    <<: *node
+    profiles: [tools]
+    command: [sh, scripts/install-deps.sh]
+
+  toolbox:
+    <<: *node
+    command: [node, -e, "setInterval(() => {}, 3600000)"]
+
+  unit-watch:
+    <<: *node
+    command: [pnpm, test:watch]
+    stdin_open: true
+    tty: true
+
+volumes:
+  node_modules:
+  pnpm_store:

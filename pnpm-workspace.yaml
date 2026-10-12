@@ -1,0 +1,7 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Only this known build script is allowed during dependency installation.
+onlyBuiltDependencies:
+  - esbuild

@@ -1,0 +1,69 @@
+# Open APCS development phases
+
+The customer selected small working deliveries: first an end-to-end ESP32 scenario with both editors and simulation, then broader logic, protocols, and scale. All target-specification features remain in scope; the first working milestone need not support 10,000 devices immediately.
+
+No dates are assigned because team size and available time are unknown. Advancement depends on results rather than unsupported calendar estimates. After completing a phase, update the English documentation, run all applicable Docker checks, commit, and push to the project repository.
+
+## M0: Foundation and container TDD
+
+Scope: TypeScript monorepo, development/test Compose, offline dependency manifest, CI, signal/command/revision schemas, virtual clocks, initial simulator, PostgreSQL/MQTT, local authentication, migrations, and structured logs.
+
+Exit: a new developer runs unit and integration tests in Docker without installing Node on the host; signal-quality, command-state-machine, and MQTT round-trip tests first fail, then pass. Schemas establish core types/APIs. A minimal project starts from a prepared offline bundle.
+
+Current status: **partially implemented**. The workspace, Docker checks/watchers, signal/command models, virtual LED, and PostgreSQL journal are available. Authentication, network runtime/gateway, and the offline bundle are still pending. See the [development guide](development.md) and [TDD log](tdd-log.md).
+
+## M1: Working ESP32 path
+
+Scope:
+
+- ESP-WROOM-32 with custom I/O firmware: GPIO/LED, Wi-Fi/MQTT, USB provisioning/recovery, watchdog, and acknowledgements.
+- Device/signal catalog and diagnostics; virtual ESP32 using the same application contract.
+- Basic HMI editor: labels, indicators, buttons, groups, bindings, persistence, undo/redo.
+- Graph editor: input/output, conditions, debounce, timer, state, interlock, Auto/Manual.
+- Simulation without physical outputs, traces, and connection-loss scenarios.
+- Drafts and revisions, controlled per-graph publication, command/change journal, backups.
+- Responsive English UI with two themes, basic history, and alarms.
+
+Exit: AT-01–05, AT-07, AT-09–11, AT-14–18, and AT-20 for implemented scope; physical LED scenario, network failure, no replay after reconnect, and load profile L0. Complete coverage of the future block library is not claimed.
+
+## M2: Engineering release
+
+Scope: JS/TS editor and isolated runner, formulas/filters/counters/PID, schedules, initial sequences and recipes, full versions/diff/rollback, OTA, ESPHome, faceplates, trends, pre/post-event incident capture, SMTP/webhooks, CSV/PDF and summaries, LED/tank/thermostat templates.
+
+Exit: PID and Auto/Manual semantic tests, sandbox/fault suite, successful and failed OTA on the bench, ESPHome contract and hardware tests, exports/reports, backup/restore, and complete offline builds/updates/package installation. Verify the seven-day/one-year policy with virtual time and a bounded real dataset; measure disk capacity. Load profile L1.
+
+## M3: Extended editors and integrations
+
+Scope: FBD and SFC over the common model, extended recipes/libraries, HTTP device adapter, Serial, Modbus TCP/RTU, Zigbee2MQTT, BLE, driver/block/symbol SDKs, and local package installation. Independent adapters remain possible without core changes.
+
+Exit: selected PR-02–08 pass the contract suite and physical-device tests, or accurately receive `Simulator-tested` status. Do not claim hardware verification for equipment absent from the bench. FBD/SFC pass documented semantic suites; do not claim full IEC 61131-3 compatibility without separate verification.
+
+## M4: Scale and autonomous gateways
+
+Scope: L2–L5 profiles, runtime/subscription partitioning, historian load tests and replacement if necessary, reconnect-storm control, offline gateway execution with a local journal, standalone gateway packages, diagnostics, and a sizing guide.
+
+Exit: a verified profile of 10 sites / 10,000 devices / 50,000–100,000 signals on documented hardware with a specified change rate. If 4 CPUs / 16 GB / 100 GB is insufficient, publish measured limits and expansion requirements. Catalog size alone does not achieve the numeric target.
+
+Loss of the central connection must not stop the published local task on an autonomous gateway. Central commands must not accumulate for later replay. Verify output ownership and protection against concurrent executors.
+
+## M5: Ecosystem expansion
+
+Scope: additional ESP32, Arduino/AVR, STM32/ARM, Mbed CE/existing mbed devices; local firmware execution in a CPU emulator; Structured Text; further industrial drivers; ARM64, roles/collaboration, and HA as needed.
+
+Structured Text requires a separate ADR covering the supported syntax subset, types, loop/memory limits, timers, time semantics, compilation to the intermediate model, and FBD/SFC compatibility. A text editor without execution and tests is not ST support.
+
+HA follows a single-writer/fencing model and split-brain testing. Safety-function certification is outside these phases and would require a separate development program.
+
+## Dependencies
+
+```mermaid
+flowchart LR
+  M0[Contracts and Docker TDD] --> M1[ESP32 and both editors]
+  M1 --> M2[Engineering release]
+  M2 --> M3[FBD SFC and protocols]
+  M2 --> M4[Scale and gateways]
+  M3 --> M5[Boards ST and ecosystem]
+  M4 --> M5
+```
+
+Priorities between M3 and M4 depend on initial measurements and available equipment. Physical-device flashing has not yet been performed. Publishing the initial repository does not mark an unfinished implementation phase complete.

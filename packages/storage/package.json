@@ -1,0 +1,8 @@
+{
+  "name": "@open-apcs/storage",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": { "./command-journal": "./src/command-journal.ts" },
+  "dependencies": { "@open-apcs/domain": "workspace:*", "pg": "8.16.3" }
+}

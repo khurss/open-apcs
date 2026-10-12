@@ -1,0 +1,10 @@
+.git
+node_modules
+**/node_modules
+.pnpm-store
+dist
+coverage
+test-results
+.env
+.env.*
+!docker/**

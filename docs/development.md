@@ -2,7 +2,7 @@
 
 ## Current status
 
-Part of M0 is implemented: a TypeScript/pnpm workspace, container tooling, watch mode, `SignalStore`, `CommandBook`, `VirtualLed`, `PgCommandJournal`, and the LED MQTT gateway/simulator/runtime libraries. RED → GREEN cycles have been observed; full-suite and TypeScript results are recorded in the [TDD log](tdd-log.md).
+The M0 foundation is implemented for the Linux x86-64 engineering profile: a TypeScript/pnpm workspace, container tooling, watch mode, `SignalStore`, `CommandBook`, `VirtualLed`, `PgCommandJournal`, and the LED MQTT gateway/simulator/runtime libraries. RED → GREEN cycles have been observed; full-suite and TypeScript results are recorded in the [TDD log](tdd-log.md).
 
 `SignalStore` keeps values in memory, including quality, monotonic freshness, boot sessions, duplicates, ordering, exact int64/uint64, and disconnection. A trusted gateway calls `beginSession` after device verification; the class does not authenticate MQTT hello messages. Missing data remains `null`; disconnection preserves the last value with `Disconnected` quality.
 
@@ -14,7 +14,7 @@ Part of M0 is implemented: a TypeScript/pnpm workspace, container tooling, watch
 
 ## First run
 
-Requirements: Linux x86-64, Docker Engine accessible to the current user, and Docker Compose. Initial setup needs registry access or pre-imported images and packages. This development environment is not yet the complete offline product distribution.
+Requirements: Linux x86-64, Docker Engine accessible to the current user, and Docker Compose. Initial setup needs registry access or pre-imported images and packages. A prepared [offline engineering bundle](distribution.md) installs this workspace from local images/caches. It is not yet the complete offline product distribution.
 
 From the `open-apcs` directory:
 
@@ -97,11 +97,11 @@ make stop
 
 1. Package the tested LED MQTT gateway, simulator, and runtime into runnable application processes; configure authenticated broker access.
 2. Extend the local API and basic catalog with commissioning/runtime supervision and the web client.
-3. Add explicit Unknown reconciliation, journal retention, and verified backups.
+3. Add explicit Unknown reconciliation, journal retention, and scheduled backup retention; manual backup/restore is verified.
 4. Connect the basic graph/HMI editors and prepared revisions to controlled runtime activation.
-5. Prepare the offline bundle and custom ESP32 firmware for the LED bench.
+5. Extend the minimal offline engineering bundle with production provisioning and ESP32 firmware toolchains.
 
-M0 and M1 are not complete. Hardware tests, the offline bundle, live graph/HMI execution, and the remaining specification are future milestones.
+The M0 foundation gate has passed; M1 remains incomplete. Hardware tests, the offline bundle, live graph/HMI execution, and the remaining specification are future milestones.
 
 ## Phase commits and language
 

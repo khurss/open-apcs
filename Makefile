@@ -22,6 +22,8 @@ watch-integration:
 
 test:
 	docker compose -f compose.test.yml run --rm all
+	docker compose -f compose.test.yml run --rm offline-check
+	docker compose -f compose.test.yml run --rm backup-test
 	$(MAKE) e2e
 
 unit:
@@ -57,3 +59,18 @@ dev-stop:
 e2e:
 	docker compose -f compose.test.yml up -d --force-recreate e2e-api
 	docker compose -f compose.test.yml run --rm e2e
+
+.PHONY: backup backup-test
+backup:
+	mkdir -p dist/backups
+	docker compose run --rm backup
+
+backup-test:
+	docker compose -f compose.test.yml run --rm backup-test
+
+.PHONY: offline-check offline-bundle
+offline-check:
+	docker compose -f compose.test.yml run --rm offline-check
+
+offline-bundle:
+	sh scripts/build-offline.sh

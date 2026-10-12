@@ -106,6 +106,33 @@ services:
         condition: service_healthy
     command: [node, node_modules/@playwright/test/cli.js, test]
 
+  offline-check:
+    image: ${DEV_IMAGE:-open-apcs-dev:node24-pnpm10}
+    init: true
+    user: "1000:1000"
+    working_dir: /workspace
+    network_mode: none
+    volumes:
+      - .:/workspace:ro
+      - pnpm_store:/cache/store:ro
+      - /pnpm/store
+    command: [sh, scripts/test-offline-deps.sh]
+
+  backup-test:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    user: "1000:1000"
+    working_dir: /workspace
+    volumes: [".:/workspace:ro"]
+    networks: [test]
+    environment:
+      PGHOST: postgres
+      PGUSER: apcs_test
+      PGPASSWORD: apcs_test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [sh, scripts/test-backup.sh]
+
   postgres:
     image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
     environment:

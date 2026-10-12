@@ -10,7 +10,7 @@ Scope: TypeScript monorepo, development/test Compose, offline dependency manifes
 
 Exit: a new developer runs unit and integration tests in Docker without installing Node on the host; signal-quality, command-state-machine, and MQTT round-trip tests first fail, then pass. Schemas establish core types/APIs. A minimal project starts from a prepared offline bundle.
 
-Current status: **partially implemented**. The workspace, Docker checks/watchers, signal/command models, virtual LED, PostgreSQL journal, and tested MQTT gateway/simulator/runtime libraries are available. The local authenticated API and basic project/device catalog are now runnable with hot reload. The React workspace and Chromium E2E suite now cover login, the catalog, signal quality, and audit navigation. Catalog-driven runtime deployment and the offline bundle are still pending. See the [development guide](development.md) and [TDD log](tdd-log.md).
+Current status: **foundation acceptance met for the Linux x86-64 engineering profile**. Docker TDD/watchers, signal/command/revision contracts, the virtual LED, the PostgreSQL journal, MQTT gateway/runtime libraries, local authentication, migrations, and structured startup logs are available. The minimal offline bundle was installed into a new workspace with empty dependency caches and passed the complete test suite. Database backup/restore is verified. Catalog-driven runtime commissioning and live graph activation belong to the next working-path deliveries; firmware caches and the complete production distribution remain future work. See the [distribution scope](distribution.md) and [TDD evidence](tdd-log.md).
 
 ## M1: Working ESP32 path
 
@@ -26,7 +26,7 @@ Scope:
 
 Exit: AT-01–05, AT-07, AT-09–11, AT-14–18, and AT-20 for implemented scope; physical LED scenario, network failure, no replay after reconnect, and load profile L0. Complete coverage of the future block library is not claimed.
 
-Current M1 status: **partially implemented**. Both basic editors, prepared revisions, boolean blocks, and isolated virtual-time simulation are available. Firmware/HIL, live runtime publication, operator HMI control, history/alarms, and verified backups remain pending. See [editor contracts](editors.md).
+Current M1 status: **partially implemented**. Both basic editors, prepared revisions, boolean blocks, and isolated virtual-time simulation are available. Firmware/HIL, live runtime publication, operator HMI control, history/alarms remain pending. Database backup/restore is now verified. See [editor contracts](editors.md).
 
 ## M2: Engineering release
 

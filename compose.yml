@@ -58,6 +58,25 @@ services:
       timeout: 3s
       retries: 10
 
+  backup:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    profiles: [tools]
+    user: "1000:1000"
+    working_dir: /workspace
+    volumes:
+      - ./scripts:/workspace/scripts:ro
+      - ./dist/backups:/backups
+    networks: [development]
+    environment:
+      PGHOST: postgres
+      PGUSER: apcs_dev
+      PGPASSWORD: apcs_dev
+      PGDATABASE: apcs_dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [sh, scripts/database-backup.sh, /backups]
+
   # Local development only; database ports are not published to the host.
   postgres:
     image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3

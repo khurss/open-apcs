@@ -1,52 +1,119 @@
-# Open APCS
+# Open APCS — Local SCADA, HMI & ESP32 Automation
 
-An open automation platform with a web interface, an HMI editor, and an executable logic editor. Designed to run locally on Linux in Docker without mandatory internet access. The first target device is ESP-WROOM-32.
+Build control logic, design operator screens and follow your process from a browser. **Open APCS** is a local automation workspace for Linux and Docker, with visual editors, virtual devices and an ESP32 LED integration you can test on real hardware.
 
-The M0 foundation is implemented for the Linux x86-64 engineering profile: the signal model, command lifecycle, virtual LED with a watchdog, a PostgreSQL command journal with a transactional outbox, and a tested MQTT LED gateway/simulator with a headless runtime library. A local authenticated API and basic project/device catalog are also available. TypeScript checks and unit/integration/browser tests and the frontend build run in Docker; watch mode picks up changes without rebuilding images. The responsive English web workspace provides local login, projects, devices, signal quality, and audit views with light/dark themes. Basic graph and HMI editors now support saved drafts, undo/redo, prepared revisions, structural comparisons, audited draft restoration, and isolated boolean-logic simulation. Virtual devices can now be started from the UI and controlled through a separate server process and the durable MQTT command path. See [runtime operation](docs/runtime.md). Prepared graphs now execute headlessly with controlled revision switches and exclusive output ownership. Prepared HMI screens display current values and share the audited command panel; virtual Unknown outcomes have an explicit recovery workflow. Raw signal history now records changes and quality independently of the browser; see [history operation](docs/history.md). Durable boolean/quality and numeric threshold alarms now support hysteresis, delays, acknowledgement and timed suppression; monitoring starts with the server and recovers after worker death without rearming equipment. See [alarm operation](docs/alarms.md). An ESP-IDF LED firmware build and native protocol checks are now included; see [firmware scope](docs/firmware.md). Explicit TLS bench commissioning is available through a private allowlist and operator review; see [commissioning scope](docs/physical-commissioning.md). Initial GPIO18 electrical checks, lease expiry, broker interruption and USB reset are measured through an opt-in [Rigol fixture](docs/rigol-hil.md). Full hardware/endurance acceptance remains pending. See [editor contracts](docs/editors.md). See [API startup](docs/api.md). See [development and hot reload](docs/development.md), the [TDD log](docs/tdd-log.md), the [command storage contract](docs/command-journal.md), and the [LED network contract](docs/led-network.md).
+The core runs without a cloud account. Start with the included virtual demo, then connect supported equipment when you are ready. Optional OpenAI assistance helps draft logic and screens; normal operation does not depend on it.
+
+![Open APCS automation project with prepared logic, HMI screens and virtual equipment](docs/screenshots/project.png)
+
+**[Quick start](#run-with-docker) · [Try the demo](#try-the-automation-demo) · [Documentation](#documentation) · [Roadmap](docs/roadmap.md)**
+
+## From a signal to an operator screen
+
+- **Project workspaces:** clickable project navigation, persistent context, scoped device and signal catalogs, search and revision-checked naming.
+- **Visual control logic:** typed connections, boolean and numeric blocks, timers, hysteresis, PID, weekly schedules and timed sequences. Duplicate, arrange, undo, simulate, compare revisions and deliberately activate prepared logic.
+- **HMI screen editor:** arrange labels, groups, values, status indicators, controls and archive trends. Prepared screens show current data quality and use the audited command workflow.
+- **Devices and simulation:** a virtual LED and thermal chamber for development; an ESP32 MQTT/TLS LED profile with watchdog and explicit commissioning. Closing the browser does not stop server execution.
+- **History, alarms and reports:** raw trends and CSV, minute/hour aggregates, threshold and quality alarms, acknowledgement/suppression, optional SMTP/webhooks, and daily/monthly PDF/CSV reports.
+- **AI-assisted drafts:** optional OpenAI with a configurable model, selected signal context, validation and preview. Applying a proposal changes an unsaved draft; it never activates equipment.
+- **A responsive workspace:** English interface, light/dark themes, desktop editors and phone-friendly monitoring and controls.
+
+![Visual PID logic editor in Open APCS with typed blocks and connections](docs/screenshots/logic.png)
+
+![Prepared HMI with live thermal process values and an embedded archive trend](docs/screenshots/operator.png)
+
+[See the phone operator view](docs/screenshots/operator-phone.png).
+
+## Run with Docker
+
+Requirements: Linux x86-64, Docker Engine with Compose, Git and Make. Initial image/dependency downloads require internet access. For disconnected installation, prepare an [offline engineering bundle](docs/distribution.md) first. The current distribution is an engineering preview, not a hardened production appliance.
 
 ```bash
-cd open-apcs # If your current directory is the parent APCS directory.
+git clone https://github.com/khurss/open-apcs.git
+cd open-apcs
 make image
-make install
-make test
-make watch
+make install-dev
+make dev
 ```
 
-Run `make install-dev && make dev` to open the workspace at http://localhost:5173. Create the initial administrator using the local command in [API startup](docs/api.md); there is no default login. React uses Vite HMR and the API uses process watch.
+Open **http://localhost:5173**. Create your first operator account from another terminal:
 
-For HTTPS testing from other devices on the local network, use the optional [LAN development profile](docs/lan-testing.md). It preserves hot reload and the existing database.
+```bash
+read -rsp 'Administrator password: ' APCS_BOOTSTRAP_INPUT
+printf '\n'
+printf '%s' "$APCS_BOOTSTRAP_INPUT" | docker compose exec -T api pnpm --filter @open-apcs/api exec tsx src/admin.ts operator
+unset APCS_BOOTSTRAP_INPUT
+```
 
-Use `make backup` for a local PostgreSQL archive. A prepared offline engineering bundle can install and test this workspace without package downloads; see [distribution and recovery](docs/distribution.md). New bundles include the pinned ESP32 toolchain; the production distribution remains pending.
+Sign in as `operator` with the password you chose (12–256 characters). **There is no default password.** Bootstrap runs only against a database without accounts. Configuration and history persist in Docker volumes; `make dev-stop` stops the stack without deleting them.
 
-The specification is based on an analysis of the legacy supervisory control system and a 40-question requirements interview. The project name, Open APCS, was chosen by the customer.
+For another computer, tablet or phone, configure the [HTTPS LAN profile](docs/lan-testing.md). The development web server is intended for a trusted test network.
 
-| Document | Contents |
-|---|---|
-| [Specification](docs/specification.md) | Purpose, scope, functional requirements, and interface |
-| [Architecture and contracts](docs/architecture.md) | Stack, runtime, data model, commands, API, deployment |
-| [Protocols and devices](docs/devices-and-protocols.md) | Integrations, ESP32, SDK, and simulation |
-| [TDD and acceptance](docs/testing-and-acceptance.md) | Docker tests, failure scenarios, load, and completion criteria |
-| [Development phases](docs/roadmap.md) | Implementation sequence and phase gates |
-| [Decisions and open questions](docs/decisions-and-questions.md) | Customer answers, recommendations, and unresolved decisions |
-| [Legacy analysis](docs/legacy-analysis.md) | Functions identified in the legacy system and Pascal source references |
-| [Technical sources](docs/sources.md) | Primary documentation for technologies and integrations |
+## Try the automation demo
 
-All repository documentation, source comments, UI text, and commit messages must be in English. User-defined data retains Unicode support. `make test` checks repository text for Cyrillic before running TypeScript and tests. Confirmed requirements, architectural recommendations, and open parameters are distinguished in the specification; an unspecified parameter is not an approved decision.
+1. Open **Projects → Open demo project**. The installer creates a virtual LED, a thermal chamber, prepared LED/PID graphs and operator screens. Reopening it preserves your edits.
+2. Open **Devices** and start **Climate chamber**.
+3. Open **Logic → Climate PID**, enter an activation reason and activate its prepared revision in the execution panel. This explicitly starts the virtual control loop.
+4. Open **Screens → Climate overview → Operate revision 1**. Watch temperature, heater state, quality and the trend; inspect the underlying signal history when needed.
+5. Stop the active graph from its execution panel when finished. Equipment starts stopped after an API restart and needs deliberate reactivation.
 
-Publication target: [khurss/open-apcs](https://github.com/khurss/open-apcs). Completed implementation phases must be documented, checked in Docker, committed, and pushed. See [contributor instructions](AGENTS.md). The open-source license remains an explicit open decision; no license has been selected yet.
+The demo uses virtual equipment. No ESP32, external account or API key is required. The LED example is a separate small path for trying manual commands and output ownership. See the [project workspace guide](docs/project-workspace.md).
 
-Numeric constants, arithmetic, comparisons, hysteresis, elapsed-time filters, bounded edge counters, normalized PID and time proportioning are available in Logic with typed wiring and simulation traces. Existing boolean LED outputs can be controlled; the Virtual thermal process supplies a live numeric sensor and heater for closed-loop testing. Physical numeric drivers remain pending. See [numeric logic](docs/numeric-logic.md) and [virtual process](docs/virtual-process.md).
+## Optional AI authoring
 
-JS/TS boolean blocks are edited in Logic and run by a separate bounded Docker service. See [script execution and current limits](docs/script-runtime.md).
+Configure a private server-side OpenAI key and model using the [AI setup guide](docs/ai-authoring.md). In a saved graph or screen draft, open **AI assistant**, describe the result and review the signal context before sending it.
 
-Alarm SMTP/webhook notifications run in a private background process with durable attempts, bounded retries and an audited delivery log in Alarms. Destinations are disabled by default; see [local configuration and delivery semantics](docs/notifications.md).
+Proposals pass the same document and binding validation as manually authored content. Review, apply, simulate and save through separate actions. API usage may incur provider charges. Local-model support is planned.
 
-Minute/hour history aggregates now run in a private background process with explicit quality/gap duration, protected late-data recalculation and annual cleanup. Open Signals → History → Show aggregates; see [semantics and current bounds](docs/history-aggregates.md).
+## Develop with hot reload and Docker TDD
 
-The PID thermal template has explicit Auto/Manual, reset, anti-windup and timing semantics; see [PID control](docs/pid-control.md). It is verified against virtual devices, with physical tuning and acceptance still pending.
+The web app uses Vite HMR; the API watches mounted source. Ordinary source edits do not rebuild images.
 
-Weekly schedule blocks provide named time zones, DST handling and explicit dated simulation; see [schedule contracts](docs/weekly-schedules.md). Missed windows do not replay, and clock divergence faults the graph until reviewed reactivation.
+```bash
+make install       # Test dependencies in an isolated Docker volume
+make test          # Full Docker gate, including Chromium and firmware checks
+make watch         # Unit tests on source changes
+# Or: make watch-integration
+```
 
-Daily and monthly signal reports now run as bounded background jobs with PDF/CSV downloads, explicit UTC boundaries and quality/gap accounting; see [report operation](docs/reports.md).
+The full gate includes TypeScript, unit/integration tests, browser scenarios, native firmware tests, ESP32 cross-compilation, offline dependency checks and database backup/restore. USB hardware and oscilloscope tests are separate opt-in workflows. See [development](docs/development.md), [test evidence](docs/tdd-log.md) and [browser acceptance](docs/product-acceptance.md).
 
-Single-output timed sequences provide ordered ON/OFF steps, cancellation, start-edge gating and simulation state; see [sequence contracts](docs/timed-sequences.md). Full SFC and parameterized multi-device recipes remain pending.
+## Architecture and current scope
+
+| Layer | Implementation |
+| --- | --- |
+| Web workspace | TypeScript, React, Vite, React Flow, SVG HMI |
+| Local API and services | TypeScript, Node.js, Fastify; private runtime, script and report workers |
+| Persistence | PostgreSQL configuration, versions, command journal, audit and historian |
+| Device transport | MQTT and an explicit MQTT/TLS ESP32 LED profile |
+| Firmware | C with ESP-IDF; portable protocol core and watchdog checks |
+| Development and deployment | Docker Compose, mounted source, offline engineering bundle |
+
+The [code map](docs/code-structure.md) explains the application, domain and worker boundaries. The repository contains working software and a broader specification. **Not every target requirement is implemented.** Current engineering limits and measured results are documented rather than inferred from the architecture.
+
+| Available now | Planned or not yet qualified |
+| --- | --- |
+| Virtual LED/thermal process and ESP32 LED bench | General Arduino/AVR, STM32 and other board profiles |
+| MQTT integration and local HTTP API | Additional industrial protocols and driver SDK distribution |
+| Visual logic, bounded JS/TS blocks and timed sequences | Full SFC, Structured Text, advanced recipes |
+| Explicit revision switching, local restart and backup/restore | High availability, multi-user collaboration and complete production distribution |
+| Measured 16-device command/history workload | 10,000-device target qualification |
+
+This is ordinary automation and supervision software. Emergency stops and critical protective functions must remain independent; no SIL certification is claimed. See [safety boundaries](docs/specification.md) and [load qualification](docs/load-l0.md).
+
+## Documentation
+
+| Guide | What it covers |
+| --- | --- |
+| [Specification](docs/specification.md) | Product requirements and scope |
+| [Architecture](docs/architecture.md) | Runtime, data and command contracts |
+| [Editors](docs/editors.md) / [editor tools and trends](docs/editor-tools.md) | Drafts, simulation, versions and HMI |
+| [Firmware](docs/firmware.md) / [commissioning](docs/physical-commissioning.md) | ESP32 setup and explicit activation |
+| [History](docs/history.md) / [alarms](docs/alarms.md) / [reports](docs/reports.md) | Observation, events and exports |
+| [Offline distribution and recovery](docs/distribution.md) | Bundles and backup/restore |
+| [Roadmap](docs/roadmap.md) | Delivered increments and future work |
+| [Contributing](AGENTS.md) | English repository content, Docker TDD and phase gates |
+
+## Project status and license
+
+Open APCS is developed publicly at [khurss/open-apcs](https://github.com/khurss/open-apcs). An open-source release is intended, but **the license has not yet been selected**. Do not assume MIT, Apache or another license applies.

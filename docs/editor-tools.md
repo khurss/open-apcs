@@ -9,3 +9,5 @@ Editor canvas rendering, shared document types and authoring transformations bel
 Acceptance: duplicate/undo/redo, group subtree identity, dependency layout, snap, chart binding and window validation, persisted chart in a prepared screen, Good/Disconnected transitions, empty history, errors and responsive rendering. No new chart action issues equipment commands.
 
 Trends allow 10–86,400 seconds, at most eight per screen, and a minimum design size of 320 × 200. Each refresh loads at most 1,000 observations with a three-second request deadline; the next round starts two seconds after completion. Phone operator views move trends into responsive cards while keeping the editable scene coordinates intact. See [code structure](code-structure.md).
+
+Embedded plot geometry follows its rendered SVG dimensions, retaining readable axis labels at phone widths. Timestamps on compact axes use local time-of-day; the full history inspector retains dated observations. The original archive quality/gap semantics are shared, and resizing does not invent interpolated values.

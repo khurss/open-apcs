@@ -74,11 +74,16 @@ function App() {
   }
   async function refresh() {
     const epoch = ++refreshEpoch.current;
-    const [p, d, s, a] = await Promise.all([api<Page<Project>>('/projects'), api<Page<Device>>(`/devices?${catalogParams()}`), api<Page<Signal>>(`/signals?${catalogParams()}`), api<Page<Audit>>('/audit')]);
-    if (projectContext && !p.items.some(item => item.id === projectContext)) p.items.push(await api<Project>(`/projects/${projectContext}`));
-    if (epoch !== refreshEpoch.current) return;
-    setProjects(p); setDevices(d); setSignals(s); setActivity(a); setConnected(true);
-    setSelectedProject((selected) => projectContext || selected || p.items[0]?.id || '');
+    try {
+      const [p, d, s, a] = await Promise.all([api<Page<Project>>('/projects'), api<Page<Device>>(`/devices?${catalogParams()}`), api<Page<Signal>>(`/signals?${catalogParams()}`), api<Page<Audit>>('/audit')]);
+      if (projectContext && !p.items.some(item => item.id === projectContext)) p.items.push(await api<Project>(`/projects/${projectContext}`));
+      if (epoch !== refreshEpoch.current) return;
+      setProjects(p); setDevices(d); setSignals(s); setActivity(a); setConnected(true);
+      setSelectedProject((selected) => projectContext || selected || p.items[0]?.id || '');
+    } catch (reason) {
+      // A response from a previous route must not overwrite the current connection state.
+      if (epoch === refreshEpoch.current) throw reason;
+    }
   }
   useEffect(() => {
     refreshEpoch.current++; setDevices(empty()); setSignals(empty()); setValues({}); setConnected(false);

@@ -23,6 +23,8 @@ test('duplicates and arranges logic, then operates a prepared trend with unavail
   await expect(trend).toContainText('Trend history is unavailable');
   await page.unroute('**/api/v1/signals/*/history?*');await expect(trend).not.toContainText('Trend history is unavailable');
   await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const tick=page.getByRole('region',{name:'Trend Preview trend',exact:true}).locator('.history-trend svg text').first();
+  await expect.poll(()=>tick.evaluate(node=>node.getBoundingClientRect().height),{message:'Phone trend axis text must remain readable'}).toBeGreaterThanOrEqual(9);
   await page.screenshot({path:'test-results/trend-phone.png',fullPage:true});await page.setViewportSize({width:1440,height:1000});
   await page.getByRole('button',{name:'Devices',exact:true}).click();await thermal.getByRole('button',{name:'Stop simulator',exact:true}).click();await expect(thermal).toContainText('Simulation stopped');
 });

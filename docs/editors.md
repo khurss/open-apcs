@@ -111,3 +111,7 @@ Weekly windows, DST policy, clock supervision and explicit simulation epochs fol
 ## Timed sequences
 
 The boolean `sequence` block exposes ordered step editing and simulation state. See [timed sequence semantics](timed-sequences.md) for start-edge, cancellation, no-resume, duration and fault rules. It uses existing graph publication and output ownership; this initial profile is not full SFC or a multi-device recipe engine.
+
+## Server evaluation view
+
+Open Last server evaluation in the execution panel for revision-specific calculation values and sequence state. This view uses active-revision metadata and is separate from draft simulation; see [diagnostic freshness and evidence](graph-diagnostics.md).

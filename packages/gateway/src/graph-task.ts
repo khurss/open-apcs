@@ -8,7 +8,7 @@ export interface GraphIo {
   command(id: string): Promise<CommandSnapshot>;
   revoke(reason: string): Promise<void>;
 }
-export interface GraphTaskStatus { state: 'stopped' | 'running' | 'paused' | 'faulted'; cycles: number; error: string | null; pending: string[]; last: LogicResult | null; }
+export interface GraphTaskStatus { state: 'stopped' | 'running' | 'paused' | 'faulted'; cycles: number; error: string | null; pending: string[]; last: LogicResult | null; lastEvaluatedAt: string | null; }
 export class GraphTask {
   private readonly engine: LogicEngine;
   private readonly periodMs: number;
@@ -21,6 +21,7 @@ export class GraphTask {
   private cycles = 0;
   private error: string | null = null;
   private last: LogicResult | null = null;
+  private lastEvaluatedAt: string | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private inFlight: Promise<void> = Promise.resolve();
   private finished = false;
@@ -57,7 +58,7 @@ export class GraphTask {
     clearTimeout(this.timer); await this.inFlight;
     await this.revoke('Graph stopped');
   }
-  get status(): GraphTaskStatus { return { state: this.state, cycles: this.cycles, error: this.error, pending: [...this.pending.values()], last: structuredClone(this.last) }; }
+  get status(): GraphTaskStatus { return { state: this.state, cycles: this.cycles, error: this.error, pending: [...this.pending.values()], last: structuredClone(this.last), lastEvaluatedAt: this.lastEvaluatedAt }; }
   private active() { return this.state === 'running' && !this.finished; }
   private async revoke(reason: string) {
     if (this.revoked) return; this.revoked = true;
@@ -93,9 +94,10 @@ export class GraphTask {
         if (command.state === 'Verified') this.pending.delete(id);
         else if (!['Accepted', 'Dispatched', 'DeviceAccepted'].includes(command.state)) throw new Error(`Command ${commandId} ended as ${command.state}`);
       }
-      this.last = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean | number, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }), { wallTimeMs: this.wallNow() });
+      const evaluated = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean | number, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }), { wallTimeMs: this.wallNow() });
       if (!this.active()) return;
-      this.cycles++;
+      const at = new Date(this.wallNow()).toISOString();
+      this.last = evaluated; this.lastEvaluatedAt = at; this.cycles++;
       // Validate the entire calculated output set before issuing any intent.
       for (const [id, value] of Object.entries(this.last.outputs)) {
         if (value.quality !== 'Good' || typeof value.value !== 'boolean') throw new Error(value.reason ?? `Output ${id} is inhibited`);

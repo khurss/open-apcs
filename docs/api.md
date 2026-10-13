@@ -65,3 +65,7 @@ Commands require `Idempotency-Key`; callers cannot supply a trusted actor ID. Th
 Docker tests verify salted credentials, bootstrap concurrency, migration checksums, session persistence/expiry/logout, origin and CSRF rejection, login throttling, strict input validation, pagination, optimistic revisions, atomic device/signal/audit creation, rollback on audit failure, command idempotency, and authenticated API → PostgreSQL → MQTT → virtual LED → Verified execution. API process reload and its health endpoint were also checked inside Docker.
 
 The web workspace, private simulation runtime, prepared graph activation, and foundation offline bundle are now available. TLS bench commissioning now has protocol-simulator coverage. Still pending: physical HIL, durable deployment supervision, password recovery, detailed roles, WebSocket streaming, OpenAPI export, the complete production offline distribution, production broker/TLS configuration, and the remaining roadmap. M1 remains partial.
+
+## Graph calculation snapshots
+
+The existing owner-authenticated graph runtime response now includes `pending` command IDs and a nullable `evaluation` (`at`, `cycle`, active `blocks`, and calculated `result`). See [graph diagnostics](graph-diagnostics.md) for bounds, freshness and the distinction between calculations and actuator feedback. This read does not activate a graph or send commands.

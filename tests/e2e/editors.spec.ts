@@ -49,6 +49,35 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByLabel('Activation reason', { exact: true }).fill('Browser headless LED workflow');
   await page.getByRole('button', { name: 'Activate revision 2', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
+  await page.getByText('Last server evaluation', { exact: true }).click({ timeout: 5000 });
+  await expect(page.getByRole('table', { name: 'Active revision values' })).toContainText('Power');
+  await expect(page.getByRole('table', { name: 'Active revision values' })).toContainText('ON');
+  await expect(page.getByRole('status', { name: 'Evaluation freshness' })).toContainText('Recent calculation');
+
+  await page.route('**/api/v1/graphs/*/runtime', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch(); const body = await response.json();
+    if (body.evaluation) body.evaluation.at = new Date(Date.now() - 10000).toISOString();
+    await route.fulfill({ response, json: body });
+  });
+  await expect(page.getByRole('status', { name: 'Evaluation freshness' })).toContainText('Historical or overdue calculation');
+  await page.unroute('**/api/v1/graphs/*/runtime');
+  await expect(page.getByRole('status', { name: 'Evaluation freshness' })).toContainText('Recent calculation');
+  await page.route('**/api/v1/graphs/*/runtime', (route) => route.request().method() === 'GET' ? route.abort() : route.continue());
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('Status unavailable');
+  await expect(page.getByRole('table', { name: 'Active revision values' })).toHaveCount(0);
+  await page.unroute('**/api/v1/graphs/*/runtime');
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
+  await page.getByText('Last server evaluation', { exact: true }).click({ timeout: 5000 });
+  await page.screenshot({ path: 'test-results/graph-evaluation.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/graph-evaluation-phone.png', fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+
+
   await page.reload();
   await page.getByRole('button', { name: 'Logic', exact: true }).click();
   await page.getByRole('button', { name: 'Open LED automation', exact: true }).click();
@@ -144,6 +173,8 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByLabel('Activation reason', { exact: true }).fill('End browser graph test');
   await page.getByRole('button', { name: 'Stop graph', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('stopped');
+  await page.getByText('Last server evaluation', { exact: true }).click({ timeout: 5000 });
+  await expect(page.getByRole('status', { name: 'Evaluation freshness' })).toContainText('Historical or overdue calculation');
   await page.getByRole('button', { name: 'Screens', exact: true }).click();
   await page.getByLabel('Scheme name', { exact: true }).fill('LED overview');
   await page.getByRole('button', { name: 'Create screen', exact: true }).click();

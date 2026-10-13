@@ -14,7 +14,7 @@ export function registerGraphRuntime(app: FastifyInstance, pool: Pool, runtime?:
   }
   app.get<{ Params: { id: string } }>('/api/v1/graphs/:id/runtime', { schema: { params } }, async (request) => {
     await graph(request.params.id, request.sessionUser!.id);
-    return runtime?.graphStatus(request.params.id) ?? { graphId: request.params.id, revision: null, activationId: null, state: 'stopped', error: 'Runtime service is not configured', cycles: 0 };
+    return runtime?.graphStatus(request.params.id) ?? { graphId: request.params.id, revision: null, activationId: null, state: 'stopped', error: 'Runtime service is not configured', cycles: 0, pending: [], evaluation: null };
   });
   app.post<{ Params: { id: string }; Body: { action: 'activate' | 'stop'; revision?: number; reason: string } }>('/api/v1/graphs/:id/runtime', {
     schema: { params, body: object({ action: { type: 'string', enum: ['activate', 'stop'] }, revision: { type: 'integer', minimum: 1, maximum: 999999999 }, reason: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } }, ['action', 'reason']) },

@@ -1,3 +1,4 @@
+import type { GraphEvaluation } from '../../../packages/domain/src/graph-evaluation.js';
 import { MqttThermalProcess } from '../../../packages/gateway/src/thermal-process.js';
 import { ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { AlarmService, type AlarmAction, type AlarmServiceStatus } from './alarm-service.js';
@@ -16,7 +17,7 @@ import { LedRuntime } from '../../../packages/gateway/src/runtime.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
 export interface RuntimeStatus { deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
-export interface GraphRuntimeStatus { graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; }
+export interface GraphRuntimeStatus { graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; pending: string[]; evaluation: GraphEvaluation | null; }
 export interface RuntimeControl {
   alarmStatus(): Promise<AlarmServiceStatus>;
   alarmAction(id: string, actor: string, action: AlarmAction): Promise<void>;
@@ -34,7 +35,7 @@ export interface RuntimeControl {
 }
 interface Catalog { siteId: string; deviceId: string; signalId: string; projectId: string; kind: string; revision: number; ownerId: string; protocolDeviceId: string; }
 interface Entry { temperatureSignalId: string | null; process: MqttThermalProcess | null; processError: string | null; catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator | null; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
-interface GraphEntry { revision: number; activationId: string; ownerId: string; task: GraphTask; }
+interface GraphEntry { blocks: GraphEvaluation['blocks']; revision: number; activationId: string; ownerId: string; task: GraphTask; }
 const disconnected = (): SignalSnapshot => ({ value: null, quality: 'Disconnected', bootId: null, sourceTime: null, receivedTime: null, sequence: null });
 const lockKey = "hashtextextended(current_schema() || ':open-apcs-simulation-runtime', 0)";
 /** Virtual devices and explicitly commissioned LED benches. Control authority is volatile and must be explicitly rearmed after restart. */
@@ -181,7 +182,7 @@ export class SimulationRuntime implements RuntimeControl {
     // Transfer shared outputs before revoking the old generation. Removed outputs stop.
     for (const entry of outputs) entry.policy.ownerId = ownerId;
     if (prior) await prior.task.stop();
-    this.graphs.set(id, { revision, activationId, ownerId, task });
+    this.graphs.set(id, { revision, activationId, ownerId, task, blocks: graph.nodes.map(({ id, label, kind }) => ({ id, label, kind })) });
     await task.start();
     return this.graphStatus(id);
   }); }
@@ -191,7 +192,7 @@ export class SimulationRuntime implements RuntimeControl {
   async historyStatus(): Promise<HistoryStatus> { return this.history.status; }
   async graphStatus(id: string): Promise<GraphRuntimeStatus> {
     const graph = this.graphs.get(id); const status = graph?.task.status;
-    return { graphId: id, revision: graph?.revision ?? null, activationId: graph?.activationId ?? null, state: status?.state ?? 'stopped', error: status?.error ?? null, cycles: status?.cycles ?? 0 };
+    return { graphId: id, revision: graph?.revision ?? null, activationId: graph?.activationId ?? null, state: status?.state ?? 'stopped', error: status?.error ?? null, cycles: status?.cycles ?? 0, pending: status?.pending ?? [], evaluation: status?.last && status.lastEvaluatedAt && graph ? { at: status.lastEvaluatedAt, cycle: status.cycles, blocks: structuredClone(graph.blocks), result: status.last } : null };
   }
   private async acquire() {
     if (this.lock) return;

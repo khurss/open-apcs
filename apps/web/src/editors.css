@@ -42,3 +42,9 @@
 .sequence-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .sequence-steps { grid-column: 1 / -1; min-width: 0; display: grid; gap: 12px; max-height: 460px; overflow: auto; padding: 2px; }
+
+.graph-evaluation { margin-top: 18px; min-width: 0; border-top: 1px solid var(--border); padding-top: 14px; }
+.graph-evaluation summary { cursor: pointer; font-weight: 600; }
+.graph-evaluation p { margin: 10px 0; font-size: 12px; overflow-wrap: anywhere; }
+.graph-evaluation td { max-width: 280px; overflow-wrap: anywhere; white-space: normal; }
+.graph-evaluation td small { display: block; color: var(--muted); margin-top: 4px; }

@@ -54,13 +54,15 @@ describe('isolated graph scripts', () => {
     const task = new GraphTask(scripted, io, () => 0); await task.start();
     expect(task.status.state).toBe('faulted'); expect(io.revoke).toHaveBeenCalledTimes(1); expect(io.request).not.toHaveBeenCalled();
   });
-  it.each(['stop', 'deadline'])('fences a late script result after %s', async (action) => {
+  it.each(['stop', 'deadline', 'pause'])('fences a late script result after %s', async (action) => {
     const { io } = bench(); let release!: (v: boolean) => void;
     io.evaluate = () => new Promise((resolve) => { release = resolve; });
     const task = new GraphTask(scripted, io, () => 0); const start = task.start(); await vi.advanceTimersByTimeAsync(0);
-    const stop = action === 'stop' ? task.stop() : vi.advanceTimersByTimeAsync(2001);
+    const stop = action === 'stop' ? task.stop() : action === 'pause' ? task.pause() : vi.advanceTimersByTimeAsync(2001);
     await vi.advanceTimersByTimeAsync(0); release(true); await Promise.all([start, stop]);
-    expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1);
+    expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(action === 'pause' ? 0 : 1);
+    expect(task.status.last).toBeNull(); expect(task.status.lastEvaluatedAt).toBeNull();
+    if (action === 'pause') await task.stop();
   });
 });
 
@@ -124,4 +126,15 @@ it('revokes sequence authority when a required input becomes unavailable and nev
   expect(task.status.state).toBe('faulted'); expect(io.revoke).toHaveBeenCalledTimes(1);
   const count = vi.mocked(io.request).mock.calls.length; samples.switch!.quality = 'Good';
   await vi.advanceTimersByTimeAsync(3000); expect(io.request).toHaveBeenCalledTimes(count);
+});
+
+
+it('returns isolated timestamped evaluation snapshots and retains them as historical after stop', async () => {
+  const { task } = bench(); expect(task.status.lastEvaluatedAt).toBeNull();
+  await task.start(); const first = task.status;
+  expect(first.lastEvaluatedAt).toBe(new Date().toISOString()); expect(first.last!.outputs.led!.value).toBe(true);
+  first.last!.outputs.led!.value = false; expect(task.status.last!.outputs.led!.value).toBe(true);
+  await task.stop(); const stopped = task.status;
+  await vi.advanceTimersByTimeAsync(1000); expect(task.status.lastEvaluatedAt).toBe(stopped.lastEvaluatedAt);
+  expect(task.status.state).toBe('stopped');
 });

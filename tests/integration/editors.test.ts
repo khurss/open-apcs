@@ -429,5 +429,16 @@ it('simulates a one-shot sequence without writes and verifies each requested tra
   expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed one-shot steps' } })).statusCode).toBe(200);
   const values = async () => (await pool.query("SELECT request->'value' AS value FROM apcs_commands WHERE target_signal_id=$1 AND snapshot->>'state'='Verified' ORDER BY created_at", [signalId])).rows.map((row) => row.value);
   await expect.poll(values, { timeout: 8000 }).toEqual([true, false, true, false]);
+  await expect.poll(async () => (await runtime.graphStatus(id)).pending).toEqual([]);
+  const changed = sequenceGraph(signalId); changed.nodes[3]!.label = 'New draft label';
+  expect((await save(id, changed, 2)).statusCode).toBe(200);
+  const trace = await app.inject({ method: 'GET', url: `/api/v1/graphs/${id}/runtime`, headers });
+  expect(trace.statusCode).toBe(200);
+  expect(trace.json()).toMatchObject({ revision: 2, state: 'running', pending: [], evaluation: { result: { nodes: { sequence: { sequence: { state: 'Completed' } } } } } });
+  expect(Number.isFinite(Date.parse(trace.json().evaluation.at))).toBe(true);
+  expect(trace.json().evaluation.cycle).toBeGreaterThan(0);
+  expect(trace.json().evaluation.blocks.find((block: { id: string }) => block.id === 'sequence').label).toBe('LED sequence');
+  expect((await app.inject({ method: 'GET', url: `/api/v1/graphs/${id}/runtime` })).statusCode).toBe(401);
+
   expect((await runtime.graphStatus(id)).state).toBe('running');
 });

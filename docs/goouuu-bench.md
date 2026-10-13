@@ -34,10 +34,18 @@ The physical broker also requires `set_tcp_nodelay true` for this measured bench
 
 ## Observed result and remaining acceptance
 
-The live HTTPS browser workflow completed 30 alternating GPIO5 ON/OFF commands through the API, durable journal, TLS broker and physical ESP32. Every command reached `Verified`, and the final command was OFF. The owner then reported that the onboard LED did **not** blink. GPIO5 is therefore not confirmed as this board's LED pin. Firmware acknowledgements establish the command path, not independently measured GPIO voltage or visible light. Photos of both sides or an exact board schematic are needed before choosing another pin.
+The live HTTPS browser workflow completed 30 alternating GPIO5 ON/OFF commands through the API, durable journal, TLS broker and physical ESP32. Every command reached `Verified`, and the final command was OFF. The owner then reported that the onboard LED did **not** blink. GPIO5 is therefore not confirmed as this board's LED pin. Firmware acknowledgements establish the command path, not independently measured GPIO voltage or visible light. An exact board schematic would be needed to resolve the onboard LED mapping; the owner subsequently chose a separate external LED on GPIO18.
 
 A later runtime renewal failed closed before the broker latency adjustment; the API profile was explicitly stopped. The final diagnostic handshakes sent no output commands, observed output false, and their leases expired. The device remains disarmed. The final broker setting has handshake evidence only; the complete browser control run has not been repeated with it.
 
 Final Docker validation passed 535 unit/integration tests, six Chromium scenarios, 420 native C checks, ESP32 cross-compilation, renderer recovery, TypeScript, English validation, frontend/offline dependency builds and database backup/restore. No tool image was rebuilt.
 
-Visual LED mapping/polarity, independent watchdog/output timing, network interruption/reconnect behavior, power-cycle behavior and the one-hour L0 profile remain unverified. USB flashing, Wi-Fi/TLS connection and firmware acknowledgements do not complete M1 or physical LED acceptance.
+At this GPIO5 checkpoint, visual LED mapping/polarity, independent watchdog/output timing, network interruption/reconnect behavior, power-cycle behavior and the one-hour L0 profile remained unverified. USB flashing, Wi-Fi/TLS connection and firmware acknowledgements do not complete M1 or physical LED acceptance.
+
+## External GPIO18 LED verification
+
+The owner connected an external LED and explicitly confirmed the labelled G18/GPIO18 contact, a 330–1000 ohm series resistor to the LED anode, and cathode to GND. The private device provisioning and gateway allowlist were changed to GPIO18. Only the reviewed NVS partition at `0x9000` (size `0x6000`) was rewritten through the pinned Docker ESP-IDF tool; esptool verified its hash. The application firmware, Wi-Fi credentials and broker identity were unchanged. The board rebooted and the API reloaded its private configuration without rebuilding images.
+
+The live HTTPS browser then armed the reviewed GPIO18 profile and sent ten alternating ON/OFF cycles. All 20 commands reached `Verified`, ending OFF. The owner confirmed that the external LED visibly blinked. This establishes the initial web-to-physical-LED path and the selected external wiring/polarity. The final disarm returned `stopped` with no runtime error. The existing catalog entry still has its historical name, `GOOUUU onboard LED`; it now addresses the externally wired GPIO18 LED.
+
+This was a deployment/configuration check, with no application source changes. Existing GPIO18 tests and the preceding complete Docker gate remain applicable; the physical browser check ran in Docker. Independent watchdog timing, network-loss/no-replay tests, power-cycle acceptance and the one-hour L0 load profile remain pending. The onboard LED mapping is still unresolved and is not required for this external LED bench.

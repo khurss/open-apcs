@@ -411,3 +411,23 @@ it('activates a prepared all-day schedule using server wall time and verifies th
   expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed weekly schedule' } })).statusCode).toBe(200);
   await expect.poll(async () => (await pool.query("SELECT count(*)::int AS n FROM apcs_commands WHERE target_signal_id=$1 AND request->>'value'='true' AND snapshot->>'state'='Verified'", [signalId])).rows[0].n, { timeout: 5000 }).toBe(1);
 });
+
+it('simulates a one-shot sequence without writes and verifies each requested transition headlessly', async () => {
+  const { sequenceGraph } = await import('../fixtures/sequence-graph.js');
+  await app.close(); const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const id = (await create()).json().id;
+  expect((await save(id, sequenceGraph(signalId))).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  const simulation = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [0, 1000, 2000, 3000, 4000, 5000].map((atMs) => ({ atMs, inputs: {} })) } });
+  expect(simulation.statusCode, simulation.body).toBe(200);
+  expect(simulation.json().steps.map((step: { outputs: Record<string, { value: unknown }> }) => step.outputs[signalId]!.value)).toEqual([false, true, false, true, false, false]);
+  expect(simulation.json().steps.at(-1).nodes.sequence.sequence.state).toBe('Completed');
+  expect((await pool.query('SELECT count(*) FROM apcs_commands')).rows[0].count).toBe('0');
+  const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device}/runtime`, headers, payload: { action: 'start', reason: 'Sequence fixture' } })).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed one-shot steps' } })).statusCode).toBe(200);
+  const values = async () => (await pool.query("SELECT request->'value' AS value FROM apcs_commands WHERE target_signal_id=$1 AND snapshot->>'state'='Verified' ORDER BY created_at", [signalId])).rows.map((row) => row.value);
+  await expect.poll(values, { timeout: 8000 }).toEqual([true, false, true, false]);
+  expect((await runtime.graphStatus(id)).state).toBe('running');
+});

@@ -113,3 +113,15 @@ it('supplies wall time to weekly schedules and revokes authority after clock div
   expect(task.status).toMatchObject({ state: 'faulted' }); expect(task.status.error).toMatch(/clock/i);
   expect(io.revoke).toHaveBeenCalledTimes(1); expect(io.request).toHaveBeenCalledTimes(1);
 });
+
+it('revokes sequence authority when a required input becomes unavailable and never resumes its steps', async () => {
+  const { sequenceGraph } = await import('../../../tests/fixtures/sequence-graph.js');
+  const { io, samples } = bench(); const graph = sequenceGraph('led');
+  graph.nodes[0] = { id: 'power', kind: 'input', label: 'Enable', signalId: 'switch', x: 0, y: 0 };
+  const task = new GraphTask(graph, io, () => Date.now()); await task.start();
+  await vi.advanceTimersByTimeAsync(1100); expect(io.request).toHaveBeenCalledWith('led', true);
+  samples.switch!.quality = 'Disconnected'; await vi.advanceTimersByTimeAsync(100);
+  expect(task.status.state).toBe('faulted'); expect(io.revoke).toHaveBeenCalledTimes(1);
+  const count = vi.mocked(io.request).mock.calls.length; samples.switch!.quality = 'Good';
+  await vi.advanceTimersByTimeAsync(3000); expect(io.request).toHaveBeenCalledTimes(count);
+});

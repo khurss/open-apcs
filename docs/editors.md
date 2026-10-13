@@ -107,3 +107,7 @@ Filter/counter parameters, initialization, reset, invalid-input behavior and sam
 The thermal template selector chooses the device for either Thermostat or PID thermostat. The PID properties, reset/mode behavior and sampling limits follow [PID control](pid-control.md).
 
 Weekly windows, DST policy, clock supervision and explicit simulation epochs follow [weekly schedule contracts](weekly-schedules.md).
+
+## Timed sequences
+
+The boolean `sequence` block exposes ordered step editing and simulation state. See [timed sequence semantics](timed-sequences.md) for start-edge, cancellation, no-resume, duration and fault rules. It uses existing graph publication and output ownership; this initial profile is not full SFC or a multi-device recipe engine.

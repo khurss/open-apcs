@@ -36,3 +36,9 @@
 .schedule-days { grid-column: 1 / -1; min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .simulation-inputs .field:has(input[type="datetime-local"]) { width: 240px; max-width: 100%; }
 .schedule-days input { flex-shrink: 0; }
+
+.sequence-step { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: grid; gap: 10px; }
+.sequence-step legend { padding: 0 5px; font-weight: 600; }
+.sequence-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.sequence-steps { grid-column: 1 / -1; min-width: 0; display: grid; gap: 12px; max-height: 460px; overflow: auto; padding: 2px; }

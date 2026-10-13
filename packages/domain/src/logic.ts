@@ -1,15 +1,16 @@
+import { TimedSequence, validateSequenceSettings, type SequenceSettings, type SequenceState } from './sequence.js';
 import { WeeklySchedule, validateWeeklySettings, type WeeklySettings } from './weekly-schedule.js';
 import { PidController, TimeProportioner, validatePidSettings, type PidSettings } from './pid.js';
-export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter' | 'pid' | 'pwm' | 'schedule';
-export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; pid?: PidSettings; windowMs?: number; schedule?: WeeklySettings; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
+export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter' | 'pid' | 'pwm' | 'schedule' | 'sequence';
+export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; pid?: PidSettings; windowMs?: number; schedule?: WeeklySettings; sequence?: SequenceSettings; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
 export interface ScriptEvaluation { source: string; language: 'javascript' | 'typescript'; inputs: { a: boolean; b: boolean }; nowMs: number; }
 export type ScriptEvaluator = (request: ScriptEvaluation) => Promise<boolean>;
 export interface LogicEdge { id: string; source: string; target: string; port: string; }
 export interface LogicGraph { schemaVersion: 1; nodes: LogicNode[]; edges: LogicEdge[]; }
-export interface LogicValue { value: boolean | number | null; quality: 'Good' | 'Bad'; reason: string | null; }
+export interface LogicValue { value: boolean | number | null; quality: 'Good' | 'Bad'; reason: string | null; sequence?: SequenceState; }
 export interface LogicContext { wallTimeMs: number; }
 export interface LogicResult { nodes: Record<string, LogicValue>; outputs: Record<string, LogicValue>; }
-export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'], pid: ['pv', 'setpoint', 'manual', 'auto', 'enable', 'reset'], pwm: ['in'], schedule: [] };
+export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'], pid: ['pv', 'setpoint', 'manual', 'auto', 'enable', 'reset'], pwm: ['in'], schedule: [], sequence: ['start', 'cancel', 'permit'] };
 export type LogicType = 'boolean' | 'number';
 const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide', 'filter', 'counter', 'pid']);
 const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis', 'filter', 'pwm']);
@@ -30,7 +31,7 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
   if (graph.schemaVersion !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 256 || graph.edges.length > 1024) throw new Error('Invalid graph version or size');
   const nodes = new Map<string, LogicNode>(); const writers = new Set<string>(); const bindings = new Map<string, LogicType>();
   for (const value of graph.nodes) {
-    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount', 'pid', 'windowMs', 'schedule'], 'node');
+    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount', 'pid', 'windowMs', 'schedule', 'sequence'], 'node');
     if (!identifier(n.id) || nodes.has(n.id) || typeof n.kind !== 'string' || !kinds.includes(n.kind) || !title(n.label) || !coordinate(n.x) || !coordinate(n.y)) throw new Error('Invalid or duplicate node');
     const kind = n.kind as BlockKind;
     if (kind === 'input' || kind === 'analog' || kind === 'output') {
@@ -47,6 +48,8 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
     else if ('timeConstantMs' in n) throw new Error('Unexpected filter time constant');
     if (kind === 'counter') { if (!Number.isSafeInteger(n.maxCount) || (n.maxCount as number) < 1) throw new Error('Invalid counter limit'); }
     else if ('maxCount' in n) throw new Error('Unexpected counter limit');
+    if (kind === 'sequence') validateSequenceSettings(n.sequence);
+    else if ('sequence' in n) throw new Error('Unexpected sequence settings');
     if (kind === 'schedule') validateWeeklySettings(n.schedule);
     else if ('schedule' in n) throw new Error('Unexpected weekly schedule settings');
     if (kind === 'pid') validatePidSettings(n.pid);
@@ -98,6 +101,7 @@ export class LogicEngine {
   private readonly ordered: LogicNode[];
   private readonly wires = new Map<string, Map<string, string>>();
   private readonly states = new Map<string, State>();
+  private readonly sequences = new Map<string, TimedSequence>();
   private readonly schedules = new Map<string, WeeklySchedule>();
   private readonly pids = new Map<string, PidController>();
   private readonly proportioners = new Map<string, TimeProportioner>();
@@ -138,7 +142,7 @@ export class LogicEngine {
       const values = new Map([...this.wires.get(n.id)!].map(([port, id]) => [port, nodes[id]!]));
       const invalid = [...values.values()].find((v) => v.quality !== 'Good');
       let result: LogicValue;
-      if (invalid) { this.resetNode(n.id); result = bad(invalid.reason ?? 'Invalid input'); }
+      if (invalid) { if (n.kind === 'sequence') { const sequence = this.sequences.get(n.id) ?? new TimedSequence(n.sequence!); sequence.invalidate(); this.sequences.set(n.id, sequence); } this.resetNode(n.id); result = bad(invalid.reason ?? 'Invalid input'); }
       else if (n.kind === 'schedule') {
         let schedule = this.schedules.get(n.id);
         if (!schedule) { schedule = new WeeklySchedule(n.schedule!); this.schedules.set(n.id, schedule); }
@@ -171,6 +175,12 @@ export class LogicEngine {
           state.initialized = true; state.sampleAt = now;
           result = finite(state.numeric) ? good(state.numeric) : bad('Filter result is not finite');
           if (result.quality === 'Bad') this.states.set(n.id, fresh());
+        }
+        else if (n.kind === 'sequence') {
+          let sequence = this.sequences.get(n.id);
+          if (!sequence) { sequence = new TimedSequence(n.sequence!); this.sequences.set(n.id, sequence); }
+          try { const state = sequence.step(now, { start: read('start'), cancel: read('cancel'), permit: read('permit') }); result = { ...good(state.value), sequence: state }; }
+          catch (error) { result = bad(error instanceof Error ? error.message : 'Sequence failed'); }
         }
         else if (n.kind === 'counter') {
           const value = read('in');

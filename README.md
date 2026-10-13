@@ -46,3 +46,5 @@ The PID thermal template has explicit Auto/Manual, reset, anti-windup and timing
 Weekly schedule blocks provide named time zones, DST handling and explicit dated simulation; see [schedule contracts](docs/weekly-schedules.md). Missed windows do not replay, and clock divergence faults the graph until reviewed reactivation.
 
 Daily and monthly signal reports now run as bounded background jobs with PDF/CSV downloads, explicit UTC boundaries and quality/gap accounting; see [report operation](docs/reports.md).
+
+Single-output timed sequences provide ordered ON/OFF steps, cancellation, start-edge gating and simulation state; see [sequence contracts](docs/timed-sequences.md). Full SFC and parameterized multi-device recipes remain pending.

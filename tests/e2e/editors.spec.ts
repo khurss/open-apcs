@@ -1,8 +1,9 @@
+import { sequenceGraph } from '../fixtures/sequence-graph.js';
 import { scheduleGraph } from '../fixtures/schedule-graph.js';
 import { statefulGraph } from '../fixtures/stateful-graph.js';
 import { expect, test } from '@playwright/test';
 test('edits, saves, simulates and prepares a graph, then persists an HMI with undo and redo', async ({ page }) => {
-  test.setTimeout(90000);
+  test.setTimeout(120000);
   await page.goto('/');
   await page.getByLabel('Username', { exact: true }).fill('operator');
   await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
@@ -24,6 +25,18 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Logic', exact: true }).click();
   await page.getByLabel('Scheme name', { exact: true }).fill('LED automation');
   await page.getByRole('button', { name: 'Create graph', exact: true }).click();
+  await page.getByLabel('Block type', { exact: true }).selectOption('sequence', { timeout: 5000 });
+  await page.getByRole('button', { name: 'Add block', exact: true }).click();
+  await page.getByLabel('Step 1 label', { exact: true }).fill('Flash');
+  await page.getByLabel('Step 1 duration (ms)', { exact: true }).fill('500');
+  await page.getByRole('button', { name: 'Add sequence step', exact: true }).click();
+  await expect(page.getByLabel('Step 3 label', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove step 3', exact: true }).click();
+  await page.getByRole('button', { name: 'Move step 1 down', exact: true }).click();
+  await expect(page.getByLabel('Step 2 label', { exact: true })).toHaveValue('Flash');
+  await page.getByRole('button', { name: 'Move step 2 up', exact: true }).click();
+  await expect(page.getByLabel('Step 1 label', { exact: true })).toHaveValue('Flash');
+  await page.getByRole('button', { name: 'Delete selected', exact: true }).click();
   await page.getByRole('button', { name: 'LED template', exact: true }).click();
   await page.getByRole('button', { name: 'Select Power', exact: true }).click();
   await page.getByLabel('Constant value', { exact: true }).check();
@@ -346,5 +359,29 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Fit View', exact: true }).click();
   await page.screenshot({ path: 'test-results/schedule-editor-phone.png', fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1000 });
+
+  await page.getByLabel('Scheme name', { exact: true }).fill('One-shot lighting');
+  await page.getByRole('button', { name: 'Create graph', exact: true }).click();
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  await page.getByRole('textbox', { name: 'JSON document', exact: true }).fill(JSON.stringify(sequenceGraph(numeric.nodes[1]!.signalId!)));
+  await page.getByRole('button', { name: 'Apply JSON', exact: true }).click();
+  await page.getByRole('button', { name: 'Select LED sequence', exact: true }).click();
+  await page.getByLabel('Step 1 label', { exact: true }).fill('Reviewed first light');
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('OFF');
+  await expect(page.getByRole('status', { name: 'Sequence simulation state' })).toContainText('Completed');
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/sequence-editor.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/sequence-editor-phone.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.reload();
+  await page.getByRole('button', { name: 'Logic', exact: true }).click();
+  await page.getByRole('button', { name: 'Open One-shot lighting', exact: true }).click();
+  await page.getByRole('button', { name: 'Select LED sequence', exact: true }).click();
+  await expect(page.getByLabel('Step 1 label', { exact: true })).toHaveValue('Reviewed first light');
 
 });

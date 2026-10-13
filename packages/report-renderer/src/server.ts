@@ -17,14 +17,16 @@ const server = createServer({ maxHeaderSize: 8192, headersTimeout: 3000, request
     let html: string; try { html = reportHtml(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(400); return; }
     context = await browser.newContext({ javaScriptEnabled: false, serviceWorkers: 'block', offline: true });
     await context.route('**/*', (route) => route.abort());
-    response.once('close', () => { if (!response.writableEnded) void context?.close(); });
+    response.once('close', () => { if (!response.writableEnded) void context?.close().catch(() => {}); });
     const page = await context.newPage(); page.setDefaultTimeout(10000);
     await page.setContent(html, { waitUntil: 'load', timeout: 10000 });
     const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
     if (pdf.length > 2097152) throw new Error('PDF limit exceeded');
+    // Free the single render slot before the client can start its next request.
+    await context.close(); context = undefined; clearTimeout(deadline); busy = false;
     response.writeHead(200, { 'content-type': 'application/pdf', 'cache-control': 'no-store' }).end(pdf);
   } catch { reject(503); }
-  finally { await context?.close().catch(() => {}); clearTimeout(deadline); busy = false; }
+  finally { if (context) await context.close().catch(() => {}); clearTimeout(deadline); busy = false; }
 });
 server.maxConnections = 8; server.keepAliveTimeout = 1000; server.maxRequestsPerSocket = 16;
 server.listen(4100, '0.0.0.0');

@@ -14,7 +14,7 @@ export type SimulatedAck = { id: string } & (
 export class VirtualLed {
   private value = false;
   private lease: { controlSessionId: string; expiresAt: number } | null = null;
-  private readonly applied = new Map<string, { fingerprint: string; ack: SimulatedAck }>();
+  private readonly applied = new Map<string, { fingerprint: string; expiresAt: number; ack: SimulatedAck }>();
 
   constructor(private readonly now: () => number, private bootId: string) {}
 
@@ -44,17 +44,18 @@ export class VirtualLed {
     if (write.bootId !== this.bootId) return failed('Boot session changed');
     if (!this.lease || this.lease.controlSessionId !== write.controlSessionId) return failed('No active control lease');
     if (write.expiresAt <= this.now()) return failed('Command expired');
+    if (write.expiresAt > this.lease.expiresAt) return failed('Command exceeds control lease');
     const fingerprint = JSON.stringify([write.bootId, write.controlSessionId, write.value, write.expiresAt]);
     const previous = this.applied.get(write.id);
     if (previous) {
       if (previous.fingerprint !== fingerprint) return failed('Command ID conflict');
       return { ...previous.ack };
     }
-    // Fail closed rather than evicting IDs and allowing an old command to execute again.
-    if (this.applied.size >= 10_000) return failed('Simulation command cache full; reboot required');
+    // Keep every still-valid identity; never evict a live entry to make space.
+    if (this.applied.size >= 128) return failed('Simulation command cache full; wait for expiry');
     this.value = write.value;
     const ack: SimulatedAck = { id: write.id, status: 'applied', value: this.value };
-    this.applied.set(write.id, { fingerprint, ack });
+    this.applied.set(write.id, { fingerprint, expiresAt: write.expiresAt, ack });
     return { ...ack };
   }
 
@@ -67,6 +68,8 @@ export class VirtualLed {
   }
 
   private expire(): void {
+    const now = this.now();
+    for (const [id, entry] of this.applied) if (entry.expiresAt <= now) this.applied.delete(id);
     if (this.lease && this.now() >= this.lease.expiresAt) {
       this.value = false;
       this.lease = null;

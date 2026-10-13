@@ -28,3 +28,19 @@ describe('compiled ESP32 protocol core against the TypeScript contract', () => {
     expect(actual).toEqual([{ reply: null, output: false }, { reply: null, output: false }]);
   });
 });
+
+it('keeps native and TypeScript wire behavior aligned beyond the old 128-command boot limit', () => {
+  const frames: { now: number; frame: Frame }[] = [];
+  for (let i = 0; i < 300; i++) {
+    const now = i * 1000;
+    frames.push({ now, frame: { v: 1, kind: 'probe', nonce: `probe-${i}` } },
+      { now: now + 1, frame: { v: 1, kind: 'lease', nonce: `probe-${i}`, bootId: 'native-boot', sessionId: 'session', expiresAtMs: now + 3000 } },
+      { now: now + 2, frame: { v: 1, kind: 'write', id: `command-${i}`, bootId: 'native-boot', sessionId: 'session', expiresAtMs: now + 900, value: i % 2 === 1 } });
+  }
+  frames.push({ now: 299003, frame: { v: 1, kind: 'write', id: 'command-0', bootId: 'native-boot', sessionId: 'session', expiresAtMs: 900, value: false } });
+  const actual = native(frames.map(({ now, frame }) => ({ now, frame: JSON.stringify(frame) })));
+  let now = 0; const peer = new LedPeer(() => now, 'native-boot'); const expected = frames.map((entry) => { now = entry.now; return { reply: peer.receive(entry.frame), output: peer.read() }; });
+  expect(actual).toEqual(expected);
+  expect(actual.filter((row) => row.reply?.kind === 'ack' && row.reply.status === 'applied')).toHaveLength(300);
+  expect(actual.at(-1)).toMatchObject({ output: true, reply: { status: 'failed', reason: 'Command expired' } });
+});

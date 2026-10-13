@@ -28,7 +28,7 @@ Command deadlines are conservatively mapped from gateway monotonic time to the d
 
 The journal now returns `deadlineMonotonicMs`, anchored to database time before COMMIT. COMMIT latency therefore consumes the remaining deadline. This field is valid only in the same process using `performance.now()`; it must not be serialized to a different process or host. The existing database wall-clock limitations still apply between journal operations.
 
-OFF is the LED demo's configured failure state. Lease renewal preserves the current output only while its lease is live. After expiration, a new handshake does not restore ON. Boot/session mismatches and expired writes fail; repeated command IDs do not repeat physical intent. The simulator's existing bounded deduplication cache and read-driven watchdog remain simulator limitations.
+OFF is the LED demo's configured failure state. Lease renewal preserves the current output only while its lease is live. After expiration, a new handshake does not restore ON. Boot/session mismatches and expired writes fail; repeated command IDs do not repeat physical intent. Both peers retain at most 128 still-valid command identities and discard records only after the original deadline, without changing the output. The simulator watchdog is still driven by clock observations. See [retention semantics and identity assumptions](led-command-retention.md).
 
 ## Gateway, journal, and scheduling
 

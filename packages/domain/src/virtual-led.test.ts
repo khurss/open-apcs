@@ -103,3 +103,28 @@ describe('AT-04 / AT-16: virtual LED and local watchdog', () => {
     expect(led.apply(write).status).toBe('applied');
   });
 });
+
+it('retains at most 128 live command identities and frees only expired entries without changing the output', () => {
+  const { led, write, advance } = fixture(); led.grantLease('runtime-1', 3000);
+  for (let i = 0; i < 128; i++) expect(led.apply({ ...write, id: `command-${i}`, value: true, expiresAt: i === 127 ? 2500 : 2000 }).status).toBe('applied');
+  expect(led.apply({ ...write, id: 'overflow', value: false }).status).toBe('failed'); expect(led.read()).toBe(true);
+  advance(2000); expect(led.read()).toBe(true);
+  expect(led.apply({ ...write, id: 'next', value: false, expiresAt: 2900 }).status).toBe('applied');
+  expect(led.apply({ ...write, id: 'command-127', expiresAt: 2500 }).status).toBe('applied'); expect(led.read()).toBe(false);
+  expect(led.apply({ ...write, id: 'command-127', value: false, expiresAt: 2500 }).status).toBe('failed');
+  advance(500); expect(led.apply({ ...write, id: 'command-127', expiresAt: 2500 }).status).toBe('failed'); expect(led.read()).toBe(false);
+});
+it('executes 12000 expiring commands across renewed leases without exhausting a boot lifetime cache', () => {
+  let now = 0; const led = new VirtualLed(() => now, 'boot'); let applied = 0;
+  for (let i = 0; i < 12000; i++) {
+    now = i * 1000; led.grantLease('session', now + 3000);
+    if (led.apply({ id: `command-${i}`, bootId: 'boot', controlSessionId: 'session', value: i % 2 === 1, expiresAt: now + 900 }).status !== 'applied') break;
+    applied++;
+  }
+  expect(applied).toBe(12000); expect(led.read()).toBe(true);
+  expect(led.apply({ id: 'command-0', bootId: 'boot', controlSessionId: 'session', value: false, expiresAt: 900 }).status).toBe('failed'); expect(led.read()).toBe(true);
+});
+it('rejects a command whose deadline exceeds its current control lease', () => {
+  const { led, write } = fixture(); led.grantLease('runtime-1', 3000);
+  expect(led.apply({ ...write, expiresAt: 3001 }).status).toBe('failed'); expect(led.read()).toBe(false);
+});

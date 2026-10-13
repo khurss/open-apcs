@@ -19,6 +19,11 @@ bool apcs_init(apcs_led *led, const char *boot) {
 void apcs_tick(apcs_led *led, double now) {
   if (!timestamp(now) || now < led->now) { led->faulted = true; apcs_disconnect(led); return; }
   led->now = now;
+  /* An unchanged expired frame can never apply again, even after its cache entry is removed. */
+  for (unsigned i = 0; i < led->applied_count;) {
+    if (led->applied[i].expires <= now) { led->applied_count--; led->applied[i] = led->applied[led->applied_count]; }
+    else i++;
+  }
   if (led->session[0] && now >= led->lease_until) { led->output = false; led->session[0] = 0; led->lease_until = 0; }
 }
 bool apcs_probe(apcs_led *led, const char *nonce, double now) {
@@ -44,7 +49,7 @@ const char *apcs_write(apcs_led *led, const char *id, const char *boot, const ch
     const apcs_applied *prior = &led->applied[i];
     if (!strcmp(prior->id, id)) return strcmp(prior->session, session) || prior->expires != expires || prior->value != value ? "Command ID conflict" : NULL;
   }
-  if (led->applied_count >= APCS_COMMAND_CAPACITY) return "Command cache full; reboot required";
+  if (led->applied_count >= APCS_COMMAND_CAPACITY) return "Command cache full; wait for expiry";
   apcs_applied *saved = &led->applied[led->applied_count++]; strcpy(saved->id, id); strcpy(saved->session, session); saved->expires = expires; saved->value = value;
   led->output = value; return NULL;
 }

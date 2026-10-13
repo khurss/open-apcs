@@ -44,3 +44,5 @@ Minute/hour history aggregates now run in a private background process with expl
 The PID thermal template has explicit Auto/Manual, reset, anti-windup and timing semantics; see [PID control](docs/pid-control.md). It is verified against virtual devices, with physical tuning and acceptance still pending.
 
 Weekly schedule blocks provide named time zones, DST handling and explicit dated simulation; see [schedule contracts](docs/weekly-schedules.md). Missed windows do not replay, and clock divergence faults the graph until reviewed reactivation.
+
+Daily and monthly signal reports now run as bounded background jobs with PDF/CSV downloads, explicit UTC boundaries and quality/gap accounting; see [report operation](docs/reports.md).

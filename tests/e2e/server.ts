@@ -1,3 +1,4 @@
+import { ReportProcess } from '../../apps/api/src/report-process.js';
 import { AggregateProcess } from '../../apps/api/src/aggregate-process.js';
 import { createServer } from 'node:http';
 import { NotificationProcess } from '../../apps/api/src/notification-process.js';
@@ -25,7 +26,7 @@ await writeFile(physicalConfigPath, JSON.stringify({ url: 'mqtts://mqtt-tls:8883
 const simulator = new MqttLedSimulator({ url: 'mqtts://mqtt-tls:8883', siteId: 'tls-e2e', deviceId: 'led', signalId: 'fixture', credentials: { ca, username: 'e2e-device', password: 'fixture-e2e-device-password' } }, new LedPeer(() => performance.now(), randomUUID()));
 await simulator.start();
 const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath, scriptUrl: process.env.APCS_SCRIPT_URL! });
-const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
+const app = await createApi({ pool, reportsEnabled: true, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
 runtime.enableMonitoring();
 await mkdir(new URL('../../.cache/e2e/', import.meta.url), { recursive: true });
 await writeFile(new URL('../../.cache/e2e/schema.json', import.meta.url), JSON.stringify({ schema }), { mode: 0o600 });
@@ -48,6 +49,7 @@ const recipientAddress = recipient.address(); if (!recipientAddress || typeof re
 const notificationConfigPath = '/tmp/apcs-e2e/notifications.json';
 await writeFile(notificationConfigPath, JSON.stringify({ version: 1, routes: [{ id: 'fixture', name: 'Local test receiver', kind: 'webhook', url: `http://127.0.0.1:${recipientAddress.port}/events`, secret: 'fixture-only-signing-secret-at-least-32', allowInsecure: true, priorities: ['low', 'medium', 'high'], events: ['Activated', 'Returned'], projectIds: [] }] }), { mode: 0o600 });
 const notifications = new NotificationProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, databaseOptions: `-c search_path=${schema}`, configPath: notificationConfigPath });
+const reports = new ReportProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, databaseOptions: `-c search_path=${schema}`, rendererUrl: process.env.APCS_REPORT_URL! });
 const aggregates = new AggregateProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, databaseOptions: `-c search_path=${schema}` });
 await app.listen({ host: '0.0.0.0', port: 3000 });
 let stopped = false;
@@ -55,7 +57,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => 
   if (stopped) return;
   stopped = true;
   void (async () => {
-    await aggregates.close(); await notifications.close(); recipient.closeAllConnections(); await new Promise<void>((resolve) => recipient.close(() => resolve()));
+    await reports.close(); await aggregates.close(); await notifications.close(); recipient.closeAllConnections(); await new Promise<void>((resolve) => recipient.close(() => resolve()));
     await app.close(); await simulator.stop(); await pool.end();
     await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end();
   })();

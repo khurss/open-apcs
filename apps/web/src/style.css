@@ -22,3 +22,16 @@
 .trend-grid { stroke: var(--border); stroke-dasharray: 4 4; }
 .trend-value { stroke: var(--accent); stroke-width: 2; }
 .trend-point { fill: var(--accent); }
+.signal-reports { border-top: 1px solid var(--border); min-width: 0; }
+.report-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.report-actions a { color: var(--accent); font-size: 12px; }
+.report-preview { margin: 22px; padding: 22px; border: 1px solid var(--border); background: var(--bg); border-radius: 12px; min-width: 0; }
+.report-preview p { margin: 12px 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.report-heading { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.report-heading h3 { margin-top: 10px; }
+.report-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 18px 0; }
+.report-metrics>div { padding: 14px; border: 1px solid var(--border); border-radius: 8px; display: grid; gap: 8px; }
+.report-metrics span { color: var(--muted); font-size: 11px; }
+.report-metrics strong { font-size: 17px; overflow-wrap: anywhere; }
+.report-identity { font-size: 10px !important; }
+@media(max-width:600px) { .report-preview { margin: 12px; padding: 14px; } }

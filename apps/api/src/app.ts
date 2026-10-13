@@ -1,3 +1,4 @@
+import { registerReports } from './report-api.js';
 import { registerAggregates } from './aggregate-api.js';
 import { registerNotifications } from './notification-api.js';
 import type { ScriptClient } from '../../../packages/script-runtime/src/client.js';
@@ -23,6 +24,7 @@ export interface ApiOptions {
   pool: Pool; origin: string; secureCookies: boolean;
   runtime?: RuntimeControl;
   scripts?: ScriptClient;
+  reportsEnabled?: boolean;
   resolveContext?: (request: CommandRequest) => CommandContext | Promise<CommandContext>;
   readSignal?: (id: string) => SignalSnapshot | Promise<SignalSnapshot>;
 }
@@ -222,6 +224,7 @@ export async function createApi(options: ApiOptions) {
   registerAlarms(app, pool, options.runtime);
   registerNotifications(app, pool);
   registerAggregates(app, pool);
+  registerReports(app, pool, options.reportsEnabled ?? false);
   registerEditors(app, pool, options.scripts);
   registerGraphRuntime(app, pool, options.runtime);
   registerPhysicalRuntime(app, pool, options.runtime);

@@ -20,7 +20,7 @@ watch-bg:
 watch-integration: mqtt-tls-fixture
 	docker compose -f compose.test.yml up integration-watch
 
-test: firmware-test firmware-build mqtt-tls-fixture
+test: firmware-test firmware-build mqtt-tls-fixture renderer-recovery
 	docker compose -f compose.test.yml run --rm all
 	docker compose -f compose.test.yml run --rm offline-check
 	docker compose -f compose.test.yml run --rm backup-test
@@ -90,3 +90,8 @@ mqtt-tls-fixture:
 	docker compose -f compose.test.yml run --rm mqtt-tls-cert
 	docker compose -f compose.test.yml run --rm mqtt-tls-users
 	docker compose -f compose.test.yml up -d --force-recreate mqtt-tls
+
+.PHONY: renderer-recovery
+renderer-recovery:
+	docker compose -f compose.test.yml up -d --wait report-renderer
+	docker compose -f compose.test.yml exec -T report-renderer node src/recovery-check.mjs

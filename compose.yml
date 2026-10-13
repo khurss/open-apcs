@@ -14,6 +14,32 @@ x-node: &node
     - pnpm_store:/pnpm/store
 
 services:
+  report-renderer:
+    image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+    init: true
+    restart: unless-stopped
+    user: "1000:1000"
+    working_dir: /workspace/packages/report-renderer
+    command: [node, node_modules/tsx/dist/cli.mjs, watch, --include, 'src/*.ts', --include, '../domain/src/*.ts', --exclude, '**/*.test.ts', src/watch.ts]
+    environment: { HOME: /tmp, NODE_ENV: production, NODE_OPTIONS: '--max-old-space-size=128' }
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    tmpfs: ["/tmp:rw,nosuid,size=268435456"]
+    volumes:
+      - ./packages/report-renderer:/workspace/packages/report-renderer:ro
+      - ./packages/domain:/workspace/packages/domain:ro
+      - ./package.json:/workspace/package.json:ro
+      - node_modules:/workspace/node_modules:ro
+    networks: [sandbox]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4100/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
   script-runner:
     image: ${DEV_IMAGE:-open-apcs-dev:node24-pnpm10}
     init: true
@@ -56,10 +82,13 @@ services:
       APCS_ORIGIN: http://localhost:5173
       APCS_MQTT_URL: mqtt://simulation-mqtt:1883
       APCS_SCRIPT_URL: http://script-runner:4000
+      APCS_REPORT_URL: http://report-renderer:4100
       API_PORT: 3000
     ports: ["127.0.0.1:${API_PORT:-3100}:3000"]
     networks: [development, frontend, sandbox]
     depends_on:
+      report-renderer:
+        condition: service_healthy
       script-runner:
         condition: service_healthy
       postgres:

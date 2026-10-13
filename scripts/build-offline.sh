@@ -34,6 +34,9 @@ cp scripts/install-offline.sh "$output/install.sh"
 cat > "$output/compose.offline.yml" <<CONFIG
 name: open-apcs-offline
 services:
+  report-renderer:
+    image: $browser_tag
+    pull_policy: never
   script-runner:
     image: $node_tag
     pull_policy: never
@@ -64,6 +67,9 @@ CONFIG
 cat > "$output/compose.offline-test.yml" <<CONFIG
 name: open-apcs-offline-test
 services:
+  report-renderer:
+    image: $browser_tag
+    pull_policy: never
   script-runner:
     image: $node_tag
     pull_policy: never

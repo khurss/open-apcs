@@ -10,6 +10,8 @@ compose run --rm firmware-test
 compose run --rm firmware-build
 compose run --rm mqtt-tls-cert
 compose run --rm mqtt-tls-users
+compose up -d --wait report-renderer
+compose exec -T report-renderer node src/recovery-check.mjs
 compose run --rm all
 compose run --rm offline-check
 compose run --rm backup-test

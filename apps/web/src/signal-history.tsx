@@ -1,3 +1,4 @@
+import { SignalReports } from './signal-reports.js';
 import { HistoryAggregates } from './history-aggregates.js';
 import { HistoryTrend } from './history-trend.js';
 import { historyCsv } from '../../../packages/domain/src/history-view.js';
@@ -11,6 +12,7 @@ export function SignalHistory({ signal, close }: { signal: Signal; close: () => 
   const initial = useRef(recent()); const range = useRef(initial.current);
   const [from, setFrom] = useState(localInput(initial.current.from)); const [to, setTo] = useState(localInput(initial.current.to));
   const [page, setPage] = useState<HistoryPage>({ items: [], nextBefore: null }); const [status, setStatus] = useState<Status | null>(null);
+  const [showReports, setShowReports] = useState(false);
   const [showAggregates, setShowAggregates] = useState(false);
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [following, setFollowing] = useState(true);
   const follow = useRef(true); const mounted = useRef(true); const generation = useRef(0); const controller = useRef<AbortController | null>(null);
@@ -49,5 +51,7 @@ export function SignalHistory({ signal, close }: { signal: Signal; close: () => 
     {!page.items.length && !busy && <p className="history-status">No archived samples in this range.</p>}{page.nextBefore && page.items.length < 1000 && <button className="secondary load-more" disabled={busy} onClick={() => { pause(); void load(range.current, page.nextBefore!); }}>Older samples</button>}{page.items.length >= 1000 && <p className="history-status">Narrow the time range to inspect more samples.</p>}
     <div className="system-copy"><button className="secondary" onClick={() => setShowAggregates((value) => !value)}>{showAggregates ? 'Hide aggregates' : 'Show aggregates'}</button></div>
     {showAggregates && <HistoryAggregates signal={signal} />}
+    <div className="system-copy"><button className="secondary" onClick={() => setShowReports((value) => !value)}>{showReports ? 'Hide reports' : 'Show reports'}</button></div>
+    {showReports && <SignalReports signal={signal} />}
   </section>;
 }

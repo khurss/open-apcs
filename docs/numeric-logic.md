@@ -1,6 +1,6 @@
 # Numeric logic engineering profile
 
-This partial M2 increment adds typed numeric ports, finite constants, four arithmetic operations, strict greater/less comparisons, and hysteresis to the existing graph editor, pure simulation engine and headless task. It does not complete PID, filters, counters, formulas with arbitrary numeric scripts, schedules, numeric device drivers or numeric actuators.
+This partial M2 increment adds typed numeric ports, finite constants, four arithmetic operations, strict greater/less comparisons, and hysteresis to the existing graph editor, pure simulation engine and headless task. It does not complete PID, filters, counters, formulas with arbitrary numeric scripts, schedules, physical numeric device drivers or numeric actuators.
 
 ## Use through the web
 
@@ -10,9 +10,9 @@ An arithmetic branch takes `a` and `b` ports and produces a number. Connect its 
 
 ## Numeric inputs and current delivery boundary
 
-The catalog now permits boolean input/output signals and float64 inputs. Migration 009 preserves existing data and prohibits numeric output signals. The existing device registration workflow still creates a single boolean LED output; there is no numeric device commissioning screen or ingestion driver yet. Do not edit the production database to make a hardware driver appear supported.
+The catalog permits boolean input/output signals and float64 inputs; numeric outputs remain prohibited. Devices can register a Virtual thermal process with a boolean heater and float64 temperature sensor. See [virtual process operation](virtual-process.md). The ordinary LED profiles still create a single boolean output.
 
-For upcoming numeric drivers, `analog` nodes bind to the same project's float64 signals. The authenticated simulation endpoint accepts numeric samples, including 0 and 1, without boolean coercion; null or a mismatched boolean sample produces Bad quality. Browser input controls are available when such catalog bindings exist. This path is tested using isolated catalog fixtures. API preparation can preserve those graphs, but live activation rejects numeric input nodes with 422 `UNSUPPORTED_DRIVER` before pausing or transferring the currently active graph. Internal numeric constants/calculations/comparisons can execute now and command existing boolean LED outputs.
+`analog` nodes bind to the same project's float64 signals. The authenticated simulation endpoint accepts numeric samples, including 0 and 1, without boolean coercion; null or a mismatched boolean sample produces Bad quality. Browser controls can simulate these inputs. The thermal profile can also supply live numeric inputs to a prepared graph. Other numeric hardware/third-party driver bindings remain unsupported: activation returns 422 `UNSUPPORTED_DRIVER` before pausing or transferring the current graph. Internal numeric constants/calculations/comparisons can also command existing boolean LED outputs.
 
 `GraphTask` additionally validates every numeric sample as finite and Good with a stable device boot session. A bad sample faults the task and revokes its output authority. No automatic restart or fabricated zero occurs. All calculated outputs are checked before the first command intent in that tick. This is a preflight guarantee, not atomic delivery across devices. Device watchdogs remain responsible for the LED safe-state transition after authority loss.
 

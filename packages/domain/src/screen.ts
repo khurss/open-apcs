@@ -1,5 +1,5 @@
 import { coordinate, identifier, record, title } from './logic.js';
-export interface ScreenItem { id: string; kind: 'label' | 'indicator' | 'button' | 'group'; label: string; x: number; y: number; width: number; height: number; signalId?: string; groupId?: string; }
+export interface ScreenItem { id: string; kind: 'label' | 'indicator' | 'button' | 'group' | 'value'; label: string; x: number; y: number; width: number; height: number; signalId?: string; groupId?: string; }
 export interface Screen { schemaVersion: 1; width: number; height: number; items: ScreenItem[]; }
 export function validateScreen(input: unknown): Screen {
   const screen = record(input, ['schemaVersion', 'width', 'height', 'items'], 'screen');
@@ -8,8 +8,8 @@ export function validateScreen(input: unknown): Screen {
   const byId = new Map<string, ScreenItem>();
   for (const value of screen.items) {
     const item = record(value, ['id', 'kind', 'label', 'x', 'y', 'width', 'height', 'signalId', 'groupId'], 'screen item');
-    if (!identifier(item.id) || byId.has(item.id) || !['label', 'indicator', 'button', 'group'].includes(item.kind as string) || !title(item.label) || !coordinate(item.x) || !coordinate(item.y) || !dimension(item.width) || !dimension(item.height)) throw new Error('Invalid or duplicate screen item');
-    if (item.kind === 'indicator' || item.kind === 'button') { if (!identifier(item.signalId)) throw new Error('Signal binding required'); }
+    if (!identifier(item.id) || byId.has(item.id) || !['label', 'indicator', 'button', 'group', 'value'].includes(item.kind as string) || !title(item.label) || !coordinate(item.x) || !coordinate(item.y) || !dimension(item.width) || !dimension(item.height)) throw new Error('Invalid or duplicate screen item');
+    if (item.kind === 'indicator' || item.kind === 'button' || item.kind === 'value') { if (!identifier(item.signalId)) throw new Error('Signal binding required'); }
     else if ('signalId' in item) throw new Error('Unexpected signal binding');
     if ('groupId' in item && !identifier(item.groupId)) throw new Error('Invalid group reference');
     byId.set(item.id, item as unknown as ScreenItem);

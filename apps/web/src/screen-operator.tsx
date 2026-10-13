@@ -1,3 +1,4 @@
+import { formatSignalValue } from './signal-format.js';
 import { useEffect, useRef, useState } from 'react';
 import type { Screen, ScreenItem } from '../../../packages/domain/src/screen.js';
 import { api, type Sample } from './api.js';
@@ -31,9 +32,10 @@ export function ScreenOperator({ screen, revision, projectRevision, close }: { s
     const value = item.signalId ? values[item.signalId] ?? unavailable : unavailable;
     return value.quality === 'Good' && now - (received.current.get(item.signalId!) ?? -Infinity) >= 3000 ? { ...value, quality: 'Stale' } : value;
   }
-  const display = (value: Sample) => `${value.value === null ? 'No data' : value.value ? 'ON' : 'OFF'} · ${value.quality}`;
+  const display = (value: Sample) => `${formatSignalValue(value.value)} · ${value.quality}`;
   const controls = screen.items.filter((item) => item.kind === 'button');
   return <div className="engineering"><section className="panel operator-heading"><div><span className="eyebrow">OPERATOR VIEW</span><h2>Prepared screen · r{revision}</h2><p className="muted">Values include data quality. Controls request an audited command.</p></div><button className="secondary" onClick={close}>Back to editor</button></section>
+    {screen.items.some((item) => item.kind === 'value') && <section className="panel operator-values" aria-label="Live numeric values"><h2>Readings</h2><dl>{screen.items.filter((item) => item.kind === 'value').map((item) => { const current = sample(item); return <div key={item.id}><dt>{item.label}</dt><dd><strong>{formatSignalValue(current.value)}</strong><span className={`badge ${current.quality === 'Good' ? 'good' : 'warning'}`}>{current.quality}</span></dd></div>; })}</dl></section>}
     <section className="panel operator-scene"><div className="screen-canvas"><svg role="group" aria-label="Operator HMI" viewBox={`0 0 ${screen.width} ${screen.height}`}>{[...screen.items].sort((a, b) => Number(b.kind === 'group') - Number(a.kind === 'group')).map((item) => {
       const current = sample(item); const state = display(current); const control = item.kind === 'button';
       const enabled = control && current.quality === 'Good';

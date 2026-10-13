@@ -35,7 +35,7 @@ async function bindings(client: PoolClient, projectId: string, kind: Kind, docum
   if (result.rows.length !== ids.length) throw invalid('A signal binding is missing or belongs to another project');
   for (const item of bound) {
     const signal = result.rows.find((s) => s.id === item.signalId)!;
-    const expectedType = kind === 'graph' && item.kind === 'analog' ? 'float64' : 'boolean';
+    const expectedType = ((kind === 'graph' && item.kind === 'analog') || (kind === 'screen' && item.kind === 'value')) ? 'float64' : 'boolean';
     if (signal.data_type !== expectedType || (['output', 'button'].includes(item.kind) && signal.direction !== 'output')) throw invalid('Signal type or direction does not match its binding');
   }
 }

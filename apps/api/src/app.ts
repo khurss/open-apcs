@@ -136,15 +136,17 @@ export async function createApi(options: ApiOptions) {
   });
 
   app.post<{ Body: { projectId: string; name: string; siteId: string; deviceId: string; kind: string } }>('/api/v1/devices', {
-    schema: { body: object({ projectId: uuid, name, siteId: slug, deviceId: slug, kind: { enum: ['virtual-led', 'esp32-led'], type: 'string' } }) },
+    schema: { body: object({ projectId: uuid, name, siteId: slug, deviceId: slug, kind: { enum: ['virtual-led', 'esp32-led', 'virtual-thermal'], type: 'string' } }) },
   }, async (request, reply) => {
     const input = request.body;
     const device = await transaction(pool, async (client) => {
       const id = randomUUID(); const signalId = randomUUID();
       await client.query('INSERT INTO apcs_devices (id, project_id, name, kind, site_id, protocol_device_id) VALUES ($1,$2,$3,$4,$5,$6)', [id, input.projectId, input.name, input.kind, input.siteId, input.deviceId]);
-      await client.query("INSERT INTO apcs_signals (id, device_id, name, data_type, direction) VALUES ($1,$2,$3,'boolean','output')", [signalId, id, `${input.name}.led`]);
-      await audit(client, request.sessionUser!.id, 'device.created', id, { projectId: input.projectId, signalId });
-      return { id, ...input, signalId };
+      await client.query("INSERT INTO apcs_signals (id, device_id, name, data_type, direction) VALUES ($1,$2,$3,'boolean','output')", [signalId, id, `${input.name}.${input.kind === 'virtual-thermal' ? 'heater' : 'led'}`]);
+      const temperatureSignalId = input.kind === 'virtual-thermal' ? randomUUID() : null;
+      if (temperatureSignalId) await client.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,$3,'float64','input')", [temperatureSignalId, id, `${input.name}.temperature (C)`]);
+      await audit(client, request.sessionUser!.id, 'device.created', id, { projectId: input.projectId, signalId, temperatureSignalId });
+      return { id, ...input, signalId, ...(temperatureSignalId ? { temperatureSignalId } : {}) };
     });
     return reply.code(201).send(device);
   });
@@ -176,8 +178,9 @@ export async function createApi(options: ApiOptions) {
     const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(key)) throw new HttpError(400, 'IDEMPOTENCY_REQUIRED', 'A valid Idempotency-Key is required');
     const input: CommandRequest = { ...request.body, id: randomUUID(), idempotencyKey: key, actorId: request.sessionUser!.id };
-    const target = await pool.query<{ revision: number }>(`SELECT p.revision FROM apcs_signals s JOIN apcs_devices d ON d.id = s.device_id JOIN apcs_projects p ON p.id = d.project_id WHERE s.id = $1`, [input.targetSignalId]);
+    const target = await pool.query<{ revision: number; direction: string; data_type: string }>(`SELECT p.revision,s.direction,s.data_type FROM apcs_signals s JOIN apcs_devices d ON d.id = s.device_id JOIN apcs_projects p ON p.id = d.project_id WHERE s.id = $1`, [input.targetSignalId]);
     if (!target.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
+    if (target.rows[0].direction !== 'output' || target.rows[0].data_type !== 'boolean') throw new HttpError(422, 'NOT_AN_OUTPUT', 'Commands require a boolean output signal');
     const context = await (options.resolveContext?.(input) ?? options.runtime?.context(input) ?? { bootId: null, projectRevision: target.rows[0].revision, quality: 'Disconnected', interlockReason: 'Output has not been commissioned', ownerId: null, maxTtlMs: 3000 });
     try { return reply.code(202).send(await journal.request(input, context)); }
     catch (error) {
@@ -199,7 +202,7 @@ export async function createApi(options: ApiOptions) {
     if (!options.runtime) throw new HttpError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
     const found = await pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [request.params.id]);
     if (!found.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
-    if (found.rows[0].kind !== 'virtual-led') throw new HttpError(422, 'PHYSICAL_PROFILE_UNSUPPORTED', 'This runtime supports virtual devices only');
+    if (!['virtual-led', 'virtual-thermal'].includes(found.rows[0].kind)) throw new HttpError(422, 'PHYSICAL_PROFILE_UNSUPPORTED', 'This runtime supports virtual devices only');
     const { action, reason } = request.body;
     try { await transaction(pool, (client) => audit(client, request.sessionUser!.id, `runtime.${action}.requested`, request.params.id, { reason })); }
     catch (error) { if (action === 'stop') await options.runtime.stop(request.params.id); throw error; }

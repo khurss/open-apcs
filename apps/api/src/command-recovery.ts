@@ -31,7 +31,7 @@ export function registerCommandRecovery(app: FastifyInstance, pool: Pool, journa
     const existing = await pool.query<{ target_signal_id: string }>('SELECT target_signal_id FROM apcs_commands WHERE id=$1', [request.params.id]);
     if (!existing.rows[0]) throw new RecoveryError(404, 'NOT_FOUND', 'Command not found');
     const target = existing.rows[0].target_signal_id; const actor = request.sessionUser!.id;
-    if ((await signal(target, actor)).kind !== 'virtual-led') throw new RecoveryError(422, 'PROFILE_UNSUPPORTED', 'Reconciliation currently supports virtual LEDs only');
+    if (!['virtual-led', 'virtual-thermal'].includes((await signal(target, actor)).kind)) throw new RecoveryError(422, 'PROFILE_UNSUPPORTED', 'Reconciliation currently supports virtual boolean outputs only');
     if (!runtime) throw new RecoveryError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
     try {
       return await journal.reconcile(request.params.id, actor, request.body.reason, async (input) => {

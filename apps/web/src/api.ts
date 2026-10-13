@@ -1,8 +1,8 @@
 export interface User { id: string; username: string; csrfToken: string; }
 export interface Project { id: string; name: string; revision: number; }
-export interface Device { id: string; name: string; projectId: string; siteId: string; deviceId: string; kind: 'virtual-led' | 'esp32-led'; }
+export interface Device { id: string; name: string; projectId: string; siteId: string; deviceId: string; kind: 'virtual-led' | 'esp32-led' | 'virtual-thermal'; }
 export interface Signal { id: string; deviceId: string; name: string; dataType: string; direction: string; }
-export interface Sample { value: boolean | null; quality: string; receivedTime: string | null; }
+export interface Sample { value: boolean | number | string | null; quality: string; receivedTime: string | null; }
 export interface Audit { id: string; action: string; at: string; resourceId: string | null; }
 export interface Page<T> { items: T[]; nextCursor: string | null; }
 export class ApiError extends Error { constructor(readonly status: number, message: string) { super(message); } }

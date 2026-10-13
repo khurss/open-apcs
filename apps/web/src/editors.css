@@ -24,3 +24,9 @@
 .script-editor { display: grid; gap: 12px; min-width: 0; }
 .script-editor textarea { width: 100%; min-height: 240px; resize: vertical; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .script-editor .muted { font-size: 12px; line-height: 1.5; }
+
+.operator-values { padding: 24px; }
+.operator-values dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 16px; margin: 20px 0 0; }
+.operator-values dt { color: var(--muted); overflow-wrap: anywhere; }
+.operator-values dd { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0 0; }
+.operator-values dd strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

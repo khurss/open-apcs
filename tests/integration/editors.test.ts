@@ -1,3 +1,4 @@
+import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
 import { ScriptClient } from '../../packages/script-runtime/src/client.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -164,7 +165,7 @@ describe('versioned editor documents with real PostgreSQL', () => {
       const id = randomUUID(); await old.query('INSERT INTO apcs_users (id, username, password_hash) VALUES ($1,$2,$3)', [id, 'existing', 'fixture-only']);
       await migrateApplication(old); await migrateApplication(old);
       expect((await old.query('SELECT username FROM apcs_users WHERE id=$1', [id])).rows[0].username).toBe('existing');
-      expect((await old.query('SELECT version FROM apcs_app_migrations ORDER BY version')).rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }]);
+      expect((await old.query('SELECT version FROM apcs_app_migrations ORDER BY version')).rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }, { version: 10 }]);
     } finally { await old.end(); await admin.query(`DROP SCHEMA ${oldSchema} CASCADE`); }
   });
   it('rejects reversed simulation time and oversized runs before creating commands', async () => {
@@ -263,4 +264,71 @@ it('runs numeric logic through MQTT and rejects unsupported analog drivers befor
   expect(rejected.statusCode).toBe(422); expect(rejected.body).toContain('Numeric input drivers are not available');
   expect(await runtime.graphStatus(id)).toMatchObject({ state: 'running', revision: 2 });
   expect((await runtime.readSignal(signalId)).value).toBe(true);
+});
+
+it('registers and runs a virtual thermal loop, archives numeric samples and faults when its device stops', async () => {
+  await app.close();
+  const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const created = await app.inject({ method: 'POST', url: '/api/v1/devices', headers, payload: { projectId, name: 'Thermal bench', kind: 'virtual-thermal', siteId: 'thermal', deviceId: 'tank' } });
+  expect(created.statusCode, created.body).toBe(201); const device = created.json();
+  const catalog = await pool.query('SELECT id,data_type,direction FROM apcs_signals WHERE device_id=$1', [device.id]);
+  expect(catalog.rows).toEqual(expect.arrayContaining([{ id: device.signalId, data_type: 'boolean', direction: 'output' }, { id: device.temperatureSignalId, data_type: 'float64', direction: 'input' }]));
+  const document = { schemaVersion: 1, nodes: [
+    { id: 't', kind: 'analog', label: 'Temperature', signalId: device.temperatureSignalId, x: 0, y: 0 },
+    { id: 'h', kind: 'hysteresis', label: 'Warm', low: 20.5, high: 21, x: 200, y: 0 },
+    { id: 'n', kind: 'not', label: 'Heat', x: 400, y: 0 },
+    { id: 'o', kind: 'output', label: 'Heater', signalId: device.signalId, x: 600, y: 0 },
+  ], edges: [{ id: 't-h', source: 't', target: 'h', port: 'in' }, { id: 'h-n', source: 'h', target: 'n', port: 'in' }, { id: 'n-o', source: 'n', target: 'o', port: 'in' }] };
+  const id = (await create()).json().id; expect((await save(id, document)).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device.id}/runtime`, headers, payload: { action: 'start', reason: 'Virtual thermal fixture' } })).statusCode).toBe(200);
+  expect(await runtime.readSignal(device.temperatureSignalId)).toMatchObject({ value: 20, quality: 'Good' });
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Closed loop fixture' } })).statusCode).toBe(200);
+  await expect.poll(async () => (await runtime.readSignal(device.signalId)).value).toBe(true);
+  await expect.poll(async () => (await pool.query("SELECT count(*)::int AS n FROM apcs_commands WHERE target_signal_id=$1 AND snapshot->>'state'='Verified'", [device.signalId])).rows[0].n, { timeout: 6000 }).toBeGreaterThanOrEqual(2);
+  expect((await runtime.readSignal(device.temperatureSignalId)).value as number).toBeGreaterThan(21);
+  await expect.poll(async () => (await pool.query("SELECT count(*)::int AS n FROM apcs_signal_history WHERE signal_id=$1 AND snapshot->>'quality'='Good' AND jsonb_typeof(snapshot->'value')='number'", [device.temperatureSignalId])).rows[0].n).toBeGreaterThanOrEqual(2);
+  await runtime.stop(device.id);
+  await expect.poll(async () => (await runtime.graphStatus(id)).state).toBe('faulted');
+  expect((await runtime.readSignal(device.temperatureSignalId)).quality).toBe('Disconnected');
+  expect((await runtime.readSignal(device.signalId)).quality).toBe('Disconnected');
+});
+
+it('rejects commands to catalog inputs before creating a journal record', async () => {
+  const sensor = randomUUID(); const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,'Sensor','float64','input')", [sensor, device]);
+  const response = await app.inject({ method: 'POST', url: '/api/v1/commands', headers: { ...headers, 'idempotency-key': randomUUID() }, payload: { targetSignalId: sensor, value: true, ttlMs: 1000, expectedProjectRevision: 1, reason: 'Invalid actuator fixture' } });
+  expect(response.statusCode).toBe(422); expect(response.json().code).toBe('NOT_AN_OUTPUT');
+  expect((await pool.query('SELECT id FROM apcs_commands WHERE target_signal_id=$1', [sensor])).rowCount).toBe(0);
+});
+
+it('binds numeric HMI values without allowing them to become boolean controls', async () => {
+  const sensor = randomUUID(); const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,'Sensor','float64','input')", [sensor, device]);
+  const id = (await create('screens')).json().id;
+  const value = { id: 'temperature', kind: 'value', label: 'Temperature (C)', signalId: sensor, x: 0, y: 0, width: 180, height: 80 };
+  const document = { schemaVersion: 1, width: 1200, height: 800, items: [value] };
+  expect((await save(id, document, 1, 'screens')).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/screens/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  expect((await save(id, { ...document, items: [{ ...value, kind: 'button' }] }, 2, 'screens')).statusCode).toBe(422);
+  expect((await save(id, { ...document, items: [{ ...value, signalId }] }, 2, 'screens')).statusCode).toBe(422);
+});
+
+it('reconciles an uncertain virtual heater only against a new observed OFF session', async () => {
+  await app.close();
+  const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const created = await app.inject({ method: 'POST', url: '/api/v1/devices', headers, payload: { projectId, name: 'Recovery heater', kind: 'virtual-thermal', siteId: 'recovery', deviceId: 'heater' } });
+  expect(created.statusCode).toBe(201); const device = created.json();
+  const actor = (await pool.query('SELECT owner_id FROM apcs_projects WHERE id=$1', [projectId])).rows[0].owner_id;
+  const context = { bootId: 'old-boot', quality: 'Good' as const, ownerId: actor, projectRevision: 1, maxTtlMs: 3000, interlockReason: null };
+  const command = { id: randomUUID(), idempotencyKey: randomUUID(), actorId: actor, targetSignalId: device.signalId, value: true, expectedProjectRevision: 1, ttlMs: 3000, reason: 'Uncertain heater fixture' };
+  const journal = new PgCommandJournal(pool); await journal.request(command, context); await journal.claimNext(async () => context); await journal.connectionLost(device.signalId);
+  const reconcile = () => app.inject({ method: 'POST', url: `/api/v1/commands/${command.id}/reconcile`, headers, payload: { reason: 'Inspected new virtual heater session', acceptUnknownOutcome: true } });
+  expect((await reconcile()).statusCode).toBe(409);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device.id}/runtime`, headers, payload: { action: 'start', reason: 'Recovery fixture' } })).statusCode).toBe(200);
+  const result = await reconcile(); expect(result.statusCode, result.body).toBe(200); expect(result.json()).toMatchObject({ state: 'Unknown', reconciliation: { observedValue: false, actorId: actor } });
+  expect(result.json().reconciliation.bootId).not.toBe('old-boot');
+  expect((await pool.query('SELECT id FROM apcs_commands WHERE target_signal_id=$1', [device.signalId])).rowCount).toBe(1);
 });

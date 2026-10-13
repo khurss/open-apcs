@@ -14,3 +14,10 @@ describe('bounded editor history', () => {
   it('does not let reads or caller mutation change stored snapshots', () => { const state = { a: [1] }; const h = new EditHistory(state); state.a.push(2); h.current.a.push(3); expect(h.current.a).toEqual([1]); const next = { a: [5] }; h.set(next); next.a.push(6); expect(h.current.a).toEqual([5]); });
   it('bounds memory and handles end stops without duplicating no-op edits', () => { const h = new EditHistory(0, 2); h.set(1); h.set(2); h.set(3); h.set(3); expect(h.undo()).toBe(2); expect(h.undo()).toBe(1); expect(h.canUndo).toBe(false); expect(h.undo()).toBe(1); h.redo(); expect(h.redo()).toBe(3); expect(h.redo()).toBe(3); expect(() => new EditHistory(0, 0)).toThrow(); });
 });
+
+it('accepts a read-only numeric value widget and requires its signal binding', () => {
+  const value = { id: 'temperature', kind: 'value', label: 'Temperature (C)', signalId: 'temperature', x: 0, y: 0, width: 180, height: 80 };
+  expect(validateScreen({ ...screen(), items: [value] }).items[0]).toEqual(value);
+  const { signalId: _signalId, ...unbound } = value; expect(() => validateScreen({ ...screen(), items: [unbound] })).toThrow(/binding/i);
+  expect(() => validateScreen({ ...screen(), items: [{ ...value, script: 'fetch()' }] })).toThrow();
+});

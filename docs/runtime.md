@@ -63,3 +63,8 @@ A revision switch validates the replacement before pausing the previous graph. I
 | `POST /graphs/:id/runtime` | Audited `activate` with a prepared revision and reason, or `stop` with a reason |
 
 Prepared revisions and audit history are durable. Active ownership and timer state are deliberately volatile and are not restored after worker/API restart. There is no durable deployment manifest or automatic resume in this profile. The scheduler and revision-switch tests use virtual LEDs only; physical timing, independent safety functions, and full load profiles remain unverified.
+
+
+## Virtual thermal extension
+
+The runtime also supports the [virtual thermal process](virtual-process.md): one boolean heater plus a float64 sensor in the same boot session. Numeric input graph bindings execute only for this supported profile; arbitrary physical numeric drivers remain unavailable. MQTT sensor faults stop the device runtime, and dependent graphs revoke their output authority when their input quality becomes unavailable. Unknown reconciliation supports the virtual heater under the existing new-boot/Good/OFF requirements. This adds no physical acceptance or scale claim.

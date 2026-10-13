@@ -6,7 +6,7 @@ This increment provides basic graph and HMI editing, durable drafts, immutable p
 
 Register a project and a virtual LED device. Open **Logic**, create a graph, and start with **LED template**, or add blocks individually. Move blocks on the canvas, connect their handles, and configure the selected block in Properties. A keyboard/touch connection form is also available. Delete connections there, or select an edge on the canvas and use Delete. Delete a selected block through Properties; its incident edges are removed.
 
-Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments, or six 1000 ms samples for script graphs. Boolean input blocks accept OFF, ON, or simulated disconnection. Numeric input blocks accept finite numbers or simulated disconnection; live numeric drivers remain pending. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
+Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments, or six 1000 ms samples for script graphs. Boolean input blocks accept OFF, ON, or simulated disconnection. Numeric input blocks accept finite numbers or simulated disconnection; virtual thermal inputs also work live; physical numeric drivers remain pending. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
 
 Open **Screens** to arrange labels, indicators, buttons, and groups on an SVG scene. Configure signal bindings, coordinates, dimensions, and parent groups. Drag a group to move its descendants; coordinates are absolute scene coordinates. Arrow keys move a selected item by 10 px, or 1 px with Shift. Removing a group ungroups direct children. The design canvas never dispatches commands and its indicators are placeholders. Prepare a screen revision and choose Operate revision to see current signal values and open command controls.
 
@@ -25,7 +25,7 @@ The engine copies its input graph, uses a deterministic topological order, and e
 | Constant | Boolean parameter; no inputs |
 | Input | Read one boolean signal sample |
 | Numeric constant | Finite float64 parameter; no inputs |
-| Numeric input | Read a finite float64 input sample; simulation-only catalog binding in this runtime profile |
+| Numeric input | Read a finite float64 input sample; live virtual-thermal or simulated float64 catalog binding |
 | Add / Subtract / Multiply / Divide | Numeric `a`, `b`; produce a finite numeric result |
 | Greater than / Less than | Numeric `a`, `b`; strict comparison, boolean output |
 | Hysteresis | Numeric `in`; boolean state, ON at/above `high`, OFF at/below `low`, hold inside |
@@ -49,7 +49,7 @@ The numeric representation is JavaScript float64, with ordinary IEEE-754 roundin
 
 ## HMI scene contract
 
-Schema version 1 contains width, height, and up to 512 items. Supported kinds are `label`, `indicator`, `button`, and `group`. Bound elements reference catalog signals; buttons require an output. Coordinates are finite, dimensions are bounded to 1–10,000, and parent groups must exist without cycles. Unknown fields, executable scripts, raw SVG, and external asset definitions are rejected. User text is rendered through React text nodes.
+Schema version 1 contains width, height, and up to 512 items. Supported kinds are `label`, `indicator`, `value`, `button`, and `group`. Value items bind to float64 signals and display read-only numbers; indicators and buttons remain boolean. Bound elements reference catalog signals; buttons require an output. Coordinates are finite, dimensions are bounded to 1–10,000, and parent groups must exist without cycles. Unknown fields, executable scripts, raw SVG, and external asset definitions are rejected. User text is rendered through React text nodes.
 
 Undo/redo stores up to 100 past document snapshots by default. Reads and writes are copied; a new edit clears redo. Canonical JSON comparison ignores object-key order while preserving array order, avoiding false changes after PostgreSQL JSONB round trips.
 

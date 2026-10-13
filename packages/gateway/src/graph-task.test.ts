@@ -63,3 +63,43 @@ describe('isolated graph scripts', () => {
     expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('numeric graph tasks', () => {
+  const numeric: LogicGraph = { schemaVersion: 1, nodes: [
+    { id: 'sensor', kind: 'analog', label: 'Sensor', signalId: 'sensor', x: 0, y: 0 },
+    { id: 'threshold', kind: 'number', label: 'Threshold', value: 10, x: 0, y: 100 },
+    { id: 'compare', kind: 'greater', label: 'Compare', x: 100, y: 0 },
+    { id: 'out', kind: 'output', label: 'LED', signalId: 'led', x: 200, y: 0 },
+  ], edges: [{ id: 'sensor-compare', source: 'sensor', target: 'compare', port: 'a' }, { id: 'threshold-compare', source: 'threshold', target: 'compare', port: 'b' }, { id: 'compare-out', source: 'compare', target: 'out', port: 'in' }] };
+  it('reads finite numeric input and submits only the resulting boolean command', async () => {
+    const { io, samples } = bench(); samples.sensor = { ...sample(false), value: 12 };
+    const task = new GraphTask(numeric, io, () => Date.now()); await task.start();
+    expect(task.status.state).toBe('running'); expect(io.request).toHaveBeenCalledWith('led', true);
+    samples.sensor.value = NaN; await vi.advanceTimersByTimeAsync(100);
+    expect(task.status.state).toBe('faulted'); expect(io.revoke).toHaveBeenCalledTimes(1); expect(io.request).toHaveBeenCalledTimes(1);
+  });
+  it('rejects numeric-looking strings and never coerces them into control inputs', async () => {
+    const { io, samples } = bench(); samples.sensor = { ...sample(false), value: '12' };
+    const task = new GraphTask(numeric, io, () => Date.now()); await task.start();
+    expect(task.status.state).toBe('faulted'); expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1);
+  });
+});
+
+it('checks every output before dispatch when another branch has a division fault', async () => {
+  const { io, samples } = bench(); samples.other = sample(false);
+  const broken: LogicGraph = { schemaVersion: 1, nodes: [
+    { id: 'source', kind: 'constant', label: 'Power', value: true, x: 0, y: 0 },
+    { id: 'a-led', kind: 'output', label: 'LED', signalId: 'led', x: 0, y: 0 },
+    { id: 'zero', kind: 'number', label: 'Zero', value: 0, x: 0, y: 0 },
+    { id: 'divide', kind: 'divide', label: 'Division', x: 0, y: 0 },
+    { id: 'band', kind: 'hysteresis', label: 'Band', low: 0, high: 1, x: 0, y: 0 },
+    { id: 'z-other', kind: 'output', label: 'Other', signalId: 'other', x: 0, y: 0 },
+  ], edges: [
+    { id: 's-o', source: 'source', target: 'a-led', port: 'in' },
+    { id: 'z-a', source: 'zero', target: 'divide', port: 'a' }, { id: 'z-b', source: 'zero', target: 'divide', port: 'b' },
+    { id: 'd-b', source: 'divide', target: 'band', port: 'in' }, { id: 'b-o', source: 'band', target: 'z-other', port: 'in' },
+  ] };
+  const task = new GraphTask(broken, io, () => Date.now()); await task.start();
+  expect(task.status).toMatchObject({ state: 'faulted', error: 'Division by zero' });
+  expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1);
+});

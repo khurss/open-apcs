@@ -21,6 +21,7 @@ psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/005-notifications.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/006-notification-service.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/007-history-aggregates.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/008-history-retention-boundary.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/009-numeric-inputs.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'

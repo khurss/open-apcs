@@ -125,6 +125,7 @@ export class SimulationRuntime implements RuntimeControl {
     if (createHash('sha256').update(canonicalJson({ name: saved.name, document: saved.document })).digest('hex') !== saved.checksum) throw new Error('Prepared graph revision checksum mismatch');
     const graph = validateGraph(saved.document);
     if (!graph.nodes.length) throw new Error('Prepared graph revision is empty');
+    if (graph.nodes.some((node) => node.kind === 'analog')) throw new Error('Numeric input drivers are not available in the current runtime profile');
     for (const node of graph.nodes.filter((node) => node.kind === 'script')) {
       if (!this.scripts) throw new Error('Script evaluator is unavailable');
       await this.scripts.validate({ source: node.source!, language: node.language! });

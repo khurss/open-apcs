@@ -21,7 +21,7 @@ export async function audit(client: PoolClient, actorId: string | null, action: 
 }
 
 export async function migrateApplication(pool: Pool): Promise<void> {
-  const migrations = await Promise.all(['001-application.sql', '002-editors.sql', '003-signal-history.sql', '004-alarms.sql', '005-notifications.sql', '006-notification-service.sql', '007-history-aggregates.sql', '008-history-retention-boundary.sql'].map(async (name, index) => {
+  const migrations = await Promise.all(['001-application.sql', '002-editors.sql', '003-signal-history.sql', '004-alarms.sql', '005-notifications.sql', '006-notification-service.sql', '007-history-aggregates.sql', '008-history-retention-boundary.sql', '009-numeric-inputs.sql'].map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, sql, checksum: createHash('sha256').update(sql).digest('hex') };
   }));

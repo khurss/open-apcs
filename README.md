@@ -33,6 +33,8 @@ All repository documentation, source comments, UI text, and commit messages must
 
 Publication target: [khurss/open-apcs](https://github.com/khurss/open-apcs). Completed implementation phases must be documented, checked in Docker, committed, and pushed. See [contributor instructions](AGENTS.md). The open-source license remains an explicit open decision; no license has been selected yet.
 
+Numeric constants, arithmetic, comparisons and hysteresis are available in Logic with typed wiring and simulation traces. Existing boolean LED outputs can be controlled; live numeric input drivers remain pending. See [numeric logic](docs/numeric-logic.md).
+
 JS/TS boolean blocks are edited in Logic and run by a separate bounded Docker service. See [script execution and current limits](docs/script-runtime.md).
 
 Alarm SMTP/webhook notifications run in a private background process with durable attempts, bounded retries and an audited delivery log in Alarms. Destinations are disabled by default; see [local configuration and delivery semantics](docs/notifications.md).

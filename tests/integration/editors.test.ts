@@ -164,7 +164,7 @@ describe('versioned editor documents with real PostgreSQL', () => {
       const id = randomUUID(); await old.query('INSERT INTO apcs_users (id, username, password_hash) VALUES ($1,$2,$3)', [id, 'existing', 'fixture-only']);
       await migrateApplication(old); await migrateApplication(old);
       expect((await old.query('SELECT username FROM apcs_users WHERE id=$1', [id])).rows[0].username).toBe('existing');
-      expect((await old.query('SELECT version FROM apcs_app_migrations ORDER BY version')).rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }]);
+      expect((await old.query('SELECT version FROM apcs_app_migrations ORDER BY version')).rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }]);
     } finally { await old.end(); await admin.query(`DROP SCHEMA ${oldSchema} CASCADE`); }
   });
   it('rejects reversed simulation time and oversized runs before creating commands', async () => {
@@ -214,4 +214,53 @@ it('keeps script drafts editable but refuses preparation and simulation without 
   expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(503);
   expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [{ atMs: 0, inputs: {} }] } })).statusCode).toBe(503);
   expect((await pool.query('SELECT * FROM apcs_document_revisions WHERE document_id=$1', [id])).rowCount).toBe(0);
+});
+
+it('binds float64 inputs, simulates numeric values without coercion and rejects incompatible signal types', async () => {
+  const sensor = randomUUID(); const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,'Sensor','float64','input')", [sensor, device]);
+  const id = (await create()).json().id;
+  const document = { schemaVersion: 1, nodes: [
+    { id: 'sensor', kind: 'analog', label: 'Sensor', signalId: sensor, x: 0, y: 0 },
+    { id: 'band', kind: 'hysteresis', label: 'Band', low: 5, high: 10, x: 200, y: 0 },
+    { id: 'led', kind: 'output', label: 'LED', signalId, x: 400, y: 0 },
+  ], edges: [{ id: 'a', source: 'sensor', target: 'band', port: 'in' }, { id: 'b', source: 'band', target: 'led', port: 'in' }] };
+  const saved = await save(id, document); expect(saved.statusCode, saved.body).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  const simulated = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [12, 7, null, 7, 5, true, 0, 1].map((value, i) => ({ atMs: i * 100, inputs: { [sensor]: value } })) } });
+  expect(simulated.statusCode, simulated.body).toBe(200);
+  expect(simulated.json().steps.map((step: { outputs: Record<string, { value: unknown }> }) => step.outputs[signalId]!.value)).toEqual([true, true, null, false, false, null, false, false]);
+  const wrong = structuredClone(document); wrong.nodes[0]!.signalId = signalId;
+  expect((await save(id, wrong, 2)).statusCode).toBe(422);
+  await expect(pool.query("UPDATE apcs_signals SET data_type='int64' WHERE id=$1", [sensor])).rejects.toThrow(/check constraint/);
+  await expect(pool.query("UPDATE apcs_signals SET direction='output' WHERE id=$1", [sensor])).rejects.toThrow(/check constraint/);
+});
+
+it('runs numeric logic through MQTT and rejects unsupported analog drivers before disturbing the active revision', async () => {
+  await app.close();
+  const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const id = (await create()).json().id;
+  const document = { schemaVersion: 1, nodes: [
+    { id: 'n', kind: 'number', label: 'Setpoint', value: 12, x: 0, y: 0 },
+    { id: 'h', kind: 'hysteresis', label: 'Band', low: 5, high: 10, x: 200, y: 0 },
+    { id: 'o', kind: 'output', label: 'LED', signalId, x: 400, y: 0 },
+  ], edges: [{ id: 'n-h', source: 'n', target: 'h', port: 'in' }, { id: 'h-o', source: 'h', target: 'o', port: 'in' }] };
+  expect((await save(id, document)).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device}/runtime`, headers, payload: { action: 'start', reason: 'Numeric fixture' } })).statusCode).toBe(200);
+  const url = `/api/v1/graphs/${id}/runtime`;
+  expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed numeric behavior' } })).statusCode).toBe(200);
+  await expect.poll(async () => (await runtime.readSignal(signalId)).value, { timeout: 4000 }).toBe(true);
+  await expect.poll(async () => (await pool.query("SELECT snapshot->>'state' AS state FROM apcs_commands WHERE target_signal_id=$1 ORDER BY created_at DESC LIMIT 1", [signalId])).rows[0]?.state, { timeout: 4000 }).toBe('Verified');
+  const sensor = randomUUID();
+  await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,'Sensor','float64','input')", [sensor, device]);
+  const analog = { ...document, nodes: [{ id: 'n', kind: 'analog', label: 'Sensor', signalId: sensor, x: 0, y: 0 }, ...document.nodes.slice(1)] };
+  expect((await save(id, analog, 2)).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"3"' } })).statusCode).toBe(201);
+  const rejected = await app.inject({ method: 'POST', url, headers, payload: { action: 'activate', revision: 3, reason: 'Unsupported driver fixture' } });
+  expect(rejected.statusCode).toBe(422); expect(rejected.body).toContain('Numeric input drivers are not available');
+  expect(await runtime.graphStatus(id)).toMatchObject({ state: 'running', revision: 2 });
+  expect((await runtime.readSignal(signalId)).value).toBe(true);
 });

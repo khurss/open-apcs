@@ -1,4 +1,4 @@
-import { LogicEngine, validateGraph, type LogicGraph, type LogicResult, type ScriptEvaluator } from '../../domain/src/logic.js';
+import { LogicEngine, validateGraph, outputType, type LogicType, type LogicGraph, type LogicResult, type ScriptEvaluator } from '../../domain/src/logic.js';
 import type { SignalSnapshot } from '../../domain/src/signals.js';
 import type { CommandSnapshot } from '../../domain/src/commands.js';
 export interface GraphIo {
@@ -13,6 +13,7 @@ export class GraphTask {
   private readonly engine: LogicEngine;
   private readonly periodMs: number;
   private readonly ids: string[];
+  private readonly types = new Map<string, LogicType>();
   private readonly boots = new Map<string, string>();
   private readonly pending = new Map<string, string>();
   private readonly targets = new Map<string, boolean>();
@@ -33,6 +34,7 @@ export class GraphTask {
     if (scripted && !io.evaluate) throw new Error('Script evaluator is unavailable');
     this.periodMs = scripted ? Math.max(1000, periodMs) : periodMs;
     this.ids = [...new Set(safe.nodes.flatMap((node) => node.signalId ? [node.signalId] : []))].sort();
+    for (const node of safe.nodes) if (node.signalId) this.types.set(node.signalId, outputType(node.kind));
   }
   async start(): Promise<void> {
     if (this.finished || this.state === 'faulted') throw new Error('Create a new task after a stop or fault');
@@ -81,7 +83,7 @@ export class GraphTask {
       if (!this.active()) return;
       for (const id of this.ids) {
         const sample = snapshots[id];
-        if (!sample || sample.quality !== 'Good' || typeof sample.value !== 'boolean' || !sample.bootId) throw new Error(`Signal ${id} is unavailable`);
+        if (!sample || sample.quality !== 'Good' || typeof sample.value !== this.types.get(id) || (this.types.get(id) === 'number' && !Number.isFinite(sample.value)) || !sample.bootId) throw new Error(`Signal ${id} is unavailable`);
         const previous = this.boots.get(id); if (previous && previous !== sample.bootId) throw new Error(`Signal ${id} changed boot session`);
         this.boots.set(id, sample.bootId);
       }
@@ -91,12 +93,16 @@ export class GraphTask {
         if (command.state === 'Verified') this.pending.delete(id);
         else if (!['Accepted', 'Dispatched', 'DeviceAccepted'].includes(command.state)) throw new Error(`Command ${commandId} ended as ${command.state}`);
       }
-      this.last = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }));
+      this.last = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean | number, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }));
       if (!this.active()) return;
       this.cycles++;
+      // Validate the entire calculated output set before issuing any intent.
+      for (const [id, value] of Object.entries(this.last.outputs)) {
+        if (value.quality !== 'Good' || typeof value.value !== 'boolean') throw new Error(value.reason ?? `Output ${id} is inhibited`);
+      }
       for (const [id, value] of Object.entries(this.last.outputs)) {
         if (!this.active()) return;
-        if (value.quality !== 'Good' || value.value === null) throw new Error(value.reason ?? `Output ${id} is inhibited`);
+        if (value.quality !== 'Good' || typeof value.value !== 'boolean') throw new Error(value.reason ?? `Output ${id} is inhibited`);
         if (this.pending.has(id)) continue;
         if (!this.targets.has(id) && snapshots[id]!.value === value.value) this.targets.set(id, value.value);
         if (this.targets.get(id) === value.value) continue;

@@ -1,12 +1,18 @@
-export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script';
-export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
+export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis';
+export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
 export interface ScriptEvaluation { source: string; language: 'javascript' | 'typescript'; inputs: { a: boolean; b: boolean }; nowMs: number; }
 export type ScriptEvaluator = (request: ScriptEvaluation) => Promise<boolean>;
 export interface LogicEdge { id: string; source: string; target: string; port: string; }
 export interface LogicGraph { schemaVersion: 1; nodes: LogicNode[]; edges: LogicEdge[]; }
-export interface LogicValue { value: boolean | null; quality: 'Good' | 'Bad'; reason: string | null; }
+export interface LogicValue { value: boolean | number | null; quality: 'Good' | 'Bad'; reason: string | null; }
 export interface LogicResult { nodes: Record<string, LogicValue>; outputs: Record<string, LogicValue>; }
-export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'] };
+export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'] };
+export type LogicType = 'boolean' | 'number';
+const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide']);
+const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis']);
+export const outputType = (kind: BlockKind): LogicType => numericOutputs.has(kind) ? 'number' : 'boolean';
+export const portType = (kind: BlockKind, _port: string): LogicType => numericInputs.has(kind) ? 'number' : 'boolean';
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const kinds = Object.keys(ports);
 const timers = new Set<BlockKind>(['ton', 'tof', 'pulse', 'debounce']);
 export function record(value: unknown, allowed: string[], context: string): Record<string, unknown> {
@@ -19,15 +25,21 @@ export function title(value: unknown): value is string { return typeof value ===
 export function validateGraph(input: unknown, complete = true): LogicGraph {
   const graph = record(input, ['schemaVersion', 'nodes', 'edges'], 'graph');
   if (graph.schemaVersion !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 256 || graph.edges.length > 1024) throw new Error('Invalid graph version or size');
-  const nodes = new Map<string, LogicNode>(); const writers = new Set<string>();
+  const nodes = new Map<string, LogicNode>(); const writers = new Set<string>(); const bindings = new Map<string, LogicType>();
   for (const value of graph.nodes) {
-    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language'], 'node');
+    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high'], 'node');
     if (!identifier(n.id) || nodes.has(n.id) || typeof n.kind !== 'string' || !kinds.includes(n.kind) || !title(n.label) || !coordinate(n.x) || !coordinate(n.y)) throw new Error('Invalid or duplicate node');
     const kind = n.kind as BlockKind;
-    if (kind === 'input' || kind === 'output') { if (!identifier(n.signalId)) throw new Error('Signal binding required'); }
+    if (kind === 'input' || kind === 'analog' || kind === 'output') {
+      if (!identifier(n.signalId)) throw new Error('Signal binding required');
+      const type = outputType(kind); if (bindings.has(n.signalId) && bindings.get(n.signalId) !== type) throw new Error('Conflicting signal binding types'); bindings.set(n.signalId, type);
+    }
     else if ('signalId' in n) throw new Error('Unexpected signal binding');
     if (kind === 'constant') { if (typeof n.value !== 'boolean') throw new Error('Boolean constant required'); }
+    else if (kind === 'number') { if (!finite(n.value)) throw new Error('Finite numeric constant required'); }
     else if ('value' in n) throw new Error('Unexpected constant value');
+    if (kind === 'hysteresis') { if (!finite(n.low) || !finite(n.high) || n.low >= n.high) throw new Error('Invalid hysteresis band'); }
+    else if ('low' in n || 'high' in n) throw new Error('Unexpected hysteresis fields');
     if (timers.has(kind)) { if (!Number.isSafeInteger(n.delayMs) || (n.delayMs as number) < 0 || (n.delayMs as number) > 86400000) throw new Error('Invalid timer delay'); }
     else if ('delayMs' in n) throw new Error('Unexpected timer delay');
     if (kind === 'script') {
@@ -45,6 +57,7 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
     if (!source || !target) throw new Error('Missing edge reference');
     if (source.kind === 'output') throw new Error('An output cannot be an edge source');
     if (!ports[target.kind].includes(e.port)) throw new Error('Unknown target port');
+    if (outputType(source.kind) !== portType(target.kind, e.port)) throw new Error('Connection type mismatch');
     const used = connected.get(e.target) ?? new Set<string>();
     if (used.has(e.port)) throw new Error('Multiple connections to one port');
     used.add(e.port); connected.set(e.target, used);
@@ -66,7 +79,7 @@ function order(graph: LogicGraph): LogicNode[] {
 }
 interface State { out: boolean; previous: boolean; candidate: boolean; since: number | null; }
 const fresh = (): State => ({ out: false, previous: false, candidate: false, since: null });
-const good = (value: boolean): LogicValue => ({ value, quality: 'Good', reason: null });
+const good = (value: boolean | number): LogicValue => ({ value, quality: 'Good', reason: null });
 const bad = (reason: string): LogicValue => ({ value: null, quality: 'Bad', reason });
 export class LogicEngine {
   private readonly ordered: LogicNode[];
@@ -109,14 +122,22 @@ export class LogicEngine {
       const invalid = [...values.values()].find((v) => v.quality !== 'Good');
       let result: LogicValue;
       if (invalid) { this.states.set(n.id, fresh()); result = bad(invalid.reason ?? 'Invalid input'); }
-      else if (n.kind === 'constant') result = good(n.value!);
-      else if (n.kind === 'input') {
+      else if (n.kind === 'constant' || n.kind === 'number') result = good(n.value!);
+      else if (n.kind === 'input' || n.kind === 'analog') {
         const sample = Object.hasOwn(inputs, n.signalId!) ? inputs[n.signalId!] : undefined;
-        result = sample?.quality === 'Good' && typeof sample.value === 'boolean' ? good(sample.value) : bad(sample?.reason ?? 'Input unavailable');
+        result = sample?.quality === 'Good' && (n.kind === 'analog' ? finite(sample.value) : typeof sample.value === 'boolean') ? good(sample.value!) : bad(sample?.reason ?? 'Input unavailable');
       } else {
-        const read = (port: string) => values.get(port)!.value!;
+        const read = (port: string) => values.get(port)!.value as boolean;
+        const number = (port: string) => values.get(port)!.value as number;
         const state = this.states.get(n.id)!;
-        if (n.kind === 'not') result = good(!read('in'));
+        if (['add', 'subtract', 'multiply', 'divide'].includes(n.kind)) {
+          const a = number('a'); const b = number('b');
+          const value = n.kind === 'add' ? a + b : n.kind === 'subtract' ? a - b : n.kind === 'multiply' ? a * b : a / b;
+          result = Number.isFinite(value) ? good(value) : bad(b === 0 && n.kind === 'divide' ? 'Division by zero' : 'Numeric result is not finite');
+        }
+        else if (n.kind === 'greater' || n.kind === 'less') result = good(n.kind === 'greater' ? number('a') > number('b') : number('a') < number('b'));
+        else if (n.kind === 'hysteresis') { if (number('in') >= n.high!) state.out = true; else if (number('in') <= n.low!) state.out = false; result = good(state.out); }
+        else if (n.kind === 'not') result = good(!read('in'));
         else if (n.kind === 'and') result = good(read('a') && read('b'));
         else if (n.kind === 'or') result = good(read('a') || read('b'));
         else if (n.kind === 'xor') result = good(read('a') !== read('b'));

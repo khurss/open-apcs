@@ -29,7 +29,10 @@ export function registerGraphRuntime(app: FastifyInstance, pool: Pool, runtime?:
     catch (error) { if (action === 'stop') await runtime.stopGraph(id); throw error; }
     let status;
     try { status = action === 'activate' ? await runtime.activateGraph(id, revision!, actor, activationId) : await runtime.stopGraph(id); }
-    catch { throw new RuntimeError(503, 'RUNTIME_UNAVAILABLE', 'Graph operation failed; inspect runtime and device status before retrying'); }
+    catch (error) {
+      if (error instanceof Error && error.message === 'Numeric input drivers are not available in the current runtime profile') throw new RuntimeError(422, 'UNSUPPORTED_DRIVER', error.message);
+      throw new RuntimeError(503, 'RUNTIME_UNAVAILABLE', 'Graph operation failed; inspect runtime and device status before retrying');
+    }
     try { await transaction(pool, (client) => audit(client, actor, `graph.${action}.completed`, id, { ...data, state: status.state, revision: status.revision, activationId: status.activationId })); }
     catch {
       // Only revoke this activation; a later concurrent activation has its own audit.

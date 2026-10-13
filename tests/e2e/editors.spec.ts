@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 test('edits, saves, simulates and prepares a graph, then persists an HMI with undo and redo', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   await page.goto('/');
   await page.getByLabel('Username', { exact: true }).fill('operator');
   await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
@@ -77,6 +77,52 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Activate revision 5', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r5');
   await page.screenshot({ path: 'test-results/script-editor.png', fullPage: true });
+
+  // Replace the script draft through the text editor, then wire a typed block visually.
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  const previous = JSON.parse(await page.getByRole('textbox', { name: 'JSON document', exact: true }).inputValue());
+  const numeric = { schemaVersion: 1, nodes: [
+    { id: 'number', kind: 'number', label: 'Setpoint', value: 12, x: 80, y: 80 },
+    { id: 'led', kind: 'output', label: 'LED', signalId: previous.nodes.find((node: { kind: string }) => node.kind === 'output').signalId, x: 520, y: 80 },
+  ], edges: [] };
+  await page.getByRole('textbox', { name: 'JSON document', exact: true }).fill(JSON.stringify(numeric));
+  await page.getByRole('button', { name: 'Apply JSON', exact: true }).click();
+  await page.getByLabel('Block type', { exact: true }).selectOption('hysteresis', { timeout: 5000 });
+  await page.getByRole('button', { name: 'Add block', exact: true }).click();
+  await page.getByLabel('X', { exact: true }).fill('300');
+  await page.getByLabel('Y', { exact: true }).fill('80');
+  await page.getByLabel('Low threshold', { exact: true }).fill('5');
+  await page.getByLabel('High threshold', { exact: true }).fill('10');
+  await page.getByText('Connections · keyboard and touch', { exact: true }).click();
+  await page.getByLabel('Connection source', { exact: true }).selectOption({ label: 'Setpoint' });
+  await page.getByLabel('Connection target', { exact: true }).selectOption({ label: 'LED' });
+  await page.getByLabel('Connection port', { exact: true }).selectOption('in');
+  await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Connection type mismatch');
+  for (const [source, target] of [['Setpoint', 'Hysteresis'], ['Hysteresis', 'LED']]) {
+    await page.getByLabel('Connection source', { exact: true }).selectOption({ label: source! });
+    await page.getByLabel('Connection target', { exact: true }).selectOption({ label: target! });
+    await page.getByLabel('Connection port', { exact: true }).selectOption('in');
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Select Setpoint', exact: true }).click();
+  await page.getByLabel('Numeric value', { exact: true }).fill('14');
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page.getByText('Saved revision 6', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('ON');
+  await expect(page.locator('.logic-block').filter({ has: page.getByRole('button', { name: 'Select Setpoint', exact: true }) }).locator('.block-value')).toHaveText('14');
+  await page.getByRole('button', { name: 'Prepare revision', exact: true }).click();
+  await page.getByLabel('Activation reason', { exact: true }).fill('Reviewed numeric hysteresis');
+  await page.getByRole('button', { name: 'Activate revision 6', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r6');
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/numeric-editor.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/numeric-editor-phone.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
   await page.getByLabel('Activation reason', { exact: true }).fill('End browser graph test');
   await page.getByRole('button', { name: 'Stop graph', exact: true }).click();

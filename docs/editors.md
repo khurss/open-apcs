@@ -1,18 +1,18 @@
 # Editor documents and isolated logic simulation
 
-This increment provides basic graph and HMI editing, durable drafts, immutable prepared revisions, and isolated simulation. Prepared graphs also execute in the private simulation worker. Physical outputs, autonomous remote gateways, and the complete M1 release remain pending.
+This increment provides basic graph and HMI editing, durable drafts, immutable prepared revisions, and isolated simulation. Prepared graphs also execute in the private simulation worker. The physical LED commissioning profile is available for bench testing; HIL acceptance, autonomous remote gateways, and the complete M1 release remain pending.
 
 ## Web workflow
 
 Register a project and a virtual LED device. Open **Logic**, create a graph, and start with **LED template**, or add blocks individually. Move blocks on the canvas, connect their handles, and configure the selected block in Properties. A keyboard/touch connection form is also available. Delete connections there, or select an edge on the canvas and use Delete. Delete a selected block through Properties; its incident edges are removed.
 
-Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments, or six 1000 ms samples for script graphs. Input blocks accept OFF, ON, or simulated disconnection. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
+Save the draft before simulation or revision preparation. The simulation bench runs 51 samples from 0 to 5000 ms in 100 ms increments, or six 1000 ms samples for script graphs. Boolean input blocks accept OFF, ON, or simulated disconnection. Numeric input blocks accept finite numbers or simulated disconnection; live numeric drivers remain pending. Results annotate the graph and list output values/reasons. Simulation uses a fresh engine and has no dependency on the command journal or hardware drivers.
 
 Open **Screens** to arrange labels, indicators, buttons, and groups on an SVG scene. Configure signal bindings, coordinates, dimensions, and parent groups. Drag a group to move its descendants; coordinates are absolute scene coordinates. Arrow keys move a selected item by 10 px, or 1 px with Shift. Removing a group ungroups direct children. The design canvas never dispatches commands and its indicators are placeholders. Prepare a screen revision and choose Operate revision to see current signal values and open command controls.
 
 Script blocks additionally provide an English JS/TS source editor; see [isolated script contracts](script-runtime.md). Both editors provide bounded undo/redo and a JSON document editor. JSON is a portable data representation; it is not JavaScript/TypeScript script execution or Structured Text support. Saved scenes and graphs survive API/browser restarts. Navigation prompts before discarding modified document state. A prepared revision does not activate equipment. Complex editing is oriented toward desktop/tablet; the phone interface provides controls and an internally scrollable HMI canvas.
 
-## Boolean graph contract
+## Typed graph contract
 
 Schema version 1 contains `nodes` and `edges`. Node IDs and signal bindings are stable strings; API signal bindings must resolve to the owning project's catalog. Each edge connects a source block to a named target input port. Output blocks cannot be edge sources. One edge may feed each input port; fan-out is supported. A graph may contain at most 256 nodes and 1024 edges. Timers accept integer delays from 0 to 86,400,000 ms.
 
@@ -24,6 +24,11 @@ The engine copies its input graph, uses a deterministic topological order, and e
 |---|---|
 | Constant | Boolean parameter; no inputs |
 | Input | Read one boolean signal sample |
+| Numeric constant | Finite float64 parameter; no inputs |
+| Numeric input | Read a finite float64 input sample; simulation-only catalog binding in this runtime profile |
+| Add / Subtract / Multiply / Divide | Numeric `a`, `b`; produce a finite numeric result |
+| Greater than / Less than | Numeric `a`, `b`; strict comparison, boolean output |
+| Hysteresis | Numeric `in`; boolean state, ON at/above `high`, OFF at/below `low`, hold inside |
 | NOT | `in` |
 | AND / OR / XOR | `a`, `b`; all input qualities must be Good |
 | TON | `in`; output becomes true after the input remains true for the delay |
@@ -36,7 +41,11 @@ The engine copies its input graph, uses a deterministic topological order, and e
 | JS / TS script | `a`, `b`; pure boolean function with explicit monotonic time; at most two per graph |
 | Output | `in`; maps the result to a bound signal, without sending a command |
 
-Missing, nonboolean, or non-Good input samples propagate `Bad`, `value: null`, and a reason; they never become a fabricated false reading. Stateful blocks reset their volatile state on invalid inputs. False permit produces `Bad` with `Interlock is not permitted`. This inhibits an output intent; it does not assert that an actuator moved to its safe state. Device watchdogs and independent protections remain necessary. The LED-specific physical policy is separate from the pure engine.
+Missing, incorrectly typed, nonfinite, or non-Good input samples propagate `Bad`, `value: null`, and a reason; they never become a fabricated false reading. Stateful blocks reset their volatile state on invalid inputs. False permit produces `Bad` with `Interlock is not permitted`. This inhibits an output intent; it does not assert that an actuator moved to its safe state. Device watchdogs and independent protections remain necessary. The LED-specific physical policy is separate from the pure engine.
+
+Numeric and boolean connections are validated in drafts as well as prepared revisions. No implicit numeric/boolean conversion is permitted. Division by zero and arithmetic overflow produce `Bad` and inhibit downstream output. Hysteresis requires finite `low < high`, starts false, and resets false on invalid input or a new engine. An invalid result anywhere in the calculated output set revokes the graph before any output intent from that tick is dispatched. This preflight is not atomic multi-actuator delivery: a later transport/journal failure may still occur after earlier valid commands have been accepted.
+
+The numeric representation is JavaScript float64, with ordinary IEEE-754 rounding; it is not an exact integer/currency type. Exact int64/uint64 strings cannot bind to numeric blocks. Scripts retain boolean ports/results. Output blocks and device commands remain boolean. All node traces display numeric values directly. See [numeric logic profile](numeric-logic.md) for current runtime and catalog limits.
 
 ## HMI scene contract
 

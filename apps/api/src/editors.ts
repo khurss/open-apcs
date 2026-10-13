@@ -35,7 +35,8 @@ async function bindings(client: PoolClient, projectId: string, kind: Kind, docum
   if (result.rows.length !== ids.length) throw invalid('A signal binding is missing or belongs to another project');
   for (const item of bound) {
     const signal = result.rows.find((s) => s.id === item.signalId)!;
-    if (signal.data_type !== 'boolean' || (['output', 'button'].includes(item.kind) && signal.direction !== 'output')) throw invalid('Signal type or direction does not match its binding');
+    const expectedType = kind === 'graph' && item.kind === 'analog' ? 'float64' : 'boolean';
+    if (signal.data_type !== expectedType || (['output', 'button'].includes(item.kind) && signal.direction !== 'output')) throw invalid('Signal type or direction does not match its binding');
   }
 }
 async function preparedSnapshot(client: PoolClient, id: string, revision: number, kind: Kind) {
@@ -129,8 +130,8 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
       return { items: result.rows.slice(0, 20), nextBefore: result.rows.length > 20 ? result.rows[19].revision : null };
     });
   }
-  app.post<{ Params: { id: string }; Body: { steps: Array<{ atMs: number; inputs: Record<string, boolean | null> }> } }>('/api/v1/graphs/:id/simulate', {
-    schema: { params, body: object({ steps: { type: 'array', minItems: 1, maxItems: 100, items: object({ atMs: { type: 'number', minimum: 0, maximum: 86400000 }, inputs: { type: 'object', maxProperties: 256, propertyNames: { pattern: '^[A-Za-z0-9_-]{1,128}$' }, additionalProperties: { type: ['boolean', 'null'] } } }) } }) },
+  app.post<{ Params: { id: string }; Body: { steps: Array<{ atMs: number; inputs: Record<string, boolean | number | null> }> } }>('/api/v1/graphs/:id/simulate', {
+    schema: { params, body: object({ steps: { type: 'array', minItems: 1, maxItems: 100, items: object({ atMs: { type: 'number', minimum: 0, maximum: 86400000 }, inputs: { type: 'object', maxProperties: 256, propertyNames: { pattern: '^[A-Za-z0-9_-]{1,128}$' }, additionalProperties: { anyOf: [{ type: 'boolean' }, { type: 'number' }, { type: 'null' }] } } }) } }) },
   }, async (request) => {
     const found = await pool.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = 'graph'`, [request.params.id]); if (!found.rows[0]) throw missing();
     const graph = validate('graph', found.rows[0].document, true) as LogicGraph;

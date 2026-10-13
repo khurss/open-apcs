@@ -37,7 +37,7 @@ process.on('message', (message: unknown) => {
       else throw new Error('Invalid runtime operation');
       if (process.connected) process.send!({ id, result });
     } catch (error) {
-      const message = error instanceof Error && /^(Physical |Alarm |Device not found|Project owner required|Only virtual|Another runtime|Initial runtime limit|Runtime is closed|Prepared graph|All graph|Output belongs|Previous graph)/.test(error.message) ? error.message : 'Runtime operation failed';
+      const message = error instanceof Error && /^(Numeric input drivers are not available|Physical |Alarm |Device not found|Project owner required|Only virtual|Another runtime|Initial runtime limit|Runtime is closed|Prepared graph|All graph|Output belongs|Previous graph)/.test(error.message) ? error.message : 'Runtime operation failed';
       if (process.connected) process.send!({ id, error: message });
     } finally { queued--; }
   });

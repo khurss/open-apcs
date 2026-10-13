@@ -1,7 +1,7 @@
 import type { LedConnection } from './mqtt-led.js';
 import { record } from '../../domain/src/logic.js';
 export interface PhysicalConfig { url: string; username: string; password: string; ca: string; devices: { siteId: string; deviceId: string; gpio: number }[]; }
-const pins = [18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
+const pins = [5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33];
 export function parsePhysicalConfig(input: unknown): PhysicalConfig {
   const value = record(input, ['url', 'username', 'password', 'ca', 'devices'], 'physical configuration');
   for (const [key, maximum] of Object.entries({ url: 256, username: 128, password: 256, ca: 4095 })) if (typeof value[key] !== 'string' || !(value[key] as string).trim() || (value[key] as string).includes('\0') || Buffer.byteLength(value[key] as string) > maximum) throw new Error(`Invalid physical configuration field: ${key}`);

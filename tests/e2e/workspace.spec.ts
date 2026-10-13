@@ -164,6 +164,7 @@ test('creates a project and virtual device, verifies a command, and audits the w
   await page.getByRole('button', { name: 'Add device', exact: true }).click();
   const bench = page.getByRole('article').filter({ hasText: 'TLS LED bench' });
   await expect(bench.getByRole('button', { name: 'Arm LED bench', exact: true })).toBeDisabled();
+  await expect(bench.getByRole('option', { name: '5 - GOOUUU onboard LED bench', exact: true })).toHaveCount(1);
   await bench.getByRole('combobox', { name: 'Reviewed GPIO', exact: true }).selectOption('18');
   await bench.getByLabel('Commissioning reason', { exact: true }).fill('TLS protocol simulator test');
   await bench.getByLabel('Only an isolated LED is connected').check();

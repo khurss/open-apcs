@@ -10,7 +10,7 @@ export function provisioningCsv(input: unknown): string {
   if (broker.protocol !== 'mqtts:' || !broker.hostname || broker.username || broker.password || broker.search || broker.hash || !['', '/'].includes(broker.pathname)) throw new Error('Invalid provisioning field: broker');
   if (!/^[A-Za-z0-9_.:-]+$/.test(value.ntp as string)) throw new Error('Invalid provisioning field: ntp');
   if (!(value.ca as string).startsWith('-----BEGIN CERTIFICATE-----') || !(value.ca as string).trimEnd().endsWith('-----END CERTIFICATE-----')) throw new Error('Invalid provisioning field: ca');
-  if (![18, 19, 21, 22, 23, 25, 26, 27, 32, 33].includes(value.gpio as number)) throw new Error('Invalid provisioning field: gpio');
+  if (![5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33].includes(value.gpio as number)) throw new Error('Invalid provisioning field: gpio');
   const row = (fields: unknown[]) => fields.map((field) => `"${String(field).replaceAll('"', '""')}"`).join(',');
   return ['key,type,encoding,value', row(['apcs', 'namespace', '', '']), ...Object.keys(limits).map((key) => row([key, 'data', 'string', value[key]])), row(['gpio', 'data', 'i32', value.gpio])].join('\n') + '\n';
 }

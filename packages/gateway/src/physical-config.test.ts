@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { parsePhysicalConfig, physicalConnection } from './physical-config.js';
 const sample = () => ({ url: 'mqtts://broker.local:8883', username: 'gateway', password: 'private-device-password', ca: '-----BEGIN CERTIFICATE-----\nFIXTURE\n-----END CERTIFICATE-----', devices: [{ siteId: 'lab', deviceId: 'led', gpio: 18 }] });
 describe('explicit physical LED commissioning configuration', () => {
+  it('requires an exact GPIO5 allowlist match for the onboard LED bench', () => {
+    const config = parsePhysicalConfig({ ...sample(), devices: [{ siteId: 'lab', deviceId: 'led', gpio: 5 }] });
+    expect(physicalConnection(config, { siteId: 'lab', deviceId: 'led', signalId: 'output' }, 5).deviceId).toBe('led');
+    expect(() => physicalConnection(config, { siteId: 'lab', deviceId: 'led', signalId: 'output' }, 18)).toThrow(/GPIO/);
+  });
   it('binds only an allowlisted device and reviewed GPIO to a copied TLS connection', () => {
     const input = sample(); const config = parsePhysicalConfig(input); input.devices[0]!.gpio = 19;
     const connection = physicalConnection(config, { siteId: 'lab', deviceId: 'led', signalId: 'catalog-output' }, 18);

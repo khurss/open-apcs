@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { decodeFrame, LedPeer, type Frame } from '../../packages/led-protocol/src/index.js';
+import { decodeFrame, GatewaySession, LedPeer, type Frame } from '../../packages/led-protocol/src/index.js';
 function native(frames: { now: number; frame: string; retained?: boolean }[]): { reply: Frame | null; output: boolean }[] {
   const result = spawnSync(fileURLToPath(new URL('../../.cache/firmware-native/led-peer', import.meta.url)), [], { input: frames.map((frame) => JSON.stringify(frame)).join('\n') + '\n', encoding: 'utf8', timeout: 2000, maxBuffer: 1024 * 1024 });
   if (result.error) throw result.error;
@@ -9,6 +9,21 @@ function native(frames: { now: number; frame: string; retained?: boolean }[]): {
   return result.stdout.trim().split('\n').map((line) => JSON.parse(line));
 }
 describe('compiled ESP32 protocol core against the TypeScript contract', () => {
+  it('confirms a lease across JSON encoders with fractional hardware timestamps', () => {
+    for (const deviceTime of [30082.126, 269885.341, 113542.365]) {
+      let now = 0;
+      const gateway = new GatewaySession(() => now, 'fractional-session');
+      const probe = { now: deviceTime, frame: JSON.stringify(gateway.probe('fractional-probe')) };
+      const snapshot = native([probe])[0]!.reply!;
+      now = 20;
+      const lease = gateway.snapshot(snapshot);
+      const ready = native([probe, { now: deviceTime + 20, frame: JSON.stringify(lease) }])[1]!.reply;
+      expect(ready?.kind).toBe('ready');
+      now = 40;
+      expect(() => gateway.ready(ready!)).not.toThrow();
+      expect(gateway.active()).toBe(true);
+    }
+  });
   it('matches the simulator handshake, writes, deduplication and expired lease output', () => {
     const frames: { now: number; frame: Frame }[] = [
       { now: 100, frame: { v: 1, kind: 'probe', nonce: 'n1' } },

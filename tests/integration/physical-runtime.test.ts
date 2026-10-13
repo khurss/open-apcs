@@ -32,12 +32,14 @@ beforeEach(async () => {
 afterEach(async () => { await app?.close(); app = undefined; await processRuntime?.close(); processRuntime = undefined; if (directory) await rm(directory, { recursive: true, force: true }); directory = undefined; await runtime?.close(); await simulator?.stop(); await pool?.end(); if (admin) { try { await admin.query(`DROP SCHEMA ${schema} CASCADE`); } finally { await admin.end(); } } });
 function request() { return { id: randomUUID(), idempotencyKey: randomUUID(), actorId: actor, targetSignalId: signal, value: true, expectedProjectRevision: 1, ttlMs: 3000, reason: 'TLS simulator commissioning' }; }
 describe('physical-profile runtime verified with a TLS simulator', () => {
-  it('requires authenticated owner review and compensates when physical arming cannot be audited', async () => {
+  it.each([18, 5])('requires authenticated owner review on GPIO%i and compensates when arming cannot be audited', async (gpio) => {
+    config.devices[0]!.gpio = gpio;
+    await runtime.close(); runtime = new SimulationRuntime(pool, process.env.APCS_TEST_MQTT_URL!, config);
     app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
     const token = randomBytes(32).toString('base64url'); const csrf = randomBytes(32).toString('hex');
     await pool.query("INSERT INTO apcs_sessions(token_hash,user_id,csrf_token,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')", [createHash('sha256').update(token).digest('hex'), actor, csrf]);
     const headers = { origin: 'http://localhost:5173', cookie: `apcs_session=${token}`, 'x-csrf-token': csrf };
-    const url = `/api/v1/devices/${device}/commission`; const payload = { action: 'start', gpio: 18, acknowledgeLedOnly: true, reason: 'Reviewed isolated LED bench' };
+    const url = `/api/v1/devices/${device}/commission`; const payload = { action: 'start', gpio, acknowledgeLedOnly: true, reason: 'Reviewed isolated LED bench' };
     expect((await app.inject({ method: 'POST', url, headers: { origin: headers.origin }, payload })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url, headers: { ...headers, 'x-csrf-token': '' }, payload })).statusCode).toBe(403);
     expect((await app.inject({ method: 'POST', url, headers, payload: { ...payload, acknowledgeLedOnly: false } })).statusCode).toBe(400);

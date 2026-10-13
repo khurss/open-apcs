@@ -136,7 +136,9 @@ export class GatewaySession {
     if (this.now() - pending.sentAt > 250) throw new Error('Snapshot is not fresh');
     if (this.anchor && this.anchor.bootId !== frame.bootId) this.anchor = null;
     pending.anchor = { nonce: pending.nonce, bootId: frame.bootId, deviceTimeMs: frame.deviceTimeMs,
-      receivedAt: this.now(), validUntil: pending.sentAt + 2980, deviceDeadline: frame.deviceTimeMs + 3000 };
+      // Integer wire deadlines survive JSON encoders with different float formatting.
+      // Rounding down shortens the device lease by less than one millisecond.
+      receivedAt: this.now(), validUntil: pending.sentAt + 2980, deviceDeadline: Math.floor(frame.deviceTimeMs) + 3000 };
     return { v: 1, kind: 'lease', nonce: pending.nonce, bootId: frame.bootId,
       sessionId: this.sessionId, expiresAtMs: pending.anchor.deviceDeadline };
   }

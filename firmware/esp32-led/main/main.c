@@ -1,4 +1,5 @@
 #include "led_codec.h"
+#include "led_pins.h"
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 #include "mqtt5_client.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+_Static_assert(CONFIG_MQTT_POLL_READ_TIMEOUT_MS <= 20, "LED bench requires a short MQTT queue polling interval");
 static const char *TAG = "open-apcs";
 static apcs_led led;
 static esp_mqtt_client_handle_t client;
@@ -26,14 +28,13 @@ static atomic_bool connected, disconnected, transport_fault, wifi_ready;
 static char topic_in[300], topic_out[300], client_id[300];
 static struct { char ssid[33], password[65], broker[257], username[129], secret[257], site[129], device[129], ca[4096], ntp[256]; int32_t gpio; } config;
 typedef struct { size_t size; bool retained; char data[4096]; } packet;
-static bool pin_allowed(int pin) { return pin == 18 || pin == 19 || pin == 21 || pin == 22 || pin == 23 || pin == 25 || pin == 26 || pin == 27 || pin == 32 || pin == 33; }
 static double now_ms(void) { return (double)esp_timer_get_time() / 1000.0; }
 static bool string_key(nvs_handle_t handle, const char *key, char *dest, size_t size) { return nvs_get_str(handle, key, dest, &size) == ESP_OK && dest[0]; }
 static bool load_config(void) {
   nvs_handle_t handle; if (nvs_open("apcs", NVS_READONLY, &handle) != ESP_OK) return false;
   bool ok = string_key(handle, "ssid", config.ssid, sizeof(config.ssid)) && string_key(handle, "password", config.password, sizeof(config.password)) && string_key(handle, "broker", config.broker, sizeof(config.broker)) && string_key(handle, "username", config.username, sizeof(config.username)) && string_key(handle, "secret", config.secret, sizeof(config.secret)) && string_key(handle, "site", config.site, sizeof(config.site)) && string_key(handle, "device", config.device, sizeof(config.device)) && string_key(handle, "ca", config.ca, sizeof(config.ca)) && string_key(handle, "ntp", config.ntp, sizeof(config.ntp)) && nvs_get_i32(handle, "gpio", &config.gpio) == ESP_OK;
   nvs_close(handle);
-  return ok && pin_allowed(config.gpio) && apcs_identifier(config.site) && apcs_identifier(config.device) && strlen(config.password) >= 8 && !strncmp(config.broker, "mqtts://", 8) && !strchr(config.broker, '@');
+  return ok && apcs_led_pin_allowed(config.gpio) && apcs_identifier(config.site) && apcs_identifier(config.device) && strlen(config.password) >= 8 && !strncmp(config.broker, "mqtts://", 8) && !strchr(config.broker, '@');
 }
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
   (void)arg; (void)data;
@@ -87,6 +88,8 @@ void app_main(void) {
   ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL)); ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL));
   wifi_config_t wifi = {0}; memcpy(wifi.sta.ssid, config.ssid, strlen(config.ssid)); memcpy(wifi.sta.password, config.password, strlen(config.password)); wifi.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
   ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM)); ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA)); ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi)); ESP_ERROR_CHECK(esp_wifi_start());
+  /* USB-powered control bench: avoid DTIM sleep delaying the lease handshake. */
+  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
   for (unsigned i = 0; i < 300 && !atomic_load(&wifi_ready); i++) vTaskDelay(pdMS_TO_TICKS(100));
   if (!atomic_load(&wifi_ready)) { ESP_LOGE(TAG, "Wi-Fi unavailable; output remains OFF"); return; }
   esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG(config.ntp); ESP_ERROR_CHECK(esp_netif_sntp_init(&sntp));

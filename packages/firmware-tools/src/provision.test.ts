@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { provisioningCsv } from './provision.js';
 const sample = () => ({ ssid: 'Local, lab', password: 'test-only-pass', broker: 'mqtts://broker.local:8883', username: 'bench', secret: 'test-only-device-secret', site: 'lab', device: 'led-1', gpio: 18, ntp: 'time.local', ca: '-----BEGIN CERTIFICATE-----\nTEST_FIXTURE_ONLY\n-----END CERTIFICATE-----\n' });
 describe('local ESP32 provisioning encoder', () => {
+  it('encodes the explicitly selected GOOUUU onboard LED on GPIO5', () => {
+    expect(provisioningCsv({ ...sample(), gpio: 5 })).toContain('"gpio","data","i32","5"');
+  });
   it('encodes bounded NVS strings without losing CSV commas, quotes or certificate newlines', () => {
     const csv = provisioningCsv({ ...sample(), ssid: 'Lab "A", Wi-Fi' });
     expect(csv).toContain('"ssid","data","string","Lab ""A"", Wi-Fi"');
@@ -10,7 +13,7 @@ describe('local ESP32 provisioning encoder', () => {
   it('refuses plaintext MQTT, credentials in URLs, unknown fields and non-object input', () => {
     for (const input of [null, [], { ...sample(), extra: true }, { ...sample(), broker: 'mqtt://broker.local' }, { ...sample(), broker: 'mqtts://user:secret@broker.local' }]) expect(() => provisioningCsv(input)).toThrow();
   });
-  it('refuses flash, input-only, strapping and uncommissioned pins', () => {
+  it('refuses flash, input-only, other strapping and uncommissioned pins', () => {
     for (const gpio of [-1, 0, 2, 6, 12, 15, 34, 39, 18.5]) expect(() => provisioningCsv({ ...sample(), gpio })).toThrow();
   });
   it('rejects embedded NUL, invalid topic identifiers and oversized strings', () => {

@@ -1,6 +1,6 @@
 # ESP32 LED bench commissioning
 
-Status: the server, browser, TLS broker and protocol simulator path is implemented. ESP32 firmware is cross-compiled and its C protocol core is tested natively. No physical GPIO, radio, watchdog reset or clock-drift acceptance is claimed. The owner will connect the board later. This profile is limited to an isolated LED with a current-limiting resistor; it is not a general actuator or safety controller.
+Status: the server, browser, TLS broker and protocol simulator path is implemented. ESP32 firmware is cross-compiled and its C protocol core is tested natively. No physical GPIO, radio, watchdog reset or clock-drift acceptance is claimed. The owner connected a GOOUUU board on 2026-10-13; USB flashing and Wi-Fi/TLS startup are recorded in [the bench record](goouuu-bench.md). This profile is limited to an isolated LED with a current-limiting resistor; it is not a general actuator or safety controller.
 
 ## Explicit configuration
 
@@ -16,7 +16,7 @@ Physical connections are disabled by default. An administrator supplies a privat
 }
 ```
 
-The TLS URL must not contain credentials. A valid CA certificate is required; certificate/hostname verification cannot be disabled by this configuration. The initial allowlist accepts at most 16 addresses and GPIO 18, 19, 21, 22, 23, 25, 26, 27, 32 or 33. The catalog site/address, firmware provisioning and reviewed pin must match this allowlist. The server checks the configured pin; it does not remotely measure the wiring or read back the firmware's NVS pin selection.
+The TLS URL must not contain credentials. A valid CA certificate is required; certificate/hostname verification cannot be disabled by this configuration. The initial allowlist accepts at most 16 addresses and GPIO 5, 18, 19, 21, 22, 23, 25, 26, 27, 32 or 33. The catalog site/address, firmware provisioning and reviewed pin must match this allowlist. The server checks the configured pin; it does not remotely measure the wiring or read back the firmware's NVS pin selection.
 
 Store the file outside the repository, owned by the container's UID 1000. Add a local Compose override, using your own absolute path:
 
@@ -51,3 +51,9 @@ Prepared graphs may use explicitly armed bench outputs through the same journal 
 `POST /api/v1/devices/:id/commission` requires a session, same Origin, CSRF token and project ownership. Start body: `{ "action": "start", "gpio": 18, "acknowledgeLedOnly": true, "reason": "Reviewed LED bench" }`. Stop body: `{ "action": "stop", "reason": "End bench" }`. Unknown fields are rejected. Concurrent commissioning requests for a device return 409. The existing virtual runtime mutation route continues to reject physical profiles.
 
 Requested/completed actions are audited without credentials. Completion audit failure revokes authority; a failed stop audit still attempts to stop. The server returns a generic failure and does not echo broker secrets. Private-worker and browser tests use an actual isolated TLS Mosquitto broker and a protocol simulator, including ACL denial, wrong credentials, untrusted certificates, old-intent cancellation, worker loss and audit failure.
+
+## GOOUUU onboard LED bench
+
+GPIO5 is an explicit exception for onboard LED identification on GOOUUU ESP32 boards. It is a strapping pin and must not be used as a general actuator output. The owner requested the onboard LED with no external load; the published [GOOUUU blink example](https://gist.github.com/motojinc25/85241d01420e592dcafd7bf00db46b08) uses GPIO5, but board revisions differ. The exact board must be visually checked: a firmware acknowledgement alone does not establish the LED mapping, polarity, or reset behavior. Other previously excluded strapping pins remain forbidden. The commissioning acknowledgement, exact private GPIO allowlist and lease checks still apply.
+
+The first connected board did not visibly blink during the GPIO5 trial. Its LED mapping remains unconfirmed and its control profile is stopped; see [the measured result and remaining acceptance](goouuu-bench.md#observed-result-and-remaining-acceptance).

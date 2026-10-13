@@ -9,7 +9,7 @@ export function registerPhysicalRuntime(app: FastifyInstance, pool: Pool, runtim
   const busy = new Set<string>();
   app.post<{ Params: { id: string }; Body: { action: 'start'; reason: string; gpio: number; acknowledgeLedOnly: true } | { action: 'stop'; reason: string } }>('/api/v1/devices/:id/commission', {
     schema: { params: object({ id: { type: 'string', format: 'uuid' } }), body: { oneOf: [
-      object({ action: { const: 'start' }, reason, gpio: { type: 'integer', enum: [18, 19, 21, 22, 23, 25, 26, 27, 32, 33] }, acknowledgeLedOnly: { const: true } }),
+      object({ action: { const: 'start' }, reason, gpio: { type: 'integer', enum: [5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33] }, acknowledgeLedOnly: { const: true } }),
       object({ action: { const: 'stop' }, reason }),
     ] } },
   }, async (request) => {

@@ -1,4 +1,5 @@
 #include "led_core.h"
+#include "led_pins.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -8,6 +9,10 @@ static int checks, failures;
 static apcs_led led;
 static void armed(void) { CHECK(apcs_init(&led, "boot-1")); CHECK(!led.output); CHECK(apcs_probe(&led, "nonce-1", 100)); CHECK(apcs_lease(&led, "nonce-1", "boot-1", "session-1", 3100, 110)); }
 int main(void) {
+  for (int pin = -1; pin <= 40; pin++) {
+    bool expected = pin == 5 || pin == 18 || pin == 19 || pin == 21 || pin == 22 || pin == 23 || pin == 25 || pin == 26 || pin == 27 || pin == 32 || pin == 33;
+    CHECK(apcs_led_pin_allowed(pin) == expected);
+  }
   CHECK(apcs_identifier("valid_ID-123")); CHECK(!apcs_identifier("")); CHECK(!apcs_identifier("slash/value")); CHECK(!apcs_identifier(NULL));
   armed(); CHECK(apcs_write(&led, "cmd-1", "boot-1", "session-1", 1100, true, 120) == NULL); CHECK(led.output);
   apcs_tick(&led, 3099); CHECK(led.output); apcs_tick(&led, 3100); CHECK(!led.output); CHECK(!led.session[0]);

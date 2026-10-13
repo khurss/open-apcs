@@ -1,15 +1,19 @@
 import type { Clock, SignalQuality, SignalSnapshot } from './signals.js';
 import { record } from './logic.js';
-export interface AlarmDefinition { condition: { kind: 'boolean'; value: boolean } | { kind: 'quality'; values: SignalQuality[] }; activationDelayMs: number; returnDelayMs: number; }
+export interface AlarmDefinition { condition: { kind: 'boolean'; value: boolean } | { kind: 'quality'; values: SignalQuality[] } | { kind: 'threshold'; direction: 'high' | 'low'; threshold: number; deadband: number }; activationDelayMs: number; returnDelayMs: number; }
 export interface AlarmSnapshot { occurrence: number; active: boolean; acknowledged: boolean; available: boolean; suppressedUntil: string | null; version: number; }
 export interface AlarmEvent { version: number; kind: 'Available' | 'Unavailable' | 'Activated' | 'Reactivated' | 'Returned' | 'Acknowledged' | 'Suppressed' | 'Unsuppressed'; occurrence: number; at: string; actorId: string | null; reason: string | null; }
 export function validateAlarmDefinition(input: unknown): AlarmDefinition {
   const value = record(input, ['condition', 'activationDelayMs', 'returnDelayMs'], 'alarm definition');
   for (const delay of [value.activationDelayMs, value.returnDelayMs]) if (!Number.isSafeInteger(delay) || (delay as number) < 0 || (delay as number) > 86400000) throw new Error('Invalid alarm delay');
-  const condition = record(value.condition, ['kind', 'value', 'values'], 'alarm condition');
-  if (condition.kind === 'boolean') { if (typeof condition.value !== 'boolean' || 'values' in condition) throw new Error('Invalid boolean alarm condition'); }
+  const condition = record(value.condition, ['kind', 'value', 'values', 'direction', 'threshold', 'deadband'], 'alarm condition');
+  if (condition.kind === 'boolean') { record(condition, ['kind', 'value'], 'boolean alarm condition'); if (typeof condition.value !== 'boolean' || 'values' in condition) throw new Error('Invalid boolean alarm condition'); }
   else if (condition.kind === 'quality') {
+    record(condition, ['kind', 'values'], 'quality alarm condition');
     if ('value' in condition || !Array.isArray(condition.values) || !condition.values.length || condition.values.length > 4 || new Set(condition.values).size !== condition.values.length || condition.values.some((entry) => !['Good', 'Bad', 'Stale', 'Disconnected'].includes(entry as string))) throw new Error('Invalid quality alarm condition');
+  } else if (condition.kind === 'threshold') {
+    record(condition, ['kind', 'direction', 'threshold', 'deadband'], 'numeric alarm condition');
+    if (!['high', 'low'].includes(condition.direction as string) || typeof condition.threshold !== 'number' || !Number.isFinite(condition.threshold) || typeof condition.deadband !== 'number' || !Number.isFinite(condition.deadband) || condition.deadband < 0 || !Number.isFinite(condition.threshold + (condition.direction === 'high' ? -condition.deadband : condition.deadband))) throw new Error('Invalid numeric alarm condition');
   } else throw new Error('Invalid alarm condition kind');
   return structuredClone(input) as AlarmDefinition;
 }
@@ -31,10 +35,15 @@ export class AlarmEngine {
   update(sample: SignalSnapshot): void {
     const now = this.time(); this.expire(now);
     const condition = this.definition.condition;
-    const available = condition.kind === 'quality' || (sample.quality === 'Good' && typeof sample.value === 'boolean');
-    if (available !== this.state.available) { this.state.available = available; this.emit(available ? 'Available' : 'Unavailable', null, available ? null : `Input quality is ${sample.quality}`); }
+    const available = condition.kind === 'quality' || (sample.quality === 'Good' && (condition.kind === 'threshold' ? typeof sample.value === 'number' && Number.isFinite(sample.value) : typeof sample.value === 'boolean'));
+    if (available !== this.state.available) { this.state.available = available; this.emit(available ? 'Available' : 'Unavailable', null, available ? null : sample.quality === 'Good' ? 'Input value is invalid for this alarm' : `Input quality is ${sample.quality}`); }
     if (!available) { this.pending = null; return; }
-    const value = condition.kind === 'quality' ? condition.values.includes(sample.quality) : sample.value === condition.value;
+    let value: boolean;
+    if (condition.kind === 'threshold') {
+      const boundary = this.state.active ? condition.threshold + (condition.direction === 'high' ? -condition.deadband : condition.deadband) : condition.threshold;
+      // Inclusive trip and strict return avoid equality chatter, including a zero deadband.
+      value = condition.direction === 'high' ? (sample.value as number) >= boundary : (sample.value as number) <= boundary;
+    } else value = condition.kind === 'quality' ? condition.values.includes(sample.quality) : sample.value === condition.value;
     if (value === this.state.active) { this.pending = null; return; }
     if (this.pending?.value !== value) this.pending = { value, since: now };
     const delay = value ? this.definition.activationDelayMs : this.definition.returnDelayMs;

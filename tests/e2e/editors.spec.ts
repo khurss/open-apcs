@@ -198,6 +198,26 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   const temperature = page.getByRole('row').filter({ hasText: 'Thermal bench.temperature' });
   await expect.poll(async () => Number(await temperature.locator('.signal-value').textContent()), { timeout: 5000 }).toBeGreaterThan(20);
   await expect(temperature.getByRole('button', { name: 'Control', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Alarms', exact: true }).click();
+  await page.getByLabel('Alarm name', { exact: true }).fill('Temperature high');
+  await page.getByLabel('Alarm condition', { exact: true }).selectOption('high', { timeout: 5000 });
+  await page.getByLabel('Alarm signal', { exact: true }).selectOption({ label: 'Thermal bench.temperature (C)' });
+  await page.getByLabel('Threshold', { exact: true }).fill('21');
+  await page.getByLabel('Deadband', { exact: true }).fill('0.5');
+  await page.getByRole('button', { name: 'Create alarm', exact: true }).click();
+  const numericAlarm = page.getByRole('table', { name: 'Alarm states', exact: true }).getByRole('row').filter({ hasText: 'Temperature high' });
+  await expect(numericAlarm).toContainText('ActiveUnacknowledged');
+  await expect(numericAlarm).toContainText('reset < 20.5');
+  await numericAlarm.getByRole('button', { name: 'Inspect', exact: true }).click();
+  await page.getByLabel('Alarm action reason', { exact: true }).fill('Inspected virtual temperature');
+  await page.getByRole('button', { name: 'Acknowledge', exact: true }).click();
+  await expect(numericAlarm).toContainText('ActiveAcknowledged');
+  await page.screenshot({ path: 'test-results/numeric-alarms.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/numeric-alarms-phone.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
   await page.getByRole('button', { name: 'Screens', exact: true }).click();
   await page.getByLabel('Scheme name', { exact: true }).fill('Thermal overview');
   await page.getByRole('button', { name: 'Create screen', exact: true }).click();
@@ -220,4 +240,7 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Logic', exact: true }).click();
   await page.getByRole('button', { name: 'Open Thermostat', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('faulted');
+  await page.getByRole('button', { name: 'Alarms', exact: true }).click();
+  await expect(numericAlarm).toContainText('ActiveAcknowledged');
+  await expect(numericAlarm).toContainText('Input unavailable');
 });

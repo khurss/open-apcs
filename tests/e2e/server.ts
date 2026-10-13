@@ -28,9 +28,20 @@ const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POS
 const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
 await mkdir(new URL('../../.cache/e2e/', import.meta.url), { recursive: true });
 await writeFile(new URL('../../.cache/e2e/schema.json', import.meta.url), JSON.stringify({ schema }), { mode: 0o600 });
-// Isolated local recipient: reject the first delivery to exercise the audited retry UI.
-let deliveries = 0;
-const recipient = createServer((request, response) => { request.resume(); request.on('end', () => { response.writeHead(++deliveries === 1 ? 400 : 204).end(); }); });
+// Isolated local recipient: reject the first delivery per project so scenarios stay independent.
+const deliveries = new Map<string, number>();
+const recipient = createServer((request, response) => {
+  request.setEncoding('utf8'); let body = '';
+  request.on('data', (chunk: string) => { body += chunk; if (body.length > 16384) request.destroy(); });
+  request.on('end', () => {
+    try {
+      const { projectId } = JSON.parse(body) as { projectId?: unknown };
+      if (typeof projectId !== 'string') throw new Error('Fixture project missing');
+      const count = (deliveries.get(projectId) ?? 0) + 1; deliveries.set(projectId, count);
+      response.writeHead(count === 1 ? 400 : 204).end();
+    } catch { response.writeHead(400).end(); }
+  });
+});
 await new Promise<void>((resolve) => recipient.listen(0, '127.0.0.1', resolve));
 const recipientAddress = recipient.address(); if (!recipientAddress || typeof recipientAddress === 'string') throw new Error('Fixture listener required');
 const notificationConfigPath = '/tmp/apcs-e2e/notifications.json';

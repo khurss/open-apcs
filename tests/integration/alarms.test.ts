@@ -86,3 +86,18 @@ describe('durable alarm monitoring', () => {
     expect((await pool.query("SELECT reason FROM apcs_alarm_events WHERE kind='Unsuppressed'")).rows[0].reason).toBe('Restart cleared suppression');
   });
 });
+
+it('persists numeric hysteresis, acknowledgement and notifications across unavailable data and restart', async () => {
+  await pool.query("UPDATE apcs_signals SET data_type='float64',direction='input' WHERE id=(SELECT signal_id FROM apcs_alarms WHERE id=$1)", [alarmId]);
+  await pool.query('UPDATE apcs_alarms SET definition=$1 WHERE id=$2', [{ condition: { kind: 'threshold', direction: 'high', threshold: 10, deadband: 2 }, activationDelayMs: 0, returnDelayMs: 0 }, alarmId]);
+  await syncNotificationRoutes(pool, [{ id: 'numeric', name: 'Numeric fixture', kind: 'webhook', url: 'https://fixture.invalid/events', secret: 'fixture-secret-at-least-32-characters', priorities: ['high'], events: ['Activated', 'Returned'], projectIds: [] }]);
+  current.value = 12; service.start(); await waitFor(async () => (await state()).active);
+  await service.action(alarmId, actor, { kind: 'acknowledge', occurrence: 1, reason: 'Inspected numeric condition' });
+  current.value = 9; await service.close(); service = new AlarmService(pool, () => ({ ...current })); service.start();
+  await waitFor(async () => (await state()).available); expect(await state()).toMatchObject({ active: true, acknowledged: true, occurrence: 1 });
+  current.value = '7'; await waitFor(async () => !(await state()).available); expect((await state()).active).toBe(true);
+  current.value = 7; await waitFor(async () => !(await state()).active);
+  expect(await state()).toMatchObject({ active: false, acknowledged: true, occurrence: 1 });
+  const notifications = await pool.query('SELECT body FROM apcs_notification_deliveries ORDER BY created_at,id');
+  expect(notifications.rows.map((row) => JSON.parse(row.body).kind)).toEqual(['Activated', 'Returned']);
+});

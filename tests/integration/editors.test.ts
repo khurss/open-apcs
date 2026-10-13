@@ -332,3 +332,15 @@ it('reconciles an uncertain virtual heater only against a new observed OFF sessi
   expect(result.json().reconciliation.bootId).not.toBe('old-boot');
   expect((await pool.query('SELECT id FROM apcs_commands WHERE target_signal_id=$1', [device.signalId])).rowCount).toBe(1);
 });
+
+it('creates typed numeric alarms and rejects incompatible bindings and unauthenticated mutations', async () => {
+  const sensor = randomUUID(); const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,'Sensor','float64','input')", [sensor, device]);
+  const url = `/api/v1/projects/${projectId}/alarms`;
+  const payload = { name: 'High temperature', signalId: sensor, priority: 'high', definition: { condition: { kind: 'threshold', direction: 'high', threshold: 24, deadband: 1 }, activationDelayMs: 500, returnDelayMs: 1000 } };
+  const created = await app.inject({ method: 'POST', url, headers, payload }); expect(created.statusCode, created.body).toBe(201);
+  expect((await app.inject({ method: 'POST', url, headers, payload: { ...payload, signalId } })).statusCode).toBe(422);
+  expect((await app.inject({ method: 'POST', url, headers: { cookie: headers.cookie! }, payload })).statusCode).toBe(403);
+  expect((await app.inject({ method: 'POST', url, headers, payload: { ...payload, definition: { ...payload.definition, condition: { ...payload.definition.condition, deadband: -1 } } } })).statusCode).toBe(422);
+  expect((await pool.query('SELECT definition FROM apcs_alarms WHERE id=$1', [created.json().id])).rows[0].definition).toEqual(payload.definition);
+});

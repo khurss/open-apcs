@@ -29,7 +29,7 @@ export function registerAlarms(app: FastifyInstance, pool: Pool, runtime?: Runti
     await transaction(pool, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(9021004)');
       const signal = await client.query('SELECT s.data_type FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE s.id=$1 AND p.id=$2 AND p.owner_id=$3', [request.body.signalId, projectId, actor]);
-      if (!signal.rowCount || (definition.condition.kind === 'boolean' && signal.rows[0].data_type !== 'boolean')) throw new AlarmError(422, 'INVALID_SIGNAL', 'Alarm signal must belong to this project and match the condition');
+      if (!signal.rowCount || (definition.condition.kind === 'boolean' && signal.rows[0].data_type !== 'boolean') || (definition.condition.kind === 'threshold' && signal.rows[0].data_type !== 'float64')) throw new AlarmError(422, 'INVALID_SIGNAL', 'Alarm signal must belong to this project and match the condition');
       if (Number((await client.query('SELECT count(*) FROM apcs_alarms')).rows[0].count) >= 100) throw new AlarmError(409, 'ALARM_LIMIT', 'Initial alarm limit is 100 rules');
       await client.query('INSERT INTO apcs_alarms(id,project_id,signal_id,name,priority,definition) VALUES($1,$2,$3,$4,$5,$6)', [id, projectId, request.body.signalId, request.body.name.trim(), request.body.priority, definition]);
       await audit(client, actor, 'alarm.created', id, { projectId, signalId: request.body.signalId });

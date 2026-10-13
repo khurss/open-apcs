@@ -24,7 +24,7 @@ Every simulator start allocates the same random private MQTT namespace as its he
 
 Publication is bounded to one second. Connection loss or overdue sampling disconnects sensor quality, stops the device runtime and records a process fault. Stopping the runtime revokes the heater lease; no immediate physical OFF verification is claimed. In this profile the heater is entirely virtual. Numeric sample validation is not authentication: the private broker/network and unguessable per-run namespace isolate simulation, but this adapter is not offered for physical or third-party sensors. No physical pins or private physical broker configuration are used.
 
-The existing limit of 16 active devices remains. Process tuning, arbitrary models, numeric actuators, real numeric sensor drivers, dedicated fault-injection controls, firmware emulation and scale acceptance remain pending. Quality alarms can monitor the numeric input; numeric threshold alarms are not yet implemented. Raw history and analog aggregation use the existing common pipeline.
+The existing limit of 16 active devices remains. Process tuning, arbitrary models, numeric actuators, real numeric sensor drivers, dedicated fault-injection controls, firmware emulation and scale acceptance remain pending. Quality and high/low threshold alarms can monitor the numeric input; see [alarm semantics](alarms.md). Raw history and analog aggregation use the existing common pipeline.
 
 ## Acceptance evidence
 

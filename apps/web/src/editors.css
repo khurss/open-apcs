@@ -33,3 +33,6 @@
 .inspector-fields>p,.inspector-fields>button{grid-column:1/-1}
 
 .logic-block.multi-port{min-height:190px}
+.schedule-days { grid-column: 1 / -1; min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.simulation-inputs .field:has(input[type="datetime-local"]) { width: 240px; max-width: 100%; }
+.schedule-days input { flex-shrink: 0; }

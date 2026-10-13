@@ -1,13 +1,15 @@
+import { WeeklySchedule, validateWeeklySettings, type WeeklySettings } from './weekly-schedule.js';
 import { PidController, TimeProportioner, validatePidSettings, type PidSettings } from './pid.js';
-export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter' | 'pid' | 'pwm';
-export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; pid?: PidSettings; windowMs?: number; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
+export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter' | 'pid' | 'pwm' | 'schedule';
+export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; pid?: PidSettings; windowMs?: number; schedule?: WeeklySettings; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
 export interface ScriptEvaluation { source: string; language: 'javascript' | 'typescript'; inputs: { a: boolean; b: boolean }; nowMs: number; }
 export type ScriptEvaluator = (request: ScriptEvaluation) => Promise<boolean>;
 export interface LogicEdge { id: string; source: string; target: string; port: string; }
 export interface LogicGraph { schemaVersion: 1; nodes: LogicNode[]; edges: LogicEdge[]; }
 export interface LogicValue { value: boolean | number | null; quality: 'Good' | 'Bad'; reason: string | null; }
+export interface LogicContext { wallTimeMs: number; }
 export interface LogicResult { nodes: Record<string, LogicValue>; outputs: Record<string, LogicValue>; }
-export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'], pid: ['pv', 'setpoint', 'manual', 'auto', 'enable', 'reset'], pwm: ['in'] };
+export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'], pid: ['pv', 'setpoint', 'manual', 'auto', 'enable', 'reset'], pwm: ['in'], schedule: [] };
 export type LogicType = 'boolean' | 'number';
 const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide', 'filter', 'counter', 'pid']);
 const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis', 'filter', 'pwm']);
@@ -28,7 +30,7 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
   if (graph.schemaVersion !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 256 || graph.edges.length > 1024) throw new Error('Invalid graph version or size');
   const nodes = new Map<string, LogicNode>(); const writers = new Set<string>(); const bindings = new Map<string, LogicType>();
   for (const value of graph.nodes) {
-    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount', 'pid', 'windowMs'], 'node');
+    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount', 'pid', 'windowMs', 'schedule'], 'node');
     if (!identifier(n.id) || nodes.has(n.id) || typeof n.kind !== 'string' || !kinds.includes(n.kind) || !title(n.label) || !coordinate(n.x) || !coordinate(n.y)) throw new Error('Invalid or duplicate node');
     const kind = n.kind as BlockKind;
     if (kind === 'input' || kind === 'analog' || kind === 'output') {
@@ -45,6 +47,8 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
     else if ('timeConstantMs' in n) throw new Error('Unexpected filter time constant');
     if (kind === 'counter') { if (!Number.isSafeInteger(n.maxCount) || (n.maxCount as number) < 1) throw new Error('Invalid counter limit'); }
     else if ('maxCount' in n) throw new Error('Unexpected counter limit');
+    if (kind === 'schedule') validateWeeklySettings(n.schedule);
+    else if ('schedule' in n) throw new Error('Unexpected weekly schedule settings');
     if (kind === 'pid') validatePidSettings(n.pid);
     else if ('pid' in n) throw new Error('Unexpected PID settings');
     if (kind === 'pwm') new TimeProportioner(n.windowMs as number);
@@ -94,6 +98,7 @@ export class LogicEngine {
   private readonly ordered: LogicNode[];
   private readonly wires = new Map<string, Map<string, string>>();
   private readonly states = new Map<string, State>();
+  private readonly schedules = new Map<string, WeeklySchedule>();
   private readonly pids = new Map<string, PidController>();
   private readonly proportioners = new Map<string, TimeProportioner>();
   private resetNode(id: string): void { this.states.set(id, fresh()); this.pids.delete(id); this.proportioners.delete(id); }
@@ -104,14 +109,14 @@ export class LogicEngine {
     for (const n of this.ordered) { this.wires.set(n.id, new Map()); this.states.set(n.id, fresh()); }
     for (const e of safe.edges) this.wires.get(e.target)!.set(e.port, e.source);
   }
-  tick(now: number, inputs: Record<string, LogicValue> = {}): LogicResult {
+  tick(now: number, inputs: Record<string, LogicValue> = {}, context?: LogicContext): LogicResult {
     if (this.evaluating) throw new Error('An evaluation is already in progress');
     if (this.ordered.some((n) => n.kind === 'script')) throw new Error('Script blocks require asynchronous evaluation');
-    const execution = this.evaluate(now, inputs);
+    const execution = this.evaluate(now, inputs, context);
     try { return execution.next().value as LogicResult; } finally { execution.return({ nodes: {}, outputs: {} }); }
   }
-  async tickAsync(now: number, inputs: Record<string, LogicValue>, execute: ScriptEvaluator): Promise<LogicResult> {
-    const execution = this.evaluate(now, inputs);
+  async tickAsync(now: number, inputs: Record<string, LogicValue>, execute: ScriptEvaluator, context?: LogicContext): Promise<LogicResult> {
+    const execution = this.evaluate(now, inputs, context);
     try {
       let step = execution.next();
       while (!step.done) {
@@ -122,7 +127,7 @@ export class LogicEngine {
       return step.value;
     } finally { execution.return({ nodes: {}, outputs: {} }); }
   }
-  private *evaluate(now: number, inputs: Record<string, LogicValue>): Generator<ScriptEvaluation, LogicResult, boolean> {
+  private *evaluate(now: number, inputs: Record<string, LogicValue>, context?: LogicContext): Generator<ScriptEvaluation, LogicResult, boolean> {
     if (this.evaluating) throw new Error('An evaluation is already in progress');
     this.evaluating = true;
     try {
@@ -134,6 +139,12 @@ export class LogicEngine {
       const invalid = [...values.values()].find((v) => v.quality !== 'Good');
       let result: LogicValue;
       if (invalid) { this.resetNode(n.id); result = bad(invalid.reason ?? 'Invalid input'); }
+      else if (n.kind === 'schedule') {
+        let schedule = this.schedules.get(n.id);
+        if (!schedule) { schedule = new WeeklySchedule(n.schedule!); this.schedules.set(n.id, schedule); }
+        try { result = good(schedule.step(now, context?.wallTimeMs ?? NaN)); }
+        catch (error) { result = bad(error instanceof Error ? error.message : 'Schedule clock failed'); }
+      }
       else if (n.kind === 'constant' || n.kind === 'number') result = good(n.value!);
       else if (n.kind === 'input' || n.kind === 'analog') {
         const sample = Object.hasOwn(inputs, n.signalId!) ? inputs[n.signalId!] : undefined;

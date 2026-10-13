@@ -27,7 +27,7 @@ export class GraphTask {
   private revoked = false;
   private starting = false;
   private pausing = false;
-  constructor(graph: LogicGraph, private readonly io: GraphIo, private readonly now: () => number, periodMs = 100) {
+  constructor(graph: LogicGraph, private readonly io: GraphIo, private readonly now: () => number, periodMs = 100, private readonly wallNow: () => number = Date.now) {
     if (!Number.isSafeInteger(periodMs) || periodMs < 100 || periodMs > 60000) throw new Error('Graph period must be an integer from 100 to 60000 ms');
     const safe = validateGraph(graph); this.engine = new LogicEngine(safe);
     const scripted = safe.nodes.some((node) => node.kind === 'script');
@@ -93,7 +93,7 @@ export class GraphTask {
         if (command.state === 'Verified') this.pending.delete(id);
         else if (!['Accepted', 'Dispatched', 'DeviceAccepted'].includes(command.state)) throw new Error(`Command ${commandId} ended as ${command.state}`);
       }
-      this.last = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean | number, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }));
+      this.last = await this.engine.tickAsync(this.now(), Object.fromEntries(this.ids.map((id) => [id, { value: snapshots[id]!.value as boolean | number, quality: 'Good' as const, reason: null }])), this.io.evaluate ?? (async () => { throw new Error('Script evaluator is unavailable'); }), { wallTimeMs: this.wallNow() });
       if (!this.active()) return;
       this.cycles++;
       // Validate the entire calculated output set before issuing any intent.

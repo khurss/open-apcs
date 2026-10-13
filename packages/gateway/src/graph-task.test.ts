@@ -103,3 +103,13 @@ it('checks every output before dispatch when another branch has a division fault
   expect(task.status).toMatchObject({ state: 'faulted', error: 'Division by zero' });
   expect(io.request).not.toHaveBeenCalled(); expect(io.revoke).toHaveBeenCalledTimes(1);
 });
+
+it('supplies wall time to weekly schedules and revokes authority after clock divergence', async () => {
+  const { scheduleGraph } = await import('../../../tests/fixtures/schedule-graph.js');
+  const { io } = bench(); let wall = Date.parse('2026-10-12T10:00:00Z');
+  const task = new GraphTask(scheduleGraph('led'), io, () => Date.now(), 100, () => wall);
+  await task.start(); expect(io.request).toHaveBeenCalledWith('led', true);
+  wall += 10000; await vi.advanceTimersByTimeAsync(100);
+  expect(task.status).toMatchObject({ state: 'faulted' }); expect(task.status.error).toMatch(/clock/i);
+  expect(io.revoke).toHaveBeenCalledTimes(1); expect(io.request).toHaveBeenCalledTimes(1);
+});

@@ -42,3 +42,5 @@ Alarm SMTP/webhook notifications run in a private background process with durabl
 Minute/hour history aggregates now run in a private background process with explicit quality/gap duration, protected late-data recalculation and annual cleanup. Open Signals → History → Show aggregates; see [semantics and current bounds](docs/history-aggregates.md).
 
 The PID thermal template has explicit Auto/Manual, reset, anti-windup and timing semantics; see [PID control](docs/pid-control.md). It is verified against virtual devices, with physical tuning and acceptance still pending.
+
+Weekly schedule blocks provide named time zones, DST handling and explicit dated simulation; see [schedule contracts](docs/weekly-schedules.md). Missed windows do not replay, and clock divergence faults the graph until reviewed reactivation.

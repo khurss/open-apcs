@@ -1,3 +1,4 @@
+import { scheduleGraph } from '../fixtures/schedule-graph.js';
 import { statefulGraph } from '../fixtures/stateful-graph.js';
 import { expect, test } from '@playwright/test';
 test('edits, saves, simulates and prepares a graph, then persists an HMI with undo and redo', async ({ page }) => {
@@ -315,5 +316,35 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Signals', exact: true }).click();
   const pidTemperature = page.getByRole('row').filter({ hasText: 'PID bench.temperature' });
   await expect.poll(async () => Number(await pidTemperature.locator('.signal-value').textContent()), { timeout: 5000 }).toBeGreaterThan(20);
+
+  await page.getByRole('button', { name: 'Logic', exact: true }).click();
+  await page.getByLabel('Scheme name', { exact: true }).fill('Weekly lighting');
+  await page.getByRole('button', { name: 'Create graph', exact: true }).click();
+  await page.getByLabel('Block type', { exact: true }).selectOption('schedule', { timeout: 5000 });
+  await page.getByRole('button', { name: 'Add block', exact: true }).click();
+  await page.getByLabel('Time zone', { exact: true }).fill('America/New_York');
+  await page.getByLabel('Start time', { exact: true }).fill('09:00');
+  await page.getByLabel('End time', { exact: true }).fill('17:00');
+  await page.getByRole('checkbox', { name: 'Saturday', exact: true }).check();
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  const weekly = scheduleGraph(numeric.nodes[1]!.signalId!);
+  weekly.nodes[0]!.schedule!.zone = 'America/New_York';
+  await page.getByRole('textbox', { name: 'JSON document', exact: true }).fill(JSON.stringify(weekly));
+  await page.getByRole('button', { name: 'Apply JSON', exact: true }).click();
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await page.getByLabel('Simulation start (UTC)', { exact: true }).fill('2026-10-12T13:00');
+  await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('ON');
+  await page.getByLabel('Simulation start (UTC)', { exact: true }).fill('2026-10-11T13:00');
+  await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('OFF');
+  await page.getByRole('button', { name: 'Select Weekly window', exact: true }).click();
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/schedule-editor.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/schedule-editor-phone.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
 });

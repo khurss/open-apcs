@@ -130,11 +130,19 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
       return { items: result.rows.slice(0, 20), nextBefore: result.rows.length > 20 ? result.rows[19].revision : null };
     });
   }
-  app.post<{ Params: { id: string }; Body: { steps: Array<{ atMs: number; inputs: Record<string, boolean | number | null> }> } }>('/api/v1/graphs/:id/simulate', {
-    schema: { params, body: object({ steps: { type: 'array', minItems: 1, maxItems: 100, items: object({ atMs: { type: 'number', minimum: 0, maximum: 86400000 }, inputs: { type: 'object', maxProperties: 256, propertyNames: { pattern: '^[A-Za-z0-9_-]{1,128}$' }, additionalProperties: { anyOf: [{ type: 'boolean' }, { type: 'number' }, { type: 'null' }] } } }) } }) },
+  app.post<{ Params: { id: string }; Body: { startAt?: string; steps: Array<{ atMs: number; inputs: Record<string, boolean | number | null> }> } }>('/api/v1/graphs/:id/simulate', {
+    schema: { params, body: object({ startAt: { type: 'string', maxLength: 32 }, steps: { type: 'array', minItems: 1, maxItems: 100, items: object({ atMs: { type: 'number', minimum: 0, maximum: 86400000 }, inputs: { type: 'object', maxProperties: 256, propertyNames: { pattern: '^[A-Za-z0-9_-]{1,128}$' }, additionalProperties: { anyOf: [{ type: 'boolean' }, { type: 'number' }, { type: 'null' }] } } }) } }, ['steps']) },
   }, async (request) => {
     const found = await pool.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = 'graph'`, [request.params.id]); if (!found.rows[0]) throw missing();
     const graph = validate('graph', found.rows[0].document, true) as LogicGraph;
+    const scheduled = graph.nodes.some((node) => node.kind === 'schedule');
+    const startAt = request.body.startAt; let epoch: number | undefined;
+    if (scheduled && !startAt) throw invalid('Weekly schedule simulation requires startAt in UTC');
+    if (startAt !== undefined) {
+      epoch = Date.parse(startAt);
+      if (!Number.isFinite(epoch) || epoch < Date.UTC(1900, 0, 1) || epoch >= Date.UTC(2101, 0, 1) || new Date(epoch).toISOString() !== startAt) throw invalid('startAt must be a valid UTC timestamp with milliseconds, from 1900 through 2100');
+      if (request.body.steps.some((step) => epoch! + step.atMs >= Date.UTC(2101, 0, 1))) throw invalid('Simulation exceeds the supported calendar range');
+    }
     const scripted = graph.nodes.some((node) => node.kind === 'script');
     if (scripted && !scripts) throw new EditorError(503, 'SCRIPT_UNAVAILABLE', 'Script service unavailable');
     if (scripted && request.body.steps.length > 10) throw invalid('Script simulations support at most 10 steps');
@@ -145,7 +153,8 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
         if (scripted && performance.now() >= deadline) throw invalid('Script simulation exceeded its time budget');
         const inputs: Record<string, LogicValue> = Object.create(null);
         for (const [id, value] of Object.entries(step.inputs)) inputs[id] = { value, quality: value === null ? 'Bad' : 'Good', reason: value === null ? 'Simulated disconnection' : null };
-        steps.push({ atMs: step.atMs, ...(scripted ? await engine.tickAsync(step.atMs, inputs, scripts!.evaluate.bind(scripts)) : engine.tick(step.atMs, inputs)) });
+        const context = epoch === undefined ? undefined : { wallTimeMs: epoch + step.atMs };
+        steps.push({ atMs: step.atMs, ...(scripted ? await engine.tickAsync(step.atMs, inputs, scripts!.evaluate.bind(scripts), context) : engine.tick(step.atMs, inputs, context)) });
       }
       return { revision: found.rows[0].revision, environment: 'Simulation', steps };
     } catch (error) { if (error instanceof ScriptClientError) throw error; throw invalid(error instanceof Error ? error.message : 'Simulation failed'); }

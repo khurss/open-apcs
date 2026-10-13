@@ -31,6 +31,7 @@ The engine copies its input graph, uses a deterministic topological order, and e
 | Hysteresis | Numeric `in`; boolean state, ON at/above `high`, OFF at/below `low`, hold inside |
 | Low-pass filter | Numeric `in`; elapsed-time smoothing with `timeConstantMs`, initializes on first valid sample |
 | PID controller | Numeric `pv`, `setpoint`, `manual`; boolean `auto`, `enable`, `reset`; normalized numeric output |
+| Weekly schedule | No inputs; boolean level in a configured local weekly window, explicit wall time and clock-fault latching |
 | Time proportioning | Numeric `in` in [0,1]; windowed boolean output with immediate zero cancellation |
 | Rising-edge counter | Boolean `in`, `reset`; numeric count of observed rising edges, saturates at `maxCount` |
 | NOT | `in` |
@@ -104,3 +105,5 @@ Restoration never modifies an immutable prepared snapshot, activates a graph, ch
 Filter/counter parameters, initialization, reset, invalid-input behavior and sampling limitations are specified in [numeric logic](numeric-logic.md#stateful-numeric-blocks). Their state is not retained across activation or restart.
 
 The thermal template selector chooses the device for either Thermostat or PID thermostat. The PID properties, reset/mode behavior and sampling limits follow [PID control](pid-control.md).
+
+Weekly windows, DST policy, clock supervision and explicit simulation epochs follow [weekly schedule contracts](weekly-schedules.md).

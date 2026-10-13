@@ -387,3 +387,27 @@ it('simulates PID faults and controls a virtual thermal process through a prepar
   await expect.poll(async () => Number((await runtime.readSignal(device.temperatureSignalId)).value), { timeout: 5000 }).toBeGreaterThan(20);
   await runtime.stop(device.id); await expect.poll(async () => (await runtime.graphStatus(id)).state).toBe('faulted');
 });
+
+it('requires a simulation epoch for weekly schedules and applies explicit UTC windows without commands', async () => {
+  const { scheduleGraph } = await import('../fixtures/schedule-graph.js');
+  const id = (await create()).json().id; expect((await save(id, scheduleGraph(signalId))).statusCode).toBe(200);
+  const simulate = (startAt?: string) => app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { ...(startAt ? { startAt } : {}), steps: [0, 1000, 28801000].map((atMs) => ({ atMs, inputs: {} })) } });
+  expect((await simulate()).statusCode).toBe(422);
+  const valid = await simulate('2026-10-12T08:59:59.000Z'); expect(valid.statusCode, valid.body).toBe(200);
+  expect(valid.json().steps.map((s: { outputs: Record<string, { value: unknown }> }) => s.outputs[signalId]!.value)).toEqual([false, true, false]);
+  for (const invalid of ['2026-10-12T09:00:00', '2026-02-30T09:00:00.000Z', '1899-12-31T09:00:00.000Z']) expect((await simulate(invalid)).statusCode).toBe(422);
+  expect((await pool.query('SELECT count(*) FROM apcs_commands')).rows[0].count).toBe('0');
+});
+it('activates a prepared all-day schedule using server wall time and verifies the MQTT command', async () => {
+  const { scheduleGraph } = await import('../fixtures/schedule-graph.js');
+  await app.close(); const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const id = (await create()).json().id; const document = scheduleGraph(signalId);
+  document.nodes[0]!.schedule = { zone: 'UTC', days: [1, 2, 3, 4, 5, 6, 7], startMinute: 0, endMinute: 0 };
+  expect((await save(id, document)).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device}/runtime`, headers, payload: { action: 'start', reason: 'Weekly schedule fixture' } })).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed weekly schedule' } })).statusCode).toBe(200);
+  await expect.poll(async () => (await pool.query("SELECT count(*)::int AS n FROM apcs_commands WHERE target_signal_id=$1 AND request->>'value'='true' AND snapshot->>'state'='Verified'", [signalId])).rows[0].n, { timeout: 5000 }).toBe(1);
+});

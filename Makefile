@@ -105,3 +105,8 @@ mqtt-tls-fixture:
 renderer-recovery:
 	docker compose -f compose.test.yml up -d --wait report-renderer
 	docker compose -f compose.test.yml exec -T report-renderer node src/recovery-check.mjs
+
+.PHONY: hil-rigol
+# Explicit physical fixture: see docs/rigol-hil.md for wiring and private variables.
+hil-rigol:
+	docker compose -f compose.hil.yml run --rm rigol-led

@@ -1,0 +1,31 @@
+# Opt-in physical LED fixture. Never started by make test or ordinary development.
+name: open-apcs-hil
+services:
+  rigol-led:
+    image: ${DEV_IMAGE:-open-apcs-dev:node24-pnpm10}
+    init: true
+    # The host USBTMC node is root-only; expose exactly one device, with no capabilities.
+    user: "0:0"
+    group_add: ["1000"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    working_dir: /workspace
+    devices:
+      - ${APCS_SCOPE_DEVICE:?Set the selected USBTMC device}:/dev/usbtmc0
+    volumes:
+      - .:/workspace:ro
+      - test_node_modules:/workspace/node_modules:ro
+      - ${APCS_BENCH_PRIVATE:?Set the private bench directory}:/run/bench:ro
+      - ${APCS_BENCH_ARTIFACTS:?Set the artifact directory}:/artifacts
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/bench/server-ca.crt
+      HOME: /tmp
+    tmpfs: ["/tmp:rw,nosuid,size=67108864"]
+    # Parent remains responsive during blocking USB reads and independently disarms.
+    stop_grace_period: 25s
+    command: [pnpm, --filter, '@open-apcs/api', exec, tsx, ../../tests/hil/supervisor.ts]
+volumes:
+  test_node_modules:
+    external: true
+    name: open-apcs-test_node_modules

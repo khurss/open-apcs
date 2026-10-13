@@ -49,3 +49,7 @@ The owner connected an external LED and explicitly confirmed the labelled G18/GP
 The live HTTPS browser then armed the reviewed GPIO18 profile and sent ten alternating ON/OFF cycles. All 20 commands reached `Verified`, ending OFF. The owner confirmed that the external LED visibly blinked. This establishes the initial web-to-physical-LED path and the selected external wiring/polarity. The final disarm returned `stopped` with no runtime error. The existing catalog entry still has its historical name, `GOOUUU onboard LED`; it now addresses the externally wired GPIO18 LED.
 
 This was a deployment/configuration check, with no application source changes. Existing GPIO18 tests and the preceding complete Docker gate remain applicable; the physical browser check ran in Docker. Independent watchdog timing, network-loss/no-replay tests, power-cycle acceptance and the one-hour L0 load profile remain pending. The onboard LED mapping is still unresolved and is not required for this external LED bench.
+
+## Automated electrical measurement
+
+The owner subsequently connected a Rigol DS1054Z CH1 probe to GPIO18/GND and its USB Device port to the server. An opt-in Docker fixture now sends commands through the HTTPS API and independently reads a triggered electrical waveform: the initial run measured 3.271 V high, -0.010 V low and a 1.25 s pulse at 5 ms sample spacing. The runtime was disarmed after measurement. See [the Rigol fixture](rigol-hil.md) for configuration, artifacts and the remaining acceptance limits.

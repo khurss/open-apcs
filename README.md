@@ -14,6 +14,8 @@ make watch
 
 Run `make install-dev && make dev` to open the workspace at http://localhost:5173. Create the initial administrator using the local command in [API startup](docs/api.md); there is no default login. React uses Vite HMR and the API uses process watch.
 
+For HTTPS testing from other devices on the local network, use the optional [LAN development profile](docs/lan-testing.md). It preserves hot reload and the existing database.
+
 Use `make backup` for a local PostgreSQL archive. A prepared offline engineering bundle can install and test this workspace without package downloads; see [distribution and recovery](docs/distribution.md). New bundles include the pinned ESP32 toolchain; the production distribution remains pending.
 
 The specification is based on an analysis of the legacy supervisory control system and a 40-question requirements interview. The project name, Open APCS, was chosen by the customer.

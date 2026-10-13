@@ -1,0 +1,23 @@
+# Development HTTPS with source mounts and hot reload. Requires .env.lan.
+# Keep the same Compose project and database volume as local development.
+services:
+  api:
+    restart: unless-stopped
+    environment:
+      APCS_ORIGIN: https://${APCS_LAN_HOST:?Set APCS_LAN_HOST in .env.lan}:${APCS_LAN_PORT:-8443}
+  web:
+    restart: unless-stopped
+    environment:
+      APCS_WEB_TLS_DIR: /run/apcs-tls
+    ports: !override
+      - "${APCS_LAN_HOST:?Set APCS_LAN_HOST in .env.lan}:${APCS_LAN_PORT:-8443}:5173"
+    volumes:
+      - ./.cache/lan/tls:/run/apcs-tls:ro
+    healthcheck:
+      test: [CMD, node, -e, "require('node:https').get('https://127.0.0.1:5173',{rejectUnauthorized:false},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+  postgres:
+    restart: unless-stopped
+  simulation-mqtt:
+    restart: unless-stopped
+  script-runner:
+    restart: unless-stopped

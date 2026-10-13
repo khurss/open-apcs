@@ -55,6 +55,16 @@ dev:
 dev-stop:
 	docker compose down --remove-orphans
 
+.PHONY: lan lan-stop lan-status
+lan:
+	docker compose --env-file .env.lan -f compose.yml -f compose.lan.yml up -d --no-build --wait api web
+
+lan-stop:
+	docker compose --env-file .env.lan -f compose.yml -f compose.lan.yml stop
+
+lan-status:
+	docker compose --env-file .env.lan -f compose.yml -f compose.lan.yml ps
+
 .PHONY: e2e
 e2e: mqtt-tls-fixture
 	docker compose -f compose.test.yml up -d --force-recreate e2e-api

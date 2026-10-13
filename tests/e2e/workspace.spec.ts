@@ -1,3 +1,4 @@
+import { signIn } from './auth.js';
 import { reportHtml } from '../../packages/report-renderer/src/template.js';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -6,10 +7,7 @@ import { PgSignalArchive } from '../../packages/storage/src/signal-archive.js';
 import { expect, test, type Page } from '@playwright/test';
 
 async function login(page: Page) {
-  await page.goto('/');
-  await page.getByLabel('Username', { exact: true }).fill('operator');
-  await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await signIn(page);
   await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
 }
 
@@ -23,7 +21,7 @@ test('creates a project and virtual device, verifies a command, and audits the w
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await page.getByLabel('Project name', { exact: true }).fill('Browser LED Demo');
   await page.getByRole('button', { name: 'Create project', exact: true }).click();
-  await expect(page.getByText('Browser LED Demo', { exact: true })).toBeVisible();
+  await page.getByRole('link', {name:'Open Browser LED Demo',exact:true}).click();
   await page.getByRole('button', { name: 'Devices', exact: true }).click();
   await page.getByLabel('Device name', { exact: true }).fill('Workbench LED');
   await page.getByLabel('Site ID', { exact: true }).fill('demo');
@@ -75,7 +73,8 @@ test('creates a project and virtual device, verifies a command, and audits the w
   const aggregatePool = new Pool({ connectionString: process.env.APCS_TEST_POSTGRES_URL, options: `-c search_path=${schema}` });
   const aggregateStart = Math.floor(Date.now() / 60000) * 60000 - 600000;
   try {
-    const signalId = (await aggregatePool.query("SELECT s.id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id WHERE d.name='Workbench LED'")).rows[0].id;
+    const projectId = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('project');
+    const signalId = (await aggregatePool.query("SELECT s.id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id WHERE d.name='Workbench LED' AND d.project_id=$1", [projectId])).rows[0].id;
     await new PgSignalArchive(aggregatePool).append([0, 15, 45, 60].map((second, index) => ({ eventId: randomUUID(), signalId, observedAt: new Date(aggregateStart + second * 1000).toISOString(), snapshot: { value: index === 1, quality: 'Good' as const, bootId: 'aggregate-browser-fixture', sequence: index, sourceTime: null, receivedTime: new Date(aggregateStart + second * 1000).toISOString() } })));
   } finally { await aggregatePool.end(); }
   await page.getByRole('button', { name: 'Show aggregates', exact: true }).click();
@@ -209,10 +208,7 @@ test('keeps forms and navigation usable on phone and tablet widths', async ({ pa
 });
 
 test('shows a useful login failure without exposing protected content', async ({ page }) => {
-  await page.goto('/');
-  await page.getByLabel('Username', { exact: true }).fill('operator');
-  await page.getByLabel('Password', { exact: true }).fill('incorrect password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await signIn(page, 'incorrect password');
   await expect(page.getByRole('alert')).toContainText('Invalid credentials');
   await expect(page.getByRole('button', { name: 'Projects', exact: true })).toHaveCount(0);
 });

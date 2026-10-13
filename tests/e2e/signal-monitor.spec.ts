@@ -1,3 +1,4 @@
+import { signIn } from './auth.js';
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 
@@ -6,7 +7,7 @@ test('monitors a large signal page and disables controls when a refresh fails', 
     name: `Monitor fixture ${index}`, dataType: 'boolean', direction: 'output' }));
   let value = false; let unavailable = false;
   const singleReads: string[] = [];
-  await page.route('**/api/v1/signals', (route) => route.fulfill({ json: { items: signals, nextCursor: null } }));
+  await page.route(/\/api\/v1\/signals(?:\?.*)?$/, (route) => route.fulfill({ json: { items: signals, nextCursor: null } }));
   await page.route('**/api/v1/signals/*/value', (route) => { singleReads.push(route.request().url()); return route.abort(); });
   await page.route('**/api/v1/signals/values?*', (route) => {
     const ids = new URL(route.request().url()).searchParams.get('ids')!.split(',');
@@ -14,10 +15,7 @@ test('monitors a large signal page and disables controls when a refresh fails', 
     return unavailable ? route.fulfill({ status: 503, json: { message: 'Runtime unavailable' } })
       : route.fulfill({ json: Object.fromEntries(ids.map((id) => [id, { value, quality: 'Good', receivedTime: new Date().toISOString() }])) });
   });
-  await page.goto('/');
-  await page.getByLabel('Username', { exact: true }).fill('operator');
-  await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await signIn(page);
   await page.getByRole('button', { name: 'Signals', exact: true }).click();
   const rows = page.getByRole('row').filter({ hasText: 'Monitor fixture' });
   await expect(rows).toHaveCount(101);

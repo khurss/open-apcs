@@ -1,3 +1,4 @@
+import { signIn } from './auth.js';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
@@ -7,10 +8,7 @@ import { PgCommandJournal } from '../../packages/storage/src/command-journal.js'
 test('recovers an uncertain virtual output without rewriting its original outcome', async ({ page }) => {
   test.setTimeout(40000);
   if (process.env.NODE_ENV !== 'test' || !process.env.APCS_TEST_POSTGRES_URL) throw new Error('Isolated Docker fixture required');
-  await page.goto('/');
-  await page.getByLabel('Username', { exact: true }).fill('operator');
-  await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await signIn(page);
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await page.getByLabel('Project name', { exact: true }).fill('Recovery bench');
   await page.getByRole('button', { name: 'Create project', exact: true }).click();

@@ -1,3 +1,5 @@
+import { registerDemo } from './demo-api.js';
+import { registerCatalog } from './catalog-api.js';
 import { requireProjectOwner } from './ownership.js';
 import { registerReports } from './report-api.js';
 import { registerAggregates } from './aggregate-api.js';
@@ -155,18 +157,8 @@ export async function createApi(options: ApiOptions) {
     });
     return reply.code(201).send(device);
   });
-  for (const kind of ['devices', 'signals'] as const) {
-    app.get<{ Querystring: { limit?: string; cursor?: string } }>(`/api/v1/${kind}`, { schema: { querystring: pageSchema } }, async (request) => {
-      const limit = Number(request.query.limit ?? 100);
-      const fields = kind === 'devices' ? 'd.id, d.project_id AS "projectId", d.name, d.kind, d.site_id AS "siteId", d.protocol_device_id AS "deviceId"'
-        : 's.id, s.device_id AS "deviceId", s.name, s.data_type AS "dataType", s.direction, s.freshness_ms AS "freshnessMs"';
-      const source = kind === 'devices' ? 'apcs_devices d JOIN apcs_projects p ON p.id=d.project_id'
-        : 'apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id';
-      const key = kind === 'devices' ? 'd.id' : 's.id';
-      const result = await pool.query(`SELECT ${fields} FROM ${source} WHERE p.owner_id=$3 AND ($1::uuid IS NULL OR ${key} > $1) ORDER BY ${key} LIMIT $2`, [request.query.cursor ?? null, limit + 1, request.sessionUser!.id]);
-      return page(result.rows, limit);
-    });
-  }
+  registerCatalog(app, pool);
+  registerDemo(app, pool);
   app.get<{Querystring:{ids:string}}>('/api/v1/signals/values', {schema:{querystring:object({ids:{type:'string',minLength:36,maxLength:3699,pattern:'^[0-9a-fA-F,-]+$'}})}}, async request => {
     const ids = request.query.ids.toLowerCase().split(',');
     if (ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id=>!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))) throw new HttpError(400,'INVALID_SIGNAL_BATCH','Expected 1–100 distinct signal UUIDs');

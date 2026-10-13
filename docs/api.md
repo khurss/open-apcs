@@ -47,8 +47,10 @@ All paths use `/api/v1`.
 | `POST /auth/logout` | Revoke current session |
 | `GET/POST /projects` | Cursor-paged list and audited creation |
 | `GET/PATCH /projects/:id` | Read and rename; PATCH requires If-Match revision |
-| `GET/POST /devices` | List and create a virtual-led or esp32-led catalog entry |
-| `GET /signals` | List the device output signals |
+| `GET/POST /devices` | Owner-scoped catalog and creation of virtual-led, virtual-thermal or esp32-led entries; GET supports projectId and literal name query q |
+| `GET /signals` | Owner-scoped typed signal catalog; supports projectId and literal name query q |
+| `PATCH /devices/:id`, `PATCH /signals/:id` | Audited name changes with If-Match catalog revision; protocol identity and type remain unchanged |
+| `POST /demo` | Idempotent per-owner installation of stopped virtual equipment and prepared graphs/screens |
 | `GET /signals/values?ids=uuid,uuid` | One bounded current-state batch for 1–100 distinct signals owned by the session user |
 | `GET /signals/:id/value` | Current state from a trusted reader, otherwise Disconnected/null |
 | `GET /audit` | Newest-first audit with bounded cursor pagination |

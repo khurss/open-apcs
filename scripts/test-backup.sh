@@ -24,11 +24,13 @@ psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/008-history-retention-bound
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/009-numeric-inputs.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/010-virtual-thermal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/011-report-jobs.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/012-project-workspace.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
 INSERT INTO apcs_users (id,username,password_hash) VALUES ('00000000-0000-4000-8000-000000000001','fixture','fixture-only');
 INSERT INTO apcs_projects (id,name,owner_id) VALUES ('00000000-0000-4000-8000-000000000002','Backup bench','00000000-0000-4000-8000-000000000001');
+INSERT INTO apcs_demo_installations(owner_id,project_id,manifest) VALUES('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','{"projectId":"00000000-0000-4000-8000-000000000002"}');
 INSERT INTO apcs_devices (id,project_id,name,kind,site_id,protocol_device_id) VALUES ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000002','Backup LED','virtual-led','backup','led');
 INSERT INTO apcs_signals (id,device_id,name,data_type,direction) VALUES ('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000004','LED','boolean','output');
 INSERT INTO apcs_signal_history (event_id,signal_id,observed_at,snapshot) VALUES ('backup-history','00000000-0000-4000-8000-000000000005','2026-10-12T12:00:00Z','{"value":true,"quality":"Good","bootId":"backup-boot","sequence":1,"sourceTime":null,"receivedTime":"2026-10-12T12:00:00Z"}');
@@ -51,6 +53,8 @@ sh scripts/database-restore.sh "$file" "$restored"
 [ "$(psql -X -Atq --dbname="$restored" -c "SELECT encode(pdf,'hex') FROM apcs_report_jobs")" = '255044462d312e370a00ff' ]
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT csv FROM apcs_report_jobs')" = 'report_id,unknown_seconds' ]
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT name FROM apcs_documents')" = 'Persisted graph' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT manifest->>'projectId' FROM apcs_demo_installations")" = '00000000-0000-4000-8000-000000000002' ]
+[ "$(psql -X -Atq --dbname="$restored" -c 'SELECT revision FROM apcs_devices')" = '1' ]
 [ "$(psql -X -Atq --dbname="$restored" -c "SELECT snapshot->>'value' FROM apcs_signal_history WHERE event_id='backup-history'")" = 'true' ]
 [ "$(psql -X -Atq --dbname="$restored" -c "SELECT state->>'acknowledged' FROM apcs_alarms")" = 'true' ]
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT reason FROM apcs_alarm_events')" = 'Backup inspection' ]

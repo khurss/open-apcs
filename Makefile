@@ -115,3 +115,8 @@ hil-rigol:
 # Test code uses fake Docker calls and never opens hardware or the Docker socket.
 hil-orchestrator-test:
 	docker compose -f compose.test.yml run --rm firmware-test -c 'PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /workspace/tests/hil -p "*_test.py"'
+
+.PHONY: load-l0
+# One physical GPIO18 LED plus 15 isolated virtual LEDs; defaults to one hour.
+load-l0:
+	python3 scripts/run-l0.py

@@ -1,0 +1,30 @@
+# Explicit LED bench workload; does not run with ordinary tests or development.
+name: open-apcs-load
+services:
+  l0:
+    image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+    init: true
+    user: "1000:1000"
+    working_dir: /workspace
+    shm_size: 1gb
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: ["/tmp:rw,nosuid,size=536870912"]
+    volumes:
+      - .:/workspace:ro
+      - test_node_modules:/workspace/node_modules:ro
+      - ${APCS_BENCH_PRIVATE:?Set the private bench directory}:/run/bench:ro
+      - ${APCS_BENCH_ARTIFACTS:?Set the artifact directory}:/artifacts
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/bench/server-ca.crt
+      HOME: /tmp
+      APCS_HIL_MODE: l0
+      APCS_L0_SECONDS: ${APCS_L0_SECONDS:-3600}
+      APCS_L0_RUN_ID: ${APCS_L0_RUN_ID:-manual}
+    stop_grace_period: 40s
+    command: [node, --import, /workspace/apps/api/node_modules/tsx/dist/loader.mjs, tests/hil/supervisor.ts]
+volumes:
+  test_node_modules:
+    external: true
+    name: open-apcs-test_node_modules

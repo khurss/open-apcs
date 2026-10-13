@@ -11,6 +11,9 @@ bool apcs_identifier(const char *value) {
   return false;
 }
 void apcs_disconnect(apcs_led *led) { led->output = false; led->session[0] = 0; led->pending = false; led->nonce[0] = 0; led->lease_until = 0; }
+bool apcs_report_due(const apcs_led *led, bool reported_output, double last_report, double now) {
+  return led->output != reported_output || now - last_report >= 1000;
+}
 bool apcs_init(apcs_led *led, const char *boot) {
   memset(led, 0, sizeof(*led)); led->last_lease = -1;
   if (!apcs_identifier(boot)) { led->faulted = true; return false; }

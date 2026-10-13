@@ -30,6 +30,7 @@ export interface RuntimeControl {
   stop(deviceId: string): Promise<RuntimeStatus>;
   status(deviceId: string): Promise<RuntimeStatus>;
   readSignal(signalId: string): Promise<SignalSnapshot>;
+  readSignals?(signalIds: string[]): Promise<Record<string, SignalSnapshot>>;
   context(request: CommandRequest): Promise<CommandContext>;
   close(): Promise<void>;
 }
@@ -113,6 +114,10 @@ export class SimulationRuntime implements RuntimeControl {
   async readSignal(signalId: string): Promise<SignalSnapshot> {
     if (!this.registered.has(signalId)) return disconnected();
     const sample = this.signals.get(signalId); if (this.closed || this.lockLost) sample.quality = 'Disconnected'; return sample;
+  }
+  async readSignals(signalIds: string[]): Promise<Record<string, SignalSnapshot>> {
+    if (!signalIds.length || signalIds.length > 100 || new Set(signalIds).size !== signalIds.length) throw new Error('Invalid signal batch');
+    return Object.fromEntries(await Promise.all(signalIds.map(async id => [id, await this.readSignal(id)] as const)));
   }
   async context(request: CommandRequest): Promise<CommandContext> {
     const entry = [...this.entries.values()].find((item) => item.catalog.signalId === request.targetSignalId);

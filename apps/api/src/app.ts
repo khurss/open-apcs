@@ -161,6 +161,14 @@ export async function createApi(options: ApiOptions) {
       return page(result.rows, limit);
     });
   }
+  app.get<{Querystring:{ids:string}}>('/api/v1/signals/values', {schema:{querystring:object({ids:{type:'string',minLength:36,maxLength:3699,pattern:'^[0-9a-fA-F,-]+$'}})}}, async request => {
+    const ids = request.query.ids.toLowerCase().split(',');
+    if (ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id=>!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))) throw new HttpError(400,'INVALID_SIGNAL_BATCH','Expected 1–100 distinct signal UUIDs');
+    const found = await pool.query('SELECT s.id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE s.id=ANY($1::uuid[]) AND p.owner_id=$2',[ids,request.sessionUser!.id]);
+    if (found.rowCount !== ids.length) throw new HttpError(404,'NOT_FOUND','Signal batch not found');
+    if (!options.readSignal && options.runtime?.readSignals) return options.runtime.readSignals(ids);
+    return Object.fromEntries(await Promise.all(ids.map(async id=>[id,await (options.readSignal?.(id) ?? options.runtime?.readSignal(id) ?? {value:null,quality:'Disconnected',sourceTime:null,receivedTime:null,bootId:null,sequence:null})])));
+  });
   app.get<{ Params: { id: string } }>('/api/v1/signals/:id/value', { schema: { params: idParams } }, async (request) => {
     if (!(await pool.query('SELECT id FROM apcs_signals WHERE id = $1', [request.params.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
     return options.readSignal?.(request.params.id) ?? options.runtime?.readSignal(request.params.id) ?? { value: null, quality: 'Disconnected', sourceTime: null, receivedTime: null, bootId: null, sequence: null };

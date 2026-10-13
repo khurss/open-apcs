@@ -47,6 +47,16 @@ async function counts() {
 }
 
 describe('M0: durable commands and transactional outbox', () => {
+  it('reads a Verified command without rewriting its durable record', async () => {
+    await journal.migrate(); const input = request();
+    await journal.request(input, context); await journal.claimNext(async () => context);
+    await journal.acknowledge({id:input.id,targetSignalId:'led',bootId:'boot-1',status:'applied',value:true});
+    const before = (await pool.query('SELECT xmin::text, snapshot, last_observed_at FROM apcs_commands WHERE id=$1',[input.id])).rows[0];
+    expect((await journal.get(input.id)).state).toBe('Verified');
+    expect((await journal.get(input.id)).state).toBe('Verified');
+    const after = (await pool.query('SELECT xmin::text, snapshot, last_observed_at FROM apcs_commands WHERE id=$1',[input.id])).rows[0];
+    expect(after).toEqual(before);
+  });
   it('scopes a gateway claim to its output without consuming another device command', async () => {
     await journal.migrate();
     const other = request({ targetSignalId: 'other-led' });

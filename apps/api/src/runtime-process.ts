@@ -39,6 +39,7 @@ export class RuntimeProcess implements RuntimeControl {
   stop(deviceId: string): Promise<RuntimeStatus> { return this.call('stop', [deviceId]); }
   status(deviceId: string): Promise<RuntimeStatus> { return this.call('status', [deviceId]); }
   readSignal(signalId: string): Promise<SignalSnapshot> { return this.call('readSignal', [signalId]); }
+  readSignals(signalIds: string[]): Promise<Record<string, SignalSnapshot>> { return this.call('readSignals', [signalIds]); }
   context(request: CommandRequest): Promise<CommandContext> { return this.call('context', [request]); }
   async close(): Promise<void> {
     if (this.closed) return;

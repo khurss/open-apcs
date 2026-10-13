@@ -125,6 +125,11 @@ export class PgCommandJournal {
   }
 
   async get(id: string): Promise<CommandSnapshot> {
+    // Verified is immutable; polling its receipt must not take a write lock or
+    // generate another WAL record. Active commands still observe DB time below.
+    const completed = await this.pool.query<Pick<Row, 'snapshot' | 'reconciliation'>>("SELECT snapshot, reconciliation FROM apcs_commands WHERE id=$1 AND snapshot->>'state'='Verified'", [id]);
+    const row = completed.rows[0];
+    if (row) return { ...row.snapshot, ...(row.reconciliation ? { reconciliation: row.reconciliation } : {}) };
     return transaction(this.pool, async (client) => this.refresh(client, await this.load(client, id)));
   }
 

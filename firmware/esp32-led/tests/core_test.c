@@ -9,6 +9,19 @@ static int checks, failures;
 static apcs_led led;
 static void armed(void) { CHECK(apcs_init(&led, "boot-1")); CHECK(!led.output); CHECK(apcs_probe(&led, "nonce-1", 100)); CHECK(apcs_lease(&led, "nonce-1", "boot-1", "session-1", 3100, 110)); }
 int main(void) {
+  armed();
+  CHECK(!apcs_report_due(&led, false, 110, 119));
+  CHECK(apcs_write(&led, "report-on", "boot-1", "session-1", 2000, true, 120) == NULL);
+  CHECK(apcs_report_due(&led, false, 110, 120));
+  CHECK(!apcs_report_due(&led, true, 120, 121));
+  CHECK(!apcs_report_due(&led, true, 120, 1119));
+  CHECK(apcs_report_due(&led, true, 120, 1120));
+  CHECK(apcs_write(&led, "report-off", "boot-1", "session-1", 2000, false, 1121) == NULL);
+  CHECK(apcs_report_due(&led, true, 1120, 1121));
+  CHECK(apcs_write(&led, "report-next", "boot-1", "session-1", 3000, true, 1122) == NULL);
+  apcs_tick(&led, 3100);
+  CHECK(!led.output);
+  CHECK(apcs_report_due(&led, true, 3090, 3100));
   for (int pin = -1; pin <= 40; pin++) {
     bool expected = pin == 5 || pin == 18 || pin == 19 || pin == 21 || pin == 22 || pin == 23 || pin == 25 || pin == 26 || pin == 27 || pin == 32 || pin == 33;
     CHECK(apcs_led_pin_allowed(pin) == expected);

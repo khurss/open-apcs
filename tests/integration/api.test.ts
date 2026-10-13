@@ -48,6 +48,24 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('reads bounded owner-only signal batches through the private runtime', async () => {
+    await setup(); const projectId = (await project()).json().id;
+    const device = (await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:{projectId,name:'Batch LED',siteId:'batch',deviceId:'led',kind:'virtual-led'}})).json();
+    await app!.close();
+    const runtime = new RuntimeProcess({connectionString:process.env.APCS_TEST_POSTGRES_URL!,mqttUrl:process.env.APCS_TEST_MQTT_URL!,databaseOptions:`-c search_path=${schema}`});
+    app = await createApi({pool,origin,secureCookies:false,runtime});
+    const url = `/api/v1/signals/values?ids=${device.signalId}`;
+    expect((await app.inject({url})).statusCode).toBe(401);
+    expect((await app.inject({url,headers:headers()})).json()).toMatchObject({[device.signalId]:{quality:'Disconnected',value:null}});
+    await app.inject({method:'POST',url:`/api/v1/devices/${device.id}/runtime`,headers:headers(),payload:{action:'start',reason:'Read batch test'}});
+    const response = await app.inject({url,headers:headers()});
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({[device.signalId]:{quality:'Good',value:false,bootId:expect.any(String)}});
+    for (const ids of ['', 'invalid', `${device.signalId},${device.signalId}`, Array.from({length:101},()=>randomUUID()).join(',')]) expect((await app.inject({url:`/api/v1/signals/values?ids=${ids}`,headers:headers()})).statusCode).toBe(400);
+    expect((await app.inject({url:`${url},${randomUUID()}`,headers:headers()})).statusCode).toBe(404);
+    const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'foreign-batch','fixture')",[foreign]); await pool.query('UPDATE apcs_projects SET owner_id=$2 WHERE id=$1',[projectId,foreign]);
+    expect((await app.inject({url,headers:headers()})).statusCode).toBe(404);
+  });
   it('serves owner-only minute aggregates with explicit coverage and bounded ranges', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({ method: 'POST', url: '/api/v1/devices', headers: headers(), payload: { projectId, name: 'Aggregate LED', siteId: 'aggregate', deviceId: 'led', kind: 'virtual-led' } })).json();

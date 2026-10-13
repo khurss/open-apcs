@@ -61,17 +61,21 @@ static bool publish(const char *payload) {
   return esp_mqtt5_client_set_publish_property(client, &property) == ESP_OK && esp_mqtt_client_enqueue(client, topic_out, payload, 0, 1, 0, true) >= 0;
 }
 static void control(void *arg) {
-  (void)arg; ESP_ERROR_CHECK(esp_task_wdt_add(NULL)); double last_report = 0; packet message; char reply[4096];
+  (void)arg; ESP_ERROR_CHECK(esp_task_wdt_add(NULL)); double last_report = 0; bool reported_output = false; packet message; char reply[4096];
   for (;;) {
     double now = now_ms(); apcs_tick(&led, now);
     if (atomic_exchange(&disconnected, false) || atomic_load(&transport_fault)) { apcs_disconnect(&led); xQueueReset(incoming); }
+    apply_output();
     if (atomic_load(&connected) && !atomic_load(&transport_fault)) {
       /* One packet per cycle bounds work; a flood faults the bounded ingress queue. */
       if (xQueueReceive(incoming, &message, 0) == pdTRUE) {
         bool response = apcs_frame(&led, message.data, message.size, message.retained, now, reply, sizeof(reply));
         apply_output(); if (response && !publish(reply)) atomic_store(&transport_fault, true);
       }
-      if (now - last_report >= 1000) { last_report = now; if (!apcs_telemetry(&led, now, reply, sizeof(reply)) || !publish(reply)) atomic_store(&transport_fault, true); }
+      if (apcs_report_due(&led, reported_output, last_report, now)) {
+        if (!apcs_telemetry(&led, now, reply, sizeof(reply)) || !publish(reply)) atomic_store(&transport_fault, true);
+        else { last_report = now; reported_output = led.output; }
+      }
     }
     if (atomic_load(&transport_fault)) apcs_disconnect(&led);
     apply_output(); ESP_ERROR_CHECK(esp_task_wdt_reset()); vTaskDelay(pdMS_TO_TICKS(10));

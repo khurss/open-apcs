@@ -18,6 +18,8 @@ bool apcs_identifier(const char *value);
 bool apcs_init(apcs_led *led, const char *boot);
 void apcs_tick(apcs_led *led, double now);
 void apcs_disconnect(apcs_led *led);
+/* Report output changes promptly and retain an unchanged-state heartbeat. */
+bool apcs_report_due(const apcs_led *led, bool reported_output, double last_report, double now);
 bool apcs_probe(apcs_led *led, const char *nonce, double now);
 bool apcs_lease(apcs_led *led, const char *nonce, const char *boot, const char *session, double expires, double now);
 /* NULL means applied (including an identical retry); otherwise returns a static diagnostic. */

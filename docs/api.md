@@ -49,12 +49,15 @@ All paths use `/api/v1`.
 | `GET/PATCH /projects/:id` | Read and rename; PATCH requires If-Match revision |
 | `GET/POST /devices` | List and create a virtual-led or esp32-led catalog entry |
 | `GET /signals` | List the device output signals |
+| `GET /signals/values?ids=uuid,uuid` | One bounded current-state batch for 1–100 distinct signals owned by the session user |
 | `GET /signals/:id/value` | Current state from a trusted reader, otherwise Disconnected/null |
 | `GET /audit` | Newest-first audit with bounded cursor pagination |
 | `POST /commands` | Validate input, derive actor from session, persist Accepted/Rejected outcome |
 | `GET /commands/:id` | Durable command state and transition history |
 
 Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. Bench GPIO review is matched against the private server allowlist. Device editing and profiles beyond the initial LED types are not yet implemented. Virtual startup is documented in the runtime contract.
+
+Signal batches return an object keyed by normalized UUID. Malformed or duplicate IDs return 400; any missing or foreign-owned signal returns 404 for the whole batch. Each valid request makes one catalog ownership query and one private runtime request. Inactive signals return Disconnected/null. The Signals monitor refreshes sequential batches, publishes only a complete refresh, aborts after three seconds and disables controls on failure. It schedules the next refresh 250 ms after completion and cancels pending work when leaving the monitor. This polling interval is not a telemetry-to-paint latency guarantee.
 
 Project updates return ETag and require the matching If-Match revision. Missing revision returns 428; a conflicting revision returns 412. Configuration mutation and audit insertion share a transaction; an audit failure rolls back the mutation. Audit is application-append-only, not protected against a database administrator.
 

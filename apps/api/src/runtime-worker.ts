@@ -33,6 +33,7 @@ process.on('message', (message: unknown) => {
       else if (method === 'stop' && typeof args[0] === 'string') result = await runtime.stop(args[0]);
       else if (method === 'status' && typeof args[0] === 'string') result = await runtime.status(args[0]);
       else if (method === 'readSignal' && typeof args[0] === 'string') result = await runtime.readSignal(args[0]);
+      else if (method === 'readSignals' && args.length === 1 && Array.isArray(args[0]) && args[0].length >= 1 && args[0].length <= 100 && args[0].every(id=>typeof id==='string' && /^[0-9a-f-]{36}$/.test(id))) result = await runtime.readSignals(args[0] as string[]);
       else if (method === 'context' && args[0] && typeof args[0] === 'object') result = await runtime.context(args[0] as CommandRequest);
       else if (method === 'close') { await stop(); result = null; }
       else throw new Error('Invalid runtime operation');

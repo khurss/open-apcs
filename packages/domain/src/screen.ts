@@ -1,5 +1,5 @@
 import { coordinate, identifier, record, title } from './logic.js';
-export interface ScreenItem { id: string; kind: 'label' | 'indicator' | 'button' | 'group' | 'value'; label: string; x: number; y: number; width: number; height: number; signalId?: string; groupId?: string; }
+export interface ScreenItem { id: string; kind: 'label' | 'indicator' | 'button' | 'group' | 'value' | 'trend'; label: string; x: number; y: number; width: number; height: number; signalId?: string; groupId?: string; windowSeconds?: number; }
 export interface Screen { schemaVersion: 1; width: number; height: number; items: ScreenItem[]; }
 export function validateScreen(input: unknown): Screen {
   const screen = record(input, ['schemaVersion', 'width', 'height', 'items'], 'screen');
@@ -7,13 +7,16 @@ export function validateScreen(input: unknown): Screen {
   if (screen.schemaVersion !== 1 || !dimension(screen.width) || !dimension(screen.height) || !Array.isArray(screen.items) || screen.items.length > 512) throw new Error('Invalid screen version or size');
   const byId = new Map<string, ScreenItem>();
   for (const value of screen.items) {
-    const item = record(value, ['id', 'kind', 'label', 'x', 'y', 'width', 'height', 'signalId', 'groupId'], 'screen item');
-    if (!identifier(item.id) || byId.has(item.id) || !['label', 'indicator', 'button', 'group', 'value'].includes(item.kind as string) || !title(item.label) || !coordinate(item.x) || !coordinate(item.y) || !dimension(item.width) || !dimension(item.height)) throw new Error('Invalid or duplicate screen item');
-    if (item.kind === 'indicator' || item.kind === 'button' || item.kind === 'value') { if (!identifier(item.signalId)) throw new Error('Signal binding required'); }
+    const item = record(value, ['id', 'kind', 'label', 'x', 'y', 'width', 'height', 'signalId', 'groupId', 'windowSeconds'], 'screen item');
+    if (!identifier(item.id) || byId.has(item.id) || !['label', 'indicator', 'button', 'group', 'value', 'trend'].includes(item.kind as string) || !title(item.label) || !coordinate(item.x) || !coordinate(item.y) || !dimension(item.width) || !dimension(item.height)) throw new Error('Invalid or duplicate screen item');
+    if (item.kind === 'indicator' || item.kind === 'button' || item.kind === 'value' || item.kind === 'trend') { if (!identifier(item.signalId)) throw new Error('Signal binding required'); }
     else if ('signalId' in item) throw new Error('Unexpected signal binding');
+    if (item.kind === 'trend') { if (!Number.isInteger(item.windowSeconds) || (item.windowSeconds as number) < 10 || (item.windowSeconds as number) > 86400 || (item.width as number) < 320 || (item.height as number) < 200) throw new Error('Invalid trend window or size'); }
+    else if ('windowSeconds' in item) throw new Error('Unexpected trend setting');
     if ('groupId' in item && !identifier(item.groupId)) throw new Error('Invalid group reference');
     byId.set(item.id, item as unknown as ScreenItem);
   }
+  if ([...byId.values()].filter(item => item.kind === 'trend').length > 8) throw new Error('At most eight trends per screen');
   for (const item of byId.values()) {
     const visited = new Set([item.id]); let current = item;
     while (current.groupId) {

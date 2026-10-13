@@ -1,3 +1,4 @@
+import {validateDocument as validate,validateBindings as bindings} from './document-validation.js';
 import { requireProjectOwner } from './ownership.js';
 import { ScriptClientError, type ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { diffDocuments } from '../../../packages/domain/src/document-diff.js';
@@ -23,23 +24,6 @@ function precondition(value: unknown): number {
   return Number(value.slice(1, -1));
 }
 function conflict(row: Document, revision: number) { if (row.revision !== revision) throw new EditorError(412, 'REVISION_CONFLICT', 'Document revision changed'); }
-function validate(kind: Kind, document: unknown, complete: boolean): LogicGraph | Screen {
-  try { return kind === 'graph' ? validateGraph(document, complete) : validateScreen(document); }
-  catch (error) { throw invalid(error instanceof Error ? error.message : 'Invalid document'); }
-}
-async function bindings(client: PoolClient, projectId: string, kind: Kind, document: LogicGraph | Screen) {
-  const entries = kind === 'graph' ? (document as LogicGraph).nodes : (document as Screen).items;
-  const bound = entries.filter((item) => item.signalId);
-  const ids = [...new Set(bound.map((item) => item.signalId!))];
-  if (!ids.length) return;
-  const result = await client.query<{ id: string; direction: string; data_type: string }>(`SELECT s.id, s.direction, s.data_type FROM apcs_signals s JOIN apcs_devices d ON d.id = s.device_id WHERE d.project_id = $1 AND s.id::text = ANY($2::text[])`, [projectId, ids]);
-  if (result.rows.length !== ids.length) throw invalid('A signal binding is missing or belongs to another project');
-  for (const item of bound) {
-    const signal = result.rows.find((s) => s.id === item.signalId)!;
-    const expectedType = ((kind === 'graph' && item.kind === 'analog') || (kind === 'screen' && item.kind === 'value')) ? 'float64' : 'boolean';
-    if (signal.data_type !== expectedType || (['output', 'button'].includes(item.kind) && signal.direction !== 'output')) throw invalid('Signal type or direction does not match its binding');
-  }
-}
 async function preparedSnapshot(client: PoolClient, id: string, revision: number, kind: Kind) {
   const result = await client.query<{ name: string; document: LogicGraph | Screen; checksum: string }>('SELECT name,document,checksum FROM apcs_document_revisions WHERE document_id=$1 AND revision=$2', [id, revision]);
   const saved = result.rows[0]; if (!saved) throw new EditorError(404, 'NOT_FOUND', 'Prepared revision not found');

@@ -1,0 +1,28 @@
+import {test,expect} from '@playwright/test';
+import {signIn} from './auth.js';
+test.use({actionTimeout:5000});
+test('duplicates and arranges logic, then operates a prepared trend with unavailable-history recovery',async({page})=>{
+  test.setTimeout(90000);await signIn(page);
+  await page.getByRole('button',{name:'Projects',exact:true}).click();await page.getByRole('button',{name:'Open demo project',exact:true}).click();
+  await page.getByRole('button',{name:'Logic',exact:true}).click();await page.getByRole('button',{name:'Open LED control',exact:true}).click();
+  await page.getByRole('button',{name:'Select LED power',exact:true}).click();await page.getByRole('button',{name:'Duplicate selected',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Select LED power copy',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Undo',exact:true}).click();await expect(page.getByRole('button',{name:'Select LED power copy',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Redo',exact:true}).click();await expect(page.getByRole('button',{name:'Select LED power copy',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Select LED power copy',exact:true}).click();await page.getByRole('button',{name:'Delete selected',exact:true}).click();
+  await page.getByRole('button',{name:'Auto-arrange blocks',exact:true}).click();await page.getByRole('button',{name:'Save draft',exact:true}).click();
+  await page.getByRole('button',{name:'Devices',exact:true}).click();
+  const thermal=page.getByRole('article').filter({hasText:'Climate chamber'});await thermal.getByRole('button',{name:'Start simulator',exact:true}).click();await expect(thermal).toContainText('Simulation running');
+  await page.getByRole('button',{name:'Screens',exact:true}).click();await page.getByRole('button',{name:'Open Climate overview',exact:true}).click();
+  await page.getByRole('button',{name:'Add trend',exact:true}).click();await page.getByLabel('Element label',{exact:true}).fill('Preview trend');
+  await page.getByLabel('Trend window (seconds)',{exact:true}).fill('60');await page.getByRole('button',{name:'Snap to grid',exact:true}).click();
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();await expect(page.getByRole('button',{name:'Save draft',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Prepare revision',exact:true}).click();await page.getByRole('button',{name:'Operate revision 2',exact:true}).click();
+  const trend=page.getByRole('region',{name:'Trend Preview trend',exact:true}).first();await expect(trend).toContainText('Good');await expect(trend.getByRole('img',{name:'Signal history trend',exact:true})).toBeVisible();
+  await page.route('**/api/v1/signals/*/history?*',route=>route.fulfill({status:503,json:{message:'Fixture outage'}}));
+  await expect(trend).toContainText('Trend history is unavailable');
+  await page.unroute('**/api/v1/signals/*/history?*');await expect(trend).not.toContainText('Trend history is unavailable');
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'test-results/trend-phone.png',fullPage:true});await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Devices',exact:true}).click();await thermal.getByRole('button',{name:'Stop simulator',exact:true}).click();await expect(thermal).toContainText('Simulation stopped');
+});

@@ -45,11 +45,12 @@ export function registerDemo(app: FastifyInstance, pool: Pool) {
         {id:'control',kind:'button',label:'Workbench LED',signalId:ledSignal,x:520,y:140,width:440,height:100},
         {id:'help',kind:'label',label:'Start the virtual LED in Devices. Use manual control or activate LED control.',x:40,y:300,width:920,height:80},
       ]});
-      const climateScreen = await document(client,projectId,actor,'screen','Climate overview', {schemaVersion:1,width:1000,height:560,items:[
+      const climateScreen = await document(client,projectId,actor,'screen','Climate overview', {schemaVersion:1,width:1000,height:880,items:[
         {id:'title',kind:'label',label:'CLIMATE CHAMBER · PID SETPOINT 24 C',x:40,y:30,width:920,height:70},
         {id:'temperature',kind:'value',label:'Temperature (C)',signalId:temperature,x:40,y:140,width:440,height:100},
         {id:'heater',kind:'indicator',label:'Heater output',signalId:heater,x:520,y:140,width:440,height:100},
         {id:'help',kind:'label',label:'Start Climate chamber, then activate the prepared Climate PID graph.',x:40,y:290,width:920,height:80},
+        {id:'temperature-history',kind:'trend',label:'Temperature history',signalId:temperature,x:40,y:560,width:920,height:280,windowSeconds:300},
         {id:'control',kind:'button',label:'Chamber heater',signalId:heater,x:40,y:410,width:440,height:90},
       ]});
       const manifest = {projectId,deviceIds:[ledId,thermalId],graphIds:[ledGraph,climateGraph],screenIds:[ledScreen,climateScreen]};

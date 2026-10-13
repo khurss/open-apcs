@@ -48,3 +48,6 @@
 .graph-evaluation p { margin: 10px 0; font-size: 12px; overflow-wrap: anywhere; }
 .graph-evaluation td { max-width: 280px; overflow-wrap: anywhere; white-space: normal; }
 .graph-evaluation td small { display: block; color: var(--muted); margin-top: 4px; }
+
+.trend-panel{height:100%;min-height:200px;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:14px;display:flex;flex-direction:column;gap:8px;color:var(--text);font-size:14px;overflow:hidden}.trend-title,.trend-caption{display:flex;align-items:center;justify-content:space-between;gap:12px}.trend-title strong{font-size:16px}.trend-panel .history-trend{padding:0;flex:1;min-height:0}.trend-panel .history-trend>svg{width:100%;height:auto;max-height:195px}.trend-panel .history-trend>p{display:none}.trend-caption{font-size:11px;color:var(--muted);margin-top:auto}.trend-panel>p{padding:20px 0;color:var(--muted)}.operator-trends{display:grid;gap:16px}.operator-trends .trend-panel{min-height:245px}.screen-item.trend>rect{stroke:var(--accent);stroke-dasharray:4 3}.screen-item.trend text{font-size:18px}
+.operator-trends,.operator-trends>div,.trend-panel{min-width:0;max-width:100%}.trend-panel .history-trend svg{min-width:0}.trend-title,.trend-caption{flex-wrap:wrap}.trend-title strong{overflow-wrap:anywhere}.trend-panel .history-trend{overflow:hidden}

@@ -19,3 +19,9 @@ There is no historical trace database, breakpoint, force-value operation, or dir
 ## Verification
 
 Docker task tests cover isolated timestamped results, retained historical state and late asynchronous completions after stop/deadline. PostgreSQL/MQTT integration checks sequence progress over private runtime IPC, owner authentication and unchanged active labels after editing the draft. Browser checks verify calculated values, disappearance on polling failure, recovery, and historical labelling after stop.
+
+## Monotonic cadence and timing evidence
+
+Graph execution now schedules start times on a monotonic grid. A 100 ms period with a 30 ms evaluation starts at 0, 100, 200 ms instead of drifting to 0, 130, 260 ms. Work never overlaps. Slots already elapsed at completion are skipped; there is no catch-up burst. Resuming a paused task establishes a new grid without counting the intentional pause as overload. Scripts retain their minimum 1000 ms period and the existing 2000 ms execution deadline.
+
+The authenticated runtime response adds nullable `timing`: effective `periodMs`, `starts`, `skipped`, `maxStartDelayMs`, `maxExecutionMs`, `lateStarts` (over 50 ms), and a bounded `startDelay` histogram summary. These bounded counters cover the task lifetime, including warmup; an unstarted task has no timing. Start delay is measured against the scheduled monotonic deadline; execution includes reads, evaluation and command submission. The summary provides nearest-rank p50/p95/p99 upper bounds using the same 1 ms buckets and overflow maximum as gateway diagnostics. Maxima remain visible separately from percentile evidence. This instrumentation does not turn the Node/Linux runtime into a hard real-time controller.

@@ -138,3 +138,9 @@ A phase is complete only after its criteria pass and results are published: comm
 Required artifacts: JUnit/coverage, contract reports, browser traces on failure, load metrics, firmware manifests, HIL records, updated documentation, and known limitations. Storage schema changes include upgrade/rollback-or-restore verification; dependency changes run the relevant contract suite.
 
 Not complete: an attractive UI without a working runtime; mock-only integration; a simulator labeled as hardware verification; unexecuted tests; 10,000 catalog entries instead of active devices; a short benchmark instead of proven week-long history capacity.
+
+## M1 reliability qualification extension
+
+The current dedicated LED bench supplements the above matrix with a complete API-container crash/restoration mode and telemetry/graph/alarm measurements in the L0 runner. See [Rigol fault evidence](rigol-hil.md), [extended L0 evidence](load-l0.md), and [graph timing semantics](graph-diagnostics.md). Simulator/contract tests continue to check expired, duplicate, retained and previous-session messages; a physical LOW observation alone does not prove all of those protocol branches.
+
+A successful bounded L0 workload is evidence for its recorded 16-device/16-signal profile. It does not waive unexecuted radio/power/brownout/watchdog-injection cases, higher signal counts, hardened offline production installation, or unrelated future requirements. Release status must name the measured subset instead of marking the entire acceptance matrix complete.

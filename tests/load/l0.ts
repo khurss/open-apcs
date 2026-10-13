@@ -2,6 +2,8 @@ import { closeSync, openSync, readFileSync, writeFileSync, appendFileSync, mkdir
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium, request, type Browser, type Page } from '@playwright/test';
+import {observeUntil} from '../../packages/bench/src/observe.js';
+import {L0Qualification} from './l0-qualification.js';
 import { cadence } from '../../packages/bench/src/cadence.js';
 import { percentiles, verifyHistory, assessLoad } from '../../packages/bench/src/load-evidence.js';
 import type { SignalSnapshot } from '../../packages/domain/src/signals.js';
@@ -38,15 +40,19 @@ async function post(path: string, data: unknown, headers: Record<string,string> 
   const r = await api.post(path, {data, headers: {'x-csrf-token': csrf, ...headers}});
   try { if (!r.ok()) throw new Error(`POST ${path} returned ${r.status()}`); return await r.json(); } finally { await r.dispose(); }
 }
+async function put(path: string, data: unknown, headers: Record<string,string> = {}) {
+  const r = await api.put(path, {data, headers: {'x-csrf-token': csrf, ...headers}});
+  try { if (!r.ok()) throw new Error(`PUT ${path} returned ${r.status()}`); return await r.json(); } finally { await r.dispose(); }
+}
+const qualification = new L0Qualification(get, post, put, notify, directory);
+let supplemental: unknown;
 async function all(path: string) {
   const items = []; let cursor: string | null = null;
   do { const p = await get(`${path}?limit=100${cursor ? `&cursor=${cursor}` : ''}`); items.push(...p.items); cursor = p.nextCursor; } while (cursor);
   return items;
 }
-async function waitFor(check: () => Promise<boolean>, timeout = 900) {
-  const deadline = performance.now() + timeout;
-  do { if (await check()) return; await sleep(100); } while (performance.now() < deadline);
-  throw new Error('L0 observation deadline exceeded');
+async function waitFor(check: () => Promise<boolean>) {
+  return observeUntil(check,()=>performance.now(),sleep);
 }
 async function command(t: Target, value: boolean, measured: boolean) {
   const start = performance.now(), wall = Date.now();
@@ -119,6 +125,7 @@ try {
     if (sample.quality !== 'Good' || sample.value !== false || !sample.bootId) throw new Error('Initial L0 output is not OFF/Good');
     target.bootId = sample.bootId;
   }
+  await qualification.setup(physical.projectId, physicalSignals[0].id);
   writeFileSync(`${directory}/targets.json`, JSON.stringify({seconds, warmupSeconds:60, periodMs:1000, phaseSpacingMs:1000/16, targets}, null, 2));
   const cert = new X509Certificate(readFileSync('/run/bench/server-ca.crt'));
   const pin = createHash('sha256').update(cert.publicKey.export({type:'spki',format:'der'})).digest('base64');
@@ -136,7 +143,11 @@ try {
     new MutationObserver(() => {
       const row = [...document.querySelectorAll('tbody tr')].find(r => r.querySelector('strong')?.textContent === name);
       const value = row?.querySelector('.signal-value')?.textContent ?? '';
-      if (value !== previous) { previous = value; w.l0Events.push({at:Date.now(),value,quality:row?.children[2]?.textContent ?? ''}); }
+      if (value !== previous) {
+        previous = value; const quality=row?.children[2]?.textContent ?? '';
+        // Two animation frames include a rendering opportunity after DOM mutation.
+        requestAnimationFrame(() => requestAnimationFrame(() => w.l0Events.push({at:Date.now(),value,quality})));
+      }
       if (w.l0Events.length > 10000) throw new Error('L0 browser evidence overflow');
     }).observe(document.querySelector('main')!, {subtree:true,childList:true,characterData:true});
   }, physicalSignals[0].name);
@@ -166,6 +177,7 @@ try {
   }
   measuredTo = new Date().toISOString();
   await sleep(2000); await drainUi(); await inspectHistory();
+  let physicalHistory: SignalSnapshot[] = [];
   for (const target of targets) {
     const rows: {snapshot: SignalSnapshot}[] = []; let before: string | null = null;
     do {
@@ -173,9 +185,11 @@ try {
       rows.push(...p.items); before = p.nextBefore;
     } while (before);
     rows.reverse();
+    if(target.physical) physicalHistory=rows.map(r=>r.snapshot);
     historyChanges += verifyHistory(rows.map(r => r.snapshot), target.bootId, seconds);
     writeFileSync(`${directory}/history-${target.signalId}.json`, JSON.stringify(rows));
   }
+  supplemental = await qualification.verify({from:measuredFrom,to:measuredTo,seconds,history:physicalHistory,ui:uiEvents,deviceIds:targets.map(t=>t.id)});
   conclusion = assessLoad({requestedSeconds:seconds, elapsedSeconds, devices:targets.length, commands, verified, historyChanges, missedTicks, errors:[]});
 } catch (error) {
   failure = error;
@@ -183,6 +197,7 @@ try {
   try { await drainUi(); } catch { /* Preserve the original failure when the browser is unavailable. */ }
 }
 finally {
+  try { await qualification.stop(); } catch(error) { failure ??= error; }
   // All created/armed targets are also known to the independent supervisor.
   for (const t of targets) {
     try { const stopped = await post(`/api/v1/devices/${t.id}/${t.physical?'commission':'runtime'}`, {action:'stop',reason:'End L0 workload'}); if (stopped.state !== 'stopped') throw new Error('L0 target did not stop'); }
@@ -195,7 +210,7 @@ finally {
     if (apiTiming && apiTiming.p95 > 200) failure ??= new Error(`Command acceptance p95 ${apiTiming.p95.toFixed(1)} ms exceeds 200 ms`);
     metrics = {warmupTimingsMs:warmupTimings.length?percentiles(warmupTimings):null,acceptanceMs:apiTiming,verifiedAndObservedMs:verification.length?percentiles(verification):null,tickLatenessMs:jitter.length?percentiles(jitter):null}; }
   catch(error) {failure ??= error;}
-  const report = {runId:process.env.APCS_L0_RUN_ID ?? 'manual',at:new Date().toISOString(),conclusion:failure?'failed':conclusion,requestedSeconds:seconds,elapsedSeconds,devices:targets.length,commands,verified,historyChanges,missedTicks,measuredFrom,measuredTo,...metrics,uiPhysicalTransitions:uiEvents.length,physicalSentTransitions:physicalSends.length,limitations:['UI changes are sampled by the existing monitor; DOM coalescing is reported separately from durable history.','No normalized MQTT-arrival-to-state or exact telemetry-to-paint latency is measured.','No 100 ms graph task, continuous electrical trace or alarm workload is included.','Resource acceptance requires the separate host resource log.'],error:failure instanceof Error?failure.message:failure?'Unknown failure':null};
+  const report = {runId:process.env.APCS_L0_RUN_ID ?? 'manual',at:new Date().toISOString(),conclusion:failure?'failed':conclusion,requestedSeconds:seconds,elapsedSeconds,devices:targets.length,commands,verified,historyChanges,missedTicks,measuredFrom,measuredTo,...metrics,uiPhysicalTransitions:uiEvents.length,physicalSentTransitions:physicalSends.length,supplemental,limitations:['UI changes are sampled by the existing monitor; DOM coalescing is reported separately from durable history.','Browser evidence measures two animation-frame rendering opportunities on the same host clock, not optical paint.','Graph timing is a read-only 100-block task; continuous electrical trace is not included.','Resource acceptance requires the separate host resource log.'],error:failure instanceof Error?failure.message:failure?'Unknown failure':null};
   writeFileSync(`${directory}/result.json`, JSON.stringify(report,null,2));
   console.log(JSON.stringify(report));
 }

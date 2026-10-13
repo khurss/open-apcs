@@ -13,7 +13,7 @@ spec.loader.exec_module(runner)
 
 
 class OrchestratorTest(unittest.TestCase):
-    def exercise(self, *, malformed=False, pause_failure=False, worker_failure=False, pre_paused=False):
+    def exercise(self, *, malformed=False, pause_failure=False, worker_failure=False, pre_paused=False, mode="broker-loss", wrong_service=False):
         calls = []
         with tempfile.TemporaryDirectory() as directory:
             def docker(*args, **kwargs):
@@ -21,10 +21,10 @@ class OrchestratorTest(unittest.TestCase):
                 if args[0] == "inspect":
                     return subprocess.CompletedProcess(args, 0, json.dumps([{
                         "Id": "selected-container-id",
-                        "Config": {"Labels": {"com.docker.compose.project": "open-apcs-bench", "com.docker.compose.service": "physical-mqtt"}},
+                        "Config": {"Labels": {"com.docker.compose.project": "open-apcs-dev" if mode == "server-loss" else "open-apcs-bench", "com.docker.compose.service": "web" if wrong_service else ("api" if mode == "server-loss" else "physical-mqtt")}},
                         "State": {"Running": True, "Paused": pre_paused},
                     }]))
-                if args[0] == "pause" and pause_failure:
+                if args[0] in ("pause", "kill") and pause_failure:
                     raise subprocess.CalledProcessError(1, args)
                 return subprocess.CompletedProcess(args, 0)
 
@@ -43,20 +43,40 @@ class OrchestratorTest(unittest.TestCase):
                         return self.returncode
                     action = ("inject", "restore")[self.step]
                     request = Path(directory) / f"fault-{self.token}-{action}.request"
-                    request.write_text(json.dumps({"mode": "unexpected" if malformed else "broker-loss", "action": action}))
+                    request.write_text(json.dumps({"mode": "unexpected" if malformed else mode, "action": action}))
                     self.step += 1
                     return None
 
                 def wait(self, **kwargs):
                     self.returncode = 1
 
-            environment = {"APCS_BENCH_ARTIFACTS": directory, "APCS_BENCH_BROKER": "reviewed-broker"}
-            with patch.dict(runner.os.environ, environment), patch.object(runner.sys, "argv", ["hil-fault.py", "broker-loss"]), patch.object(runner, "docker", docker), patch.object(runner.subprocess, "Popen", Child), patch.object(runner.time, "sleep"), patch.object(runner.signal, "signal"):
+            environment = {"APCS_BENCH_ARTIFACTS": directory, "APCS_BENCH_BROKER": "reviewed-broker", "APCS_BENCH_API": "reviewed-api"}
+            with patch.dict(runner.os.environ, environment), patch.object(runner.sys, "argv", ["hil-fault.py", mode]), patch.object(runner, "docker", docker), patch.object(runner.subprocess, "Popen", Child), patch.object(runner.time, "sleep"), patch.object(runner.signal, "signal"):
                 try:
                     runner.main()
                 except (ValueError, RuntimeError, subprocess.CalledProcessError) as error:
                     return calls, error
         return calls, None
+
+    def test_server_crash_kills_and_restores_only_the_inspected_api(self):
+        calls, error = self.exercise(mode="server-loss")
+        self.assertIsNone(error)
+        self.assertEqual([c for c in calls if c[0] in ("kill", "start")], [("kill", "--signal", "KILL", "selected-container-id"), ("start", "selected-container-id")])
+
+    def test_server_crash_cli_failure_still_restores_api(self):
+        calls, error = self.exercise(mode="server-loss", pause_failure=True)
+        self.assertIsInstance(error, subprocess.CalledProcessError)
+        self.assertIn(("start", "selected-container-id"), calls)
+
+    def test_server_worker_failure_still_restores_api(self):
+        calls, error = self.exercise(mode="server-loss", worker_failure=True)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIn(("start", "selected-container-id"), calls)
+
+    def test_server_crash_rejects_another_service(self):
+        calls, error = self.exercise(mode="server-loss", wrong_service=True)
+        self.assertIsInstance(error, ValueError)
+        self.assertEqual([c[0] for c in calls], ["inspect"])
 
     def test_success_restores_only_the_inspected_container(self):
         calls, error = self.exercise()

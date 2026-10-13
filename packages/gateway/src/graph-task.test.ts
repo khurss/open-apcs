@@ -19,6 +19,45 @@ function bench() {
   return { io, samples, commands, task: new GraphTask(graph, io, () => Date.now()) };
 }
 describe('headless graph task', () => {
+  it('keeps a 100 ms start cadence when each evaluation takes 30 ms', async () => {
+    const {task, io} = bench();
+    const starts: number[] = [];
+    vi.mocked(io.read).mockImplementation(async () => {
+      starts.push(Date.now());
+      await new Promise(resolve => setTimeout(resolve, 30));
+      return {switch: sample(true), led: sample(false)};
+    });
+    const started = task.start();
+    await vi.advanceTimersByTimeAsync(30); await started;
+    await vi.advanceTimersByTimeAsync(400);
+    expect(starts).toEqual([0, 100, 200, 300, 400]);
+    expect(task.status.timing).toMatchObject({periodMs: 100, starts: 5, skipped: 0, maxStartDelayMs: 0, maxExecutionMs: 30});
+    await task.stop();
+  });
+  it('counts missed slots without issuing catch-up bursts and resets cadence after pause', async () => {
+    const {task, io} = bench();
+    vi.mocked(io.read).mockImplementationOnce(async () => {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      return {switch: sample(true), led: sample(false)};
+    });
+    const started = task.start(); await vi.advanceTimersByTimeAsync(250); await started;
+    expect(task.status.timing).toMatchObject({starts: 1, skipped: 2, maxExecutionMs: 250});
+    await vi.advanceTimersByTimeAsync(49); expect(io.read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); expect(io.read).toHaveBeenCalledTimes(2);
+    await task.pause(); await vi.advanceTimersByTimeAsync(1000); await task.start();
+    expect(task.status.timing).toMatchObject({starts: 3, skipped: 2});
+    await task.stop();
+  });
+  it('records delayed starts and counts skipped slots separately from completed calculations', async () => {
+    const {io} = bench(); let clockOffset=0;
+    const task=new GraphTask(graph,io,()=>Date.now()+clockOffset);
+    await task.start(); clockOffset=60;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(task.status.timing).toMatchObject({starts:2,lateStarts:1,skipped:0,startDelay:{count:2,p99:60,max:60}});
+    const snapshot=task.status; snapshot.timing.startDelay!.count=0;
+    expect(task.status.timing.startDelay!.count).toBe(2);
+    await task.stop();
+  });
   it('executes automatically without a browser and submits through its command port', async () => { const { task, io } = bench(); await task.start(); expect(io.request).toHaveBeenCalledWith('led', true); expect(task.status).toMatchObject({ state: 'running', cycles: 1, pending: ['c1'] }); await task.stop(); });
   it('does not repeat an unacknowledged command or resend an unchanged verified target', async () => { const { task, io, commands } = bench(); await task.start(); await vi.advanceTimersByTimeAsync(500); expect(io.request).toHaveBeenCalledTimes(1); commands.get('c1')!.state = 'Verified'; await vi.advanceTimersByTimeAsync(500); expect(io.request).toHaveBeenCalledTimes(1); expect(task.status.pending).toEqual([]); await task.stop(); });
   it('waits for the previous acknowledgement before issuing the newest target', async () => { const { task, io, commands, samples } = bench(); await task.start(); samples.switch = sample(false); await vi.advanceTimersByTimeAsync(200); expect(io.request).toHaveBeenCalledTimes(1); commands.get('c1')!.state = 'Verified'; await vi.advanceTimersByTimeAsync(100); expect(io.request).toHaveBeenLastCalledWith('led', false); expect(io.request).toHaveBeenCalledTimes(2); await task.stop(); });

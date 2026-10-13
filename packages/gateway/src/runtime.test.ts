@@ -80,3 +80,15 @@ describe('headless LED runtime scheduling', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+it('reports known timing failure categories without exposing arbitrary transport error text',async()=>{
+  const {gateway,runtime}=bench();
+  vi.mocked(gateway.synchronize).mockRejectedValueOnce(new Error('Snapshot is not fresh'));
+  await expect(runtime.start()).rejects.toThrow();
+  expect(runtime.status.error).toContain('snapshot freshness');
+  await runtime.start();
+  vi.mocked(gateway.dispatchNext).mockRejectedValueOnce(new Error('Secret transport URL fixture'));
+  await vi.advanceTimersByTimeAsync(100);
+  expect(runtime.status.error).toBe('Runtime cycle failed; explicit restart required');
+  await runtime.stop();
+});

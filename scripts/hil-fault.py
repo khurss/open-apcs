@@ -45,21 +45,21 @@ def docker(*args, **kwargs):
 
 def main():
     mode = sys.argv[1] if len(sys.argv) == 2 else ""
-    if mode not in ("broker-loss", "device-reset"):
-        raise ValueError("Expected broker-loss or device-reset")
+    if mode not in ("broker-loss", "device-reset", "server-loss"):
+        raise ValueError("Expected broker-loss, device-reset or server-loss")
     root = Path(__file__).resolve().parent.parent
     artifacts = Path(os.environ["APCS_BENCH_ARTIFACTS"]).resolve(strict=True)
     token = uuid.uuid4().hex
     name = "open-apcs-hil-" + token
-    broker = os.environ.get("APCS_BENCH_BROKER", "")
+    broker = os.environ.get("APCS_BENCH_API" if mode == "server-loss" else "APCS_BENCH_BROKER", "")
     serial_device = os.environ.get("APCS_SERIAL_DEVICE", "")
-    if mode == "broker-loss":
+    if mode in ("broker-loss", "server-loss"):
         inspected = json.loads(docker("inspect", broker, capture_output=True, text=True).stdout)[0]
         labels = inspected["Config"]["Labels"]
-        if (labels.get("com.docker.compose.project") != "open-apcs-bench"
-                or labels.get("com.docker.compose.service") != "physical-mqtt"
+        if (labels.get("com.docker.compose.project") != ("open-apcs-dev" if mode == "server-loss" else "open-apcs-bench")
+                or labels.get("com.docker.compose.service") != ("api" if mode == "server-loss" else "physical-mqtt")
                 or not inspected["State"]["Running"] or inspected["State"]["Paused"]):
-            raise ValueError("Select a running, unpaused dedicated open-apcs-bench physical-mqtt container")
+            raise ValueError("Select a running, unpaused container for the expected Compose project and service")
         # Pin the inspected container, even if its name is reassigned during a run.
         broker = inspected["Id"]
     else:
@@ -112,13 +112,13 @@ def main():
                         raise ValueError("Invalid fault request")
                     if action == "restore" and "inject" not in handled:
                         raise ValueError("Restoration requested before injection")
-                    if mode == "broker-loss":
+                    if mode in ("broker-loss", "server-loss"):
                         if action == "inject":
                             # Cleanup is required even if Docker changes state then the CLI fails.
                             paused = True
-                            docker("pause", broker, stdout=subprocess.DEVNULL)
+                            docker(*(("kill", "--signal", "KILL", broker) if mode == "server-loss" else ("pause", broker)), stdout=subprocess.DEVNULL)
                         else:
-                            docker("unpause", broker, stdout=subprocess.DEVNULL)
+                            docker(*(("start", broker) if mode == "server-loss" else ("unpause", broker)), stdout=subprocess.DEVNULL)
                             paused = False
                     elif action == "inject":
                         output, _ = reset_job.communicate(b"RESET\n", timeout=20)
@@ -139,7 +139,7 @@ def main():
     finally:
         try:
             if paused:
-                docker("unpause", broker, stdout=subprocess.DEVNULL)
+                docker(*(("start", broker) if mode == "server-loss" else ("unpause", broker)), stdout=subprocess.DEVNULL)
         finally:
             try:
                 if child.poll() is None:

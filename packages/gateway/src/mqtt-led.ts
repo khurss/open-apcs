@@ -1,3 +1,4 @@
+import {LatencyHistogram, type LatencySummary} from './latency.js';
 import { randomUUID } from 'node:crypto';
 import { connectAsync, type IClientOptions, type MqttClient } from 'mqtt';
 import type { Clock, SignalStore } from '../../domain/src/signals.js';
@@ -77,6 +78,7 @@ export class MqttLedGateway {
   private queued = 0;
   private rejectedFrames = 0;
   private lastError: string | null = null;
+  private readonly telemetryTiming = new LatencyHistogram();
   private dispatching = false;
   private synchronizing = false;
   private establishedBoot: string | null = null;
@@ -99,24 +101,31 @@ export class MqttLedGateway {
     client.on('error', () => { this.lastError = 'MQTT connection error'; this.invalidate(); });
     client.on('message', (topic, payload, packet) => {
       if (topic !== deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'out')) return;
-      if (this.queued >= 128) { this.lastError = 'MQTT receive queue exhausted'; this.invalidate(); void client.endAsync(true); return; }
-      this.queued++;
-      this.queue = this.queue.then(async () => {
+      const arrivedAt = this.clock.monotonicNow();
+      const rejected = (error: unknown) => {
+        this.rejectedFrames++; this.lastError = error instanceof Error ? error.message : 'Frame processing failed';
+      };
+      try {
         const frame = decodeFrame(payload, packet.retain);
+        // Freshness/lease replies and current state must not wait for durable ACK I/O.
         if ((frame.kind === 'snapshot' || frame.kind === 'ready') && this.waiter?.kind === frame.kind && this.waiter.nonce === frame.nonce) {
           this.waiter.resolve(frame); return;
         }
         if (!this.session.active() || !('bootId' in frame) || frame.bootId !== this.session.bootId) return;
-        if (frame.kind === 'telemetry' && frame.sessionId === this.session.sessionId) this.ingest(frame);
-        if (frame.kind === 'ack' && frame.sessionId === this.session.sessionId) {
-          const common = { id: frame.id, targetSignalId: this.options.signalId, bootId: frame.bootId };
-          await this.journal.acknowledge(frame.status === 'applied'
-            ? { ...common, status: 'applied', value: frame.value }
-            : { ...common, status: 'failed', reason: frame.reason });
+        if (frame.kind === 'telemetry' && frame.sessionId === this.session.sessionId && this.ingest(frame) === 'accepted') {
+          this.telemetryTiming.record(this.clock.monotonicNow() - arrivedAt);
         }
-      }).catch((error: unknown) => {
-        this.rejectedFrames++; this.lastError = error instanceof Error ? error.message : 'Frame processing failed';
-      }).finally(() => { this.queued--; });
+        if (frame.kind === 'ack' && frame.sessionId === this.session.sessionId) {
+          if (this.queued >= 128) { this.lastError = 'MQTT acknowledgement queue exhausted'; this.invalidate(); void client.endAsync(true); return; }
+          this.queued++;
+          this.queue = this.queue.then(async () => {
+            const common = { id: frame.id, targetSignalId: this.options.signalId, bootId: frame.bootId };
+            await this.journal.acknowledge(frame.status === 'applied'
+              ? { ...common, status: 'applied', value: frame.value }
+              : { ...common, status: 'failed', reason: frame.reason });
+          }).catch(rejected).finally(() => { this.queued--; });
+        }
+      } catch (error) { rejected(error); }
     });
     await client.subscribeAsync(deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'out'), { qos: 1, rap: true });
   }
@@ -178,12 +187,12 @@ export class MqttLedGateway {
     } finally { this.dispatching = false; }
   }
 
-  get diagnostics(): { rejectedFrames: number; lastError: string | null } {
-    return { rejectedFrames: this.rejectedFrames, lastError: this.lastError };
+  get diagnostics(): { rejectedFrames: number; lastError: string | null; telemetry: LatencySummary | null } {
+    return { rejectedFrames: this.rejectedFrames, lastError: this.lastError, telemetry: this.telemetryTiming.summary() };
   }
 
-  private ingest(frame: Extract<Frame, { kind: 'ready' | 'telemetry' }>): void {
-    this.signals.ingest({ signalId: this.options.signalId, value: frame.value, bootId: frame.bootId,
+  private ingest(frame: Extract<Frame, { kind: 'ready' | 'telemetry' }>) {
+    return this.signals.ingest({ signalId: this.options.signalId, value: frame.value, bootId: frame.bootId,
       sequence: frame.sequence, sourceTime: null, quality: 'Good' });
   }
 

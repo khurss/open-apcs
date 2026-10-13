@@ -5,6 +5,23 @@ export interface RuntimeGateway {
   stop(): Promise<void>;
 }
 
+/** Expose only known protocol categories; arbitrary database/transport text can contain secrets. */
+function category(error:unknown):string {
+  if (!(error instanceof Error)) return '';
+  const known:Record<string,string>={
+    'Snapshot is not fresh':'snapshot freshness',
+    'Device handshake timed out':'handshake timeout',
+    'Invalid or expired session confirmation':'session confirmation',
+    'Clock sample requires refresh':'clock refresh',
+    'No active device session':'session expired',
+    'Device boot changed; explicit gateway restart required':'device boot changed',
+    'MQTT publication timeout':'publication timeout',
+    'MQTT connection unavailable':'MQTT unavailable',
+    'Invalid command deadline or value':'command deadline',
+  };
+  return Object.hasOwn(known,error.message)?` (${known[error.message]})`:'';
+}
+
 /** Serial soft real-time worker. Restart after a fault is an explicit operation. */
 export class LedRuntime {
   private state: 'stopped' | 'running' | 'faulted' = 'stopped';
@@ -49,7 +66,7 @@ export class LedRuntime {
       this.lastSync = this.now(); this.schedule();
     } catch (error) {
       if (this.state !== 'stopped') this.state = 'faulted';
-      this.error = 'Runtime startup failed';
+      this.error = `Runtime startup failed${category(error)}`;
       await this.gateway.stop(); throw error;
     }
   }
@@ -67,9 +84,9 @@ export class LedRuntime {
       if (this.state !== 'running') return;
       await this.gateway.dispatchNext();
       this.schedule();
-    } catch {
+    } catch (error) {
       if (this.state !== 'stopped') this.state = 'faulted';
-      this.error = 'Runtime cycle failed; explicit restart required';
+      this.error = `Runtime cycle failed${category(error)}; explicit restart required`;
       try { await this.gateway.stop(); } catch { this.error = 'Runtime cleanup failed; control lease must expire'; }
     }
   }

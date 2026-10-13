@@ -11,8 +11,8 @@ const cfg = JSON.parse(readFileSync('/run/bench/config.json', 'utf8')) as { orig
 const mode = process.argv[2] ?? 'led-pulse';
 const faultMode = mode !== 'led-pulse';
 const monotonic = () => Number(process.hrtime.bigint()) / 1e9;
-if (!['led-pulse', 'lease-expiry', 'broker-loss', 'device-reset'].includes(mode) || cfg.gpio !== 18 || !/^[0-9a-f-]{36}$/.test(cfg.deviceId) || !/^DS1[A-Z0-9]+$/.test(cfg.scopeSerial) || new URL(cfg.origin).protocol !== 'https:') throw new Error('Explicit HTTPS, scope identity, GPIO18 and a supported LED mode required');
-if (['broker-loss', 'device-reset'].includes(mode) && !/^[0-9a-f]{32}$/.test(process.env.APCS_FAULT_TOKEN ?? '')) throw new Error('External faults require scripts/hil-fault.py');
+if (!['led-pulse', 'lease-expiry', 'broker-loss', 'device-reset', 'server-loss'].includes(mode) || cfg.gpio !== 18 || !/^[0-9a-f-]{36}$/.test(cfg.deviceId) || !/^DS1[A-Z0-9]+$/.test(cfg.scopeSerial) || new URL(cfg.origin).protocol !== 'https:') throw new Error('Explicit HTTPS, scope identity, GPIO18 and a supported LED mode required');
+if (['broker-loss', 'device-reset', 'server-loss'].includes(mode) && !/^[0-9a-f]{32}$/.test(process.env.APCS_FAULT_TOKEN ?? '')) throw new Error('External faults require scripts/hil-fault.py');
 const access = readFileSync(cfg.credentialsFile, 'utf8');
 const username = access.match(/^Username: (.+)$/m)?.[1], password = access.match(/^Password: (.+)$/m)?.[1];
 if (!username || !password) throw new Error('Private credentials file is incomplete');
@@ -73,12 +73,12 @@ try {
   if (outputs.length !== 1) throw new Error('Expected one boolean output on the configured LED');
   const project = await get(`/api/v1/projects/${device.projectId}`);
   if ((await get(`/api/v1/devices/${device.id}/runtime`)).state !== 'stopped') throw new Error('Bench must be stopped before this test');
-  writeFileSync(`${directory}/scope-before.json`, JSON.stringify({ at: new Date().toISOString(), identity, probe: scope.queryText(':CHAN1:PROB?'), scale: scope.queryText(':CHAN1:SCAL?'), offset: scope.queryText(':CHAN1:OFFS?'), timebase: scope.queryText(':TIM:SCAL?') }, null, 2));
+  writeFileSync(`${directory}/scope-before.json`, JSON.stringify({ at: new Date().toISOString(), identity, bandwidth: scope.queryText(':CHAN1:BWL?'), probe: scope.queryText(':CHAN1:PROB?'), scale: scope.queryText(':CHAN1:SCAL?'), offset: scope.queryText(':CHAN1:OFFS?'), timebase: scope.queryText(':TIM:SCAL?') }, null, 2));
   // No factory reset. These settings are explicit and remain for inspection after the test.
-  for (const command of [':STOP', ':CHAN1:DISP ON', ':CHAN1:PROB 10', ':CHAN1:COUP DC', ':CHAN1:INV OFF', ':CHAN1:SCAL 1', ':CHAN1:OFFS -1.6', ':CHAN2:DISP OFF', ':CHAN3:DISP OFF', ':CHAN4:DISP OFF', ':TIM:MODE MAIN', `:TIM:SCAL ${timebase}`, ':TIM:OFFS 0', ':ACQ:TYPE NORM', ':TRIG:MODE EDGE', ':TRIG:COUP DC', ':TRIG:EDGE:SOUR CHAN1', ':TRIG:EDGE:SLOP POS', ':TRIG:EDGE:LEV 1.65', ':WAV:SOUR CHAN1', ':WAV:MODE NORM', ':WAV:FORM BYTE', ':WAV:STAR 1', ':WAV:STOP 1200']) scope.write(command);
+  for (const command of [':STOP', ':CHAN1:DISP ON', ':CHAN1:PROB 10', ':CHAN1:COUP DC', ':CHAN1:BWL 20M', ':CHAN1:INV OFF', ':CHAN1:SCAL 1', ':CHAN1:OFFS -1.6', ':CHAN2:DISP OFF', ':CHAN3:DISP OFF', ':CHAN4:DISP OFF', ':TIM:MODE MAIN', `:TIM:SCAL ${timebase}`, ':TIM:OFFS 0', ':ACQ:TYPE NORM', ':TRIG:MODE EDGE', ':TRIG:COUP DC', ':TRIG:EDGE:SOUR CHAN1', ':TRIG:EDGE:SLOP POS', ':TRIG:EDGE:LEV 1.65', ':WAV:SOUR CHAN1', ':WAV:MODE NORM', ':WAV:FORM BYTE', ':WAV:STAR 1', ':WAV:STOP 1200']) scope.write(command);
   if (scope.queryText('*OPC?') !== '1' || Number(scope.queryText(':CHAN1:PROB?')) !== 10) throw new Error('Scope configuration was not confirmed');
   // This firmware times out on SYST:ERR?; verify settings directly and inspect ESR.
-  const checks: [string, string | number][] = [[':CHAN1:COUP?', 'DC'], [':CHAN1:INV?', 0], [':CHAN1:SCAL?', 1], [':CHAN1:OFFS?', -1.6], [':TIM:SCAL?', timebase], [':TIM:OFFS?', 0], [':TRIG:MODE?', 'EDGE'], [':TRIG:EDGE:SOUR?', 'CHAN1'], [':TRIG:EDGE:SLOP?', 'POS'], [':TRIG:EDGE:LEV?', 1.65], [':WAV:SOUR?', 'CHAN1'], [':WAV:MODE?', 'NORM'], [':WAV:FORM?', 'BYTE'], [':ACQ:TYPE?', 'NORM']];
+  const checks: [string, string | number][] = [[':CHAN1:BWL?', '20M'], [':CHAN1:COUP?', 'DC'], [':CHAN1:INV?', 0], [':CHAN1:SCAL?', 1], [':CHAN1:OFFS?', -1.6], [':TIM:SCAL?', timebase], [':TIM:OFFS?', 0], [':TRIG:MODE?', 'EDGE'], [':TRIG:EDGE:SOUR?', 'CHAN1'], [':TRIG:EDGE:SLOP?', 'POS'], [':TRIG:EDGE:LEV?', 1.65], [':WAV:SOUR?', 'CHAN1'], [':WAV:MODE?', 'NORM'], [':WAV:FORM?', 'BYTE'], [':ACQ:TYPE?', 'NORM']];
   for (const [query, expected] of checks) {
     const actual = scope.queryText(query);
     if ((typeof expected === 'number' ? Number(actual) : actual) !== expected) throw new Error(`Scope readback mismatch: ${query} ${actual}`);
@@ -131,6 +131,13 @@ try {
   result = faultMode ? { ...pulse, on, faultBracket, delay: mode === 'device-reset' ? null : failureDelay({ pulseSeconds: pulse.widthSeconds, sampleSeconds: pulse.sampleIntervalSeconds, on, fault: faultBracket!, maximumSeconds: 3.5 }) } : pulse;
   if (faultMode) {
     if (mode !== 'lease-expiry') await external('restore');
+    if (mode === 'server-loss') {
+      await waitFor(async () => {
+        try { return (await api.get('/api/v1/health/ready')).ok(); } catch { return false; }
+      }, 20000);
+      // Sessions are persisted, but verify access after the complete API process restart.
+      await get(`/api/v1/devices/${device.id}/runtime`);
+    }
     // A separate fresh AUTO sweep checks the recovered/stopped output. The gap is not covered.
     scope.write(':TRIG:SWE AUTO');
     if (scope.queryText(':TRIG:SWE?') !== 'AUTO') throw new Error('AUTO sweep was not confirmed');
@@ -161,7 +168,7 @@ finally {
   }
   if (fd !== undefined) closeSync(fd);
   await api.dispose();
-  writeFileSync(`${directory}/result.json`, JSON.stringify({ at: new Date().toISOString(), passed: !failure, mode, gpio: 18, commands, measurement: result, observation, error: failure instanceof Error ? failure.message : failure ? 'Unknown failure' : null }, null, 2));
+  writeFileSync(`${directory}/result.json`, JSON.stringify({ at: new Date().toISOString(), passed: !failure, mode, scopeBandwidth: '20M', gpio: 18, commands, measurement: result, observation, error: failure instanceof Error ? failure.message : failure ? 'Unknown failure' : null }, null, 2));
 }
 if (failure) throw failure;
 console.log(`Evidence saved to ${directory}`);

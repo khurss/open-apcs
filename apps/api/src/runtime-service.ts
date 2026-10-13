@@ -10,14 +10,14 @@ import { PgCommandJournal } from '../../../packages/storage/src/command-journal.
 import { LedPeer } from '../../../packages/led-protocol/src/index.js';
 import { MqttLedGateway, MqttLedSimulator } from '../../../packages/gateway/src/mqtt-led.js';
 import { parsePhysicalConfig, physicalConnection, type PhysicalConfig } from '../../../packages/gateway/src/physical-config.js';
-import { GraphTask } from '../../../packages/gateway/src/graph-task.js';
+import { GraphTask, type GraphTiming } from '../../../packages/gateway/src/graph-task.js';
 import { validateGraph } from '../../../packages/domain/src/logic.js';
 import { canonicalJson } from '../../../packages/domain/src/screen.js';
 import { LedRuntime } from '../../../packages/gateway/src/runtime.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
-export interface RuntimeStatus { deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
-export interface GraphRuntimeStatus { graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; pending: string[]; evaluation: GraphEvaluation | null; }
+export interface RuntimeStatus { telemetry?: import('../../../packages/gateway/src/latency.js').LatencySummary | null; deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
+export interface GraphRuntimeStatus { timing: GraphTiming | null; graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; pending: string[]; evaluation: GraphEvaluation | null; }
 export interface RuntimeControl {
   alarmStatus(): Promise<AlarmServiceStatus>;
   alarmAction(id: string, actor: string, action: AlarmAction): Promise<void>;
@@ -109,7 +109,7 @@ export class SimulationRuntime implements RuntimeControl {
   async status(deviceId: string): Promise<RuntimeStatus> {
     const entry = this.entries.get(deviceId); const state = entry?.runtime.status ?? { state: 'stopped' as const, error: null };
     const kind = entry?.catalog.kind ?? (await this.pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [deviceId])).rows[0]?.kind;
-    return { deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(entry?.processError ? { state: 'faulted' as const, error: entry.processError } : {}), ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
+    return { ...(entry ? {telemetry: entry.gateway.diagnostics.telemetry} : {}), deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(entry?.processError ? { state: 'faulted' as const, error: entry.processError } : {}), ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
   }
   async readSignal(signalId: string): Promise<SignalSnapshot> {
     if (!this.registered.has(signalId)) return disconnected();
@@ -197,7 +197,7 @@ export class SimulationRuntime implements RuntimeControl {
   async historyStatus(): Promise<HistoryStatus> { return this.history.status; }
   async graphStatus(id: string): Promise<GraphRuntimeStatus> {
     const graph = this.graphs.get(id); const status = graph?.task.status;
-    return { graphId: id, revision: graph?.revision ?? null, activationId: graph?.activationId ?? null, state: status?.state ?? 'stopped', error: status?.error ?? null, cycles: status?.cycles ?? 0, pending: status?.pending ?? [], evaluation: status?.last && status.lastEvaluatedAt && graph ? { at: status.lastEvaluatedAt, cycle: status.cycles, blocks: structuredClone(graph.blocks), result: status.last } : null };
+    return { timing: status?.timing ?? null, graphId: id, revision: graph?.revision ?? null, activationId: graph?.activationId ?? null, state: status?.state ?? 'stopped', error: status?.error ?? null, cycles: status?.cycles ?? 0, pending: status?.pending ?? [], evaluation: status?.last && status.lastEvaluatedAt && graph ? { at: status.lastEvaluatedAt, cycle: status.cycles, blocks: structuredClone(graph.blocks), result: status.last } : null };
   }
   private async acquire() {
     if (this.lock) return;

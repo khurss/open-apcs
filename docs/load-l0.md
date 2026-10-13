@@ -6,7 +6,7 @@ The opt-in L0 runner uses the reviewed GPIO18 ESP32 plus 15 virtual LED endpoint
 
 Each device alternates ON/OFF once per second on its own monotonic schedule. Deterministic phases are spaced 62.5 ms apart. There is no shared acknowledgement barrier between devices and no catch-up burst after a missed period. A 60-second warmup precedes the requested measurement. A full measurement lasts at least 3600 seconds and expects exactly 57,600 measured commands and archived changes. Setup, warmup and cleanup are excluded from those counts. A 60-second diagnostic run expects 960 measured commands and can only receive `smoke-passed`.
 
-The workload includes one Chromium browser displaying the physical signal in the normal Signals panel. It does not activate a graph or generate alarm transitions. Protocol probes, lease renewals, acknowledgements, archive heartbeats and UI reads add traffic beyond the 16 commanded value changes per second.
+The workload includes one Chromium browser displaying the physical signal in the normal Signals panel. The extended fixture also activates the read-only graph and alarm workload described below. Historical results in this document predate that extension. Protocol probes, lease renewals, acknowledgements, archive heartbeats and UI reads add traffic beyond the 16 commanded value changes per second.
 
 ## Execution
 
@@ -37,7 +37,7 @@ The workload requires every measured request to become Verified and its current 
 
 `hour-workload-passed` denotes the implemented command/history workload only. It is not complete L0 or M1 release acceptance. The HTTP command acceptance p95 must also remain at or below 200 ms. Reports publish nearest-rank p50/p95/p99/max for HTTP command acceptance, request-to-Verified-and-current-state observation, and generator lateness. These include client/network overhead. Firmware acknowledgement is not independent electrical feedback.
 
-The browser records physical ON/OFF text changes. The Signals panel reads batches of at most 100 signals, schedules its next refresh 250 ms after completion and aborts a refresh after three seconds. Slow responses may still coalesce intermediate values; this is reported separately from durable archive loss. Normalized MQTT-arrival-to-state latency and exact accepted-telemetry-to-paint latency are not measured by this runner. The 100 ms graph-task criterion, alarm workload and continuous electrical measurement also remain separate work.
+The browser records physical ON/OFF text changes. The Signals panel reads batches of at most 100 signals, schedules its next refresh 250 ms after completion and aborts a refresh after three seconds. Slow responses may still coalesce intermediate values; this is reported separately from durable archive loss. Normalized MQTT-arrival-to-state latency and exact accepted-telemetry-to-paint latency are not measured by this runner. The supplemental qualification below adds graph, alarm and browser rendering-opportunity measurements. Continuous electrical measurement remains separate work.
 
 Host evidence is linked through `runId` and includes source revision, dirty flag, a hash of non-Markdown authored files, image content IDs, CPU/kernel/Docker information, container placement/limits, and free filesystem space before/after. The disk difference includes other host activity and is not an isolated database-size measurement. Resource samples are collected about every 30 seconds for the development stack, physical broker/time service and workload container; no Docker socket is exposed inside the workload container.
 
@@ -49,7 +49,7 @@ The fixture shares the instrument-directory lock with the Rigol tests. A separat
 
 Complete host/container failure can prevent supervisor cleanup. Inspect the runtime and shared lock before another run. This fixture does not provide independent functional safety or permission to drive arbitrary actuators.
 
-## Measured result: 2026-10-13
+## Historical base workload result: 2026-10-13
 
 The corrected hour workload and its resource gate passed on the Linux x86-64 workstation with four CPUs and approximately 16 GiB RAM. The measured configuration was one physical GPIO18 ESP32 plus 15 virtual LEDs, one signal each, with the normal Chromium Signals monitor. This is a bounded L0 workload result, not full L0/M1 acceptance or the maximum 200-signal profile.
 
@@ -69,3 +69,34 @@ The corrected hour workload and its resource gate passed on the Linux x86-64 wor
 Both worker and independent supervisor confirmed stopped runtimes. The physical broker remained running. The measured source fingerprint stayed unchanged: `cee4566b82f11c9307721a18bf4dcf2e740498e32bf7fdb2bce3a0c84dd6b064`. Local workload evidence is `l0-2026-10-13T14-00-19.108Z`; its linked host run is `25c65514ef084cb8ac99d376b801f51b`. The deployed firmware and separate Rigol pulse evidence are recorded in the [TDD log](tdd-log.md).
 
 Earlier diagnostics and the first hour attempt failed and remain preserved. They exposed generator scheduling defects, write-heavy receipt reads, browser request fanout, and periodic-only ESP32 telemetry. Fixes received reproducing tests before the successful run. Exact telemetry-to-state/UI latency, the 100 ms graph task, alarm workload, continuous electrical monitoring and remaining physical fault scenarios are still unqualified by this workload.
+
+## Supplemental telemetry, graph and alarm qualification
+
+The extended runner adds a prepared **read-only 100-block graph** (the physical input followed by 99 NOT blocks) on a 100 ms monotonic grid. It does not acquire output ownership, so the existing independent 1 Hz command workload remains unchanged. A low-priority boolean alarm observes the same physical output; no alarm ACK is sent during measurement. The runner requires every alternating activation/reactivation/return to be persisted in order within the unacknowledged occurrence. It preserves all inspected events. This is one alarm rule, not the maximum alarm capacity.
+
+Gateway diagnostics count accepted telemetry frames and summarize the interval from the MQTT message callback, before decoding, through accepted current-state ingestion and synchronous observers. Rejected/duplicate frames and session handshakes are excluded. This captures local receive handling and synchronous observers, but not device-to-broker transit. ACK persistence has its own bounded queue and no longer blocks current-state or handshake processing. A bounded histogram uses 1 ms upper-bound buckets through 1024 ms and the observed maximum for its overflow bucket. The runner requires p95 at or below 100 ms and p99 at or below 250 ms; maxima are also reported. The gateway does not retain an unbounded sample list.
+
+Graph status exposes bounded lifetime start/execution/skip counters. The runner requires start-delay p99 at or below 50 ms and the expected scheduled-slot count over warmup plus measurement. Skipped slots count as over-budget starts: late starts over 50 ms plus skipped slots must remain within 1% of scheduled slots, so dropping slow work cannot falsely improve acceptance. At least 99% of the expected starts must execute. Maxima, execution time and every skip remain visible; this is a percentile criterion, not a guarantee that all cycles meet 50 ms. A read-only graph does not establish physical closed-loop PID performance.
+
+For the physical signal, ordered browser value changes are paired with the first archived accepted sample for each transition. Browser timestamps are captured after two animation-frame callbacks following DOM mutation, allowing a rendering opportunity. The containerized browser and server share the same host wall clock. This is an observed rendering-opportunity latency, not optical display timing; missing/reordered transitions, negative clock deltas, bad quality or p95 above 500 ms / p99 above 1 s fail qualification. Heartbeat-only refreshes do not reset the transition timestamp.
+
+The added artifacts are `qualification-targets.json`, `physical-changes.json`, `alarm-events.json`, `timing.json` and `qualification.json`. Graph identity is sent to the independent supervisor before activation; worker and supervisor both stop it. Each invocation preserves its prepared graph for inspection. The named alarm is reused only after its signal, condition and suppression configuration match. The extended workload remains a bounded 16-device engineering fixture and does not qualify 200 signals, 10,000 devices, continuous electrical acquisition, radio loss, brownouts or all M1 release requirements.
+
+On failed runs, an explicitly stopped graph may retain its historical `faulted` state; cleanup accepts that inactive state for graph paths only. Every device still must confirm `stopped`. This distinction does not turn a failed measurement into a pass.
+
+The load client polls durable command results/current state within a separate 2000 ms observation budget. A delayed stale HTTP response can require another read even after the command has already been Verified. This polling does not reissue a command or extend its 1000 ms TTL. Per-request HTTP timeouts still bound individual reads; the monotonic 1 Hz cadence independently rejects a missed period. Application API/telemetry/UI latency thresholds remain unchanged. Observation time is reported separately from the durable command timeline.
+
+
+## Extended qualification outcome: 2026-10-13
+
+**The extended one-hour gate is not passed.** The earlier base-workload result above remains historical evidence for its recorded source/profile; it does not qualify the additional graph/alarm workload or the current transport revision.
+
+The final 60-second diagnostic (`l0-2026-10-13T20-34-34.968Z`) passed 960 requested/Verified/archived changes and 60 ordered browser/alarm transitions. UI rendering-opportunity latency was p95 495 ms / p99 580 ms. The read-only graph recorded 1267 starts, p99 start delay 9 ms, maximum 14.318 ms and no skipped or over-50-ms starts. Maximum accepted gateway receive handling was 4.596 ms. This remains a smoke result.
+
+The subsequent extended attempt (`l0-2026-10-13T20-36-53.062Z`, host run `7dfd122e7afa4576b999cca1fda8773f`) failed after **2588.876 seconds**: 41,407 requests, 41,406 observed Verified commands and one physical command with an unknown outcome. There were no generator missed periods; archive error/drop counters remained zero through the last progress sample. Final complete-history, UI/alarm and resource qualification was not reached. The result's zero `historyChanges` means that final validation did not execute, not that no history was written.
+
+The durable physical command timeline is Accepted at `21:21:08.112Z`, Dispatched at `21:21:08.274Z`, and Unknown at `21:21:09.061Z`, with reason `Connection lost; physical outcome unknown`. The preserved physical runtime category is `handshake timeout`. This establishes failure to receive the required correlated session reply within the existing deadline; it does not identify whether the underlying delay originated in radio transport, firmware, broker delivery or host scheduling. No electrical trace was recorded continuously during this workload, so physical application of that final command cannot be asserted.
+
+All 16 device runtimes were inspected as stopped after independent cleanup. The 15 virtual runtimes had no runtime error; the physical runtime retained the handshake-timeout diagnostic. The transmitted command was not retried and no automatic rearming or deadline relaxation was introduced. Source fingerprint `16b6cd4e7aa2fcff90762d9d8d9ee9333335b9cc402d441fb104b34642ccfd9b` remained unchanged throughout the attempt.
+
+Next qualification work must capture correlated probe/confirmation timing across the gateway, broker and ESP32 to isolate the physical timeout, then rerun the unchanged one-hour acceptance criteria after any justified correction. Repeating runs until one happens to pass would not resolve this recorded reliability gap. See the TDD log for the earlier reproduced queue and observer defects and their independent fixes.

@@ -108,3 +108,49 @@ All three runs passed; each subsequent LOW window measured -0.24 to 0.16 V at 10
 The initial reset attempt, `2026-10-13T12-38-40.877Z`, failed waveform acceptance: starting the reset container after ON delayed injection beyond the captured window, leaving a rise without a captured fall. It is not counted as a passing run. Prestarting the helper corrected this acquisition problem; the voltage and pulse acceptance bounds were not relaxed.
 
 These are single-run engineering observations, not calibrated worst-case guarantees. The simulated fast-reboot regression separately proves that a changed boot cannot receive a replacement lease without an explicit gateway restart, and that a previously accepted command is cancelled. The slower physical reboot usually faults through a handshake timeout; it does not independently exercise the fast-reboot branch.
+
+## Complete API container crash and restoration
+
+`server-loss` extends the dedicated GPIO18 fixture with an abrupt `SIGKILL` of the explicitly selected `open-apcs-dev` / `api` container. The host pins its inspected container ID, rejects another Compose service or an already stopped/paused target, and restarts the same container after capture. Restoration is attempted even if the kill CLI fails after taking effect or the measurement worker fails. The measurement container still has no Docker socket. This interrupts the development API and all of its virtual runtimes; it is an explicit bench operation, never ordinary CI.
+
+```sh
+APCS_BENCH_API=open-apcs-dev-api-1 python3 scripts/hil-fault.py server-loss
+```
+
+Supply the same scope/private/artifact variables documented above. Following restart, the fixture waits for authenticated API readiness, takes the separate LOW window, verifies stopped/faulted authority, and independently disarms. This tests loss of all API-container processes, not a full machine power loss or a Wi-Fi radio interruption. It does not restore previously active graph/device control automatically.
+
+Physical run `2026-10-13T18-38-09.049Z` passed: mean HIGH 3.268 V, pulse 3.18 s, conservative fault-to-LOW interval 1.776–2.689 s. Both worker and supervisor confirmed stopped control after restoration. The fresh subsequent LOW window remains bounded by the same sample spacing and acquisition gap described above.
+
+### Reliability regression series, 2026-10-13
+
+After the first complete Docker regression gate for this increment, all four fault modes passed again on the same GPIO18/Rigol bench. Every worker and independent supervisor confirmed stopped authority. The physical broker and API were restored.
+
+| Artifact directory (UTC) | Mode | Pulse | Conservative fault-to-LOW interval | Subsequent LOW window / range |
+| --- | --- | --- | --- | --- |
+| `2026-10-13T18-56-46.642Z` | Lease expiry | 3.06 s | 2.329–2.570 s | 11.99 s / -0.20–0.16 V |
+| `2026-10-13T18-57-27.402Z` | Broker pause/restoration | 3.17 s | 2.272–2.680 s | 11.99 s / -0.20–0.16 V |
+| `2026-10-13T18-58-11.494Z` | USB reset | 0.66 s | Not inferred | 11.99 s / -0.20–0.12 V |
+| `2026-10-13T18-58-52.098Z` | Complete API container crash | 3.18 s | 1.865–2.690 s | 11.99 s / -0.24–0.12 V |
+
+These remain single-run observations with the acquisition limitations above, not worst-case timing guarantees.
+
+## Explicit bandwidth for logic-level timing captures
+
+The later repeat `2026-10-13T19-44-19.663Z` **failed** the voltage-range gate: one of 1200 samples, at the rising edge, was 3.72 V; the minimum was -0.28 V. The trace is preserved. This observation does not establish whether the edge excursion comes from the circuit, probing or acquisition, and is not retroactively accepted.
+
+The fixture now fixes CH1 bandwidth to **20 MHz**, verifies `:CHAN1:BWL?`, records the previous bandwidth and stamps `scopeBandwidth: "20M"` in every result. The original voltage and delay bounds are unchanged. This defines a reproducible **band-limited logic-level/timing profile**, consistent with the existing 10 ms display sampling and seconds-long lease checks. It does not qualify full-bandwidth edge integrity or prove absence of sub-sample glitches; the earlier edge excursion remains an open physical measurement observation. A passed 20 MHz capture must not be substituted for a passed unrestricted-bandwidth capture.
+
+The manufacturer's [DS1000Z programming guide, channel bandwidth command](https://int.rigol.com/Public/Uploads/uploadfile/files/ftp/DS/%E6%89%8B%E5%86%8C/DS1000Z/EN/DS1000Z_ProgrammingGuide_EN.pdf) documents `20M` and `OFF`, including attenuation of high-frequency components. No scope firmware, GPIO drive setting, signal decoder threshold or device lease was changed.
+
+### Recorded 20 MHz profile, after receive-path isolation
+
+All four modes passed with the transport change and the explicit bandwidth readback. These results qualify only the stated logic-level/timing measurement profile. They do not close the preceding edge-integrity observation.
+
+| Artifact directory (UTC) | Mode | Pulse | Conservative fault-to-LOW interval | Subsequent LOW window / range |
+| --- | --- | --- | --- | --- |
+| `2026-10-13T19-49-00.621Z` | Lease expiry | 3.12 s | 2.334–2.627 s | 11.99 s / -0.28–0.16 V |
+| `2026-10-13T19-49-41.110Z` | Broker pause/restoration | 3.06 s | 2.137–2.570 s | 11.99 s / -0.28–0.16 V |
+| `2026-10-13T19-50-25.404Z` | USB reset | 0.70 s | Not inferred | 11.99 s / -0.28–0.16 V |
+| `2026-10-13T19-51-08.454Z` | Complete API container crash | 3.24 s | 1.941–2.750 s | 11.99 s / -0.28–0.24 V |
+
+Both cleanup layers confirmed stopped device control after every run; the broker and API were restored. No automatic ON was observed in the recorded recovery windows.

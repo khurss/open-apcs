@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { connectAsync, type MqttClient } from 'mqtt';
 import { Pool } from 'pg';
 import { SignalStore, type Clock } from '../../packages/domain/src/signals.js';
@@ -56,6 +56,43 @@ async function waitFor(check: () => Promise<boolean> | boolean) {
 }
 
 describe('LED gateway with real PostgreSQL and Mosquitto', () => {
+  it('records accepted telemetry arrival-to-state delay without counting duplicates', async () => {
+    let monotonic = 0;
+    gateway = new MqttLedGateway(options, signals, journal, {...clock, monotonicNow: () => monotonic}, () => ({projectRevision: 1, interlockReason: null, ownerId: 'operator', maxTtlMs: 3000}));
+    await start();
+    const unsubscribe = signals.subscribe(() => { monotonic += 25; });
+    raw = await connectAsync(options.url, {protocolVersion: 5, reconnectPeriod: 0});
+    const topic = deviceTopic(options.siteId, options.deviceId, 'out');
+    const frame = JSON.stringify(simulator.peer.telemetry());
+    await raw.publishAsync(topic, frame, {qos: 1});
+    await waitFor(() => gateway.diagnostics.telemetry?.count === 1);
+    expect(gateway.diagnostics.telemetry).toEqual({count: 1, p50: 25, p95: 25, p99: 25, max: 25});
+    const snapshot = gateway.diagnostics;
+    snapshot.telemetry!.count = 999;
+    expect(gateway.diagnostics.telemetry!.count).toBe(1);
+    await raw.publishAsync(topic, frame, {qos: 1});
+    // A fresh frame behind the duplicate proves the receive queue drained in order.
+    await raw.publishAsync(topic, JSON.stringify(simulator.peer.telemetry()), {qos: 1});
+    await waitFor(() => gateway.diagnostics.telemetry!.count === 2);
+    expect(gateway.diagnostics.telemetry!.count).toBe(2);
+    unsubscribe();
+  });
+
+  it('keeps fresh telemetry and handshake replies independent of a stalled acknowledgement journal', async () => {
+    await start(); let entered=false; let release!:()=>void;
+    const barrier=new Promise<void>(r=>{release=r;});
+    const acknowledge=journal.acknowledge.bind(journal);
+    vi.spyOn(journal,'acknowledge').mockImplementationOnce(async frame=>{entered=true;await barrier;return acknowledge(frame);});
+    const input=request(); await journal.request(input,gateway.context(input)); await gateway.dispatchNext();
+    await waitFor(()=>entered);
+    try {
+      await expect(gateway.synchronize()).resolves.toBeUndefined();
+      expect(signals.get('led')).toMatchObject({value:true,quality:'Good'});
+      expect((await journal.get(input.id)).state).toBe('Dispatched');
+    } finally {release();}
+    await waitFor(async ()=>(await journal.get(input.id)).state==='Verified');
+  });
+
   it('keeps the catalog device identity separate from its MQTT address', async () => {
     const addressed = { ...options, protocolDeviceId: 'wire-led' };
     gateway = new MqttLedGateway(addressed, signals, journal, clock, () => ({ projectRevision: 1, interlockReason: null, ownerId: 'operator', maxTtlMs: 3000 }));

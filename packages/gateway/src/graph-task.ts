@@ -1,3 +1,4 @@
+import {LatencyHistogram, type LatencySummary} from './latency.js';
 import { LogicEngine, validateGraph, outputType, type LogicType, type LogicGraph, type LogicResult, type ScriptEvaluator } from '../../domain/src/logic.js';
 import type { SignalSnapshot } from '../../domain/src/signals.js';
 import type { CommandSnapshot } from '../../domain/src/commands.js';
@@ -8,11 +9,15 @@ export interface GraphIo {
   command(id: string): Promise<CommandSnapshot>;
   revoke(reason: string): Promise<void>;
 }
-export interface GraphTaskStatus { state: 'stopped' | 'running' | 'paused' | 'faulted'; cycles: number; error: string | null; pending: string[]; last: LogicResult | null; lastEvaluatedAt: string | null; }
+export interface GraphTiming { startDelay: LatencySummary | null; lateStarts: number; periodMs: number; starts: number; skipped: number; maxStartDelayMs: number; maxExecutionMs: number; }
+export interface GraphTaskStatus { timing: GraphTiming; state: 'stopped' | 'running' | 'paused' | 'faulted'; cycles: number; error: string | null; pending: string[]; last: LogicResult | null; lastEvaluatedAt: string | null; }
 export class GraphTask {
   private readonly engine: LogicEngine;
   private readonly periodMs: number;
   private readonly ids: string[];
+  private due = 0;
+  private readonly startDelays = new LatencyHistogram();
+  private readonly timing: GraphTiming;
   private readonly types = new Map<string, LogicType>();
   private readonly boots = new Map<string, string>();
   private readonly pending = new Map<string, string>();
@@ -34,12 +39,14 @@ export class GraphTask {
     const scripted = safe.nodes.some((node) => node.kind === 'script');
     if (scripted && !io.evaluate) throw new Error('Script evaluator is unavailable');
     this.periodMs = scripted ? Math.max(1000, periodMs) : periodMs;
+    this.timing = {startDelay: null, lateStarts: 0, periodMs: this.periodMs, starts: 0, skipped: 0, maxStartDelayMs: 0, maxExecutionMs: 0};
     this.ids = [...new Set(safe.nodes.flatMap((node) => node.signalId ? [node.signalId] : []))].sort();
     for (const node of safe.nodes) if (node.signalId) this.types.set(node.signalId, outputType(node.kind));
   }
   async start(): Promise<void> {
     if (this.finished || this.state === 'faulted') throw new Error('Create a new task after a stop or fault');
     if (this.state === 'running' || this.starting || this.pausing) throw new Error('Graph task is already running or changing state');
+    this.due = this.now();
     this.starting = true; this.state = 'running';
     const previous = this.inFlight;
     this.inFlight = previous.then(async () => { if (this.active()) await this.cycle(); });
@@ -58,7 +65,7 @@ export class GraphTask {
     clearTimeout(this.timer); await this.inFlight;
     await this.revoke('Graph stopped');
   }
-  get status(): GraphTaskStatus { return { state: this.state, cycles: this.cycles, error: this.error, pending: [...this.pending.values()], last: structuredClone(this.last), lastEvaluatedAt: this.lastEvaluatedAt }; }
+  get status(): GraphTaskStatus { return { timing: {...this.timing, startDelay: this.startDelays.summary()}, state: this.state, cycles: this.cycles, error: this.error, pending: [...this.pending.values()], last: structuredClone(this.last), lastEvaluatedAt: this.lastEvaluatedAt }; }
   private active() { return this.state === 'running' && !this.finished; }
   private async revoke(reason: string) {
     if (this.revoked) return; this.revoked = true;
@@ -66,18 +73,33 @@ export class GraphTask {
     catch { this.error = `${this.error ?? reason}; revocation failed`; }
   }
   private async cycle(): Promise<void> {
+    const started = this.now();
+    this.timing.starts++;
+    const delay = Math.max(0, started - this.due);
+    this.startDelays.record(delay);
+    if (delay > 50) this.timing.lateStarts++;
+    this.timing.maxStartDelayMs = Math.max(this.timing.maxStartDelayMs, started - this.due);
     let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         this.calculate(),
         new Promise<never>((_resolve, reject) => { deadline = setTimeout(() => reject(new Error('Graph cycle exceeded its 2000 ms budget')), 2000); }),
       ]);
-      if (this.active()) this.timer = setTimeout(() => { this.inFlight = this.cycle(); }, this.periodMs);
+      if (this.active()) {
+        const completed = this.now();
+        this.due += this.periodMs;
+        // Skip elapsed slots without overlapping work or dispatching catch-up bursts.
+        if (this.due <= completed) {
+          const missed = Math.floor((completed - this.due) / this.periodMs) + 1;
+          this.timing.skipped += missed; this.due += missed * this.periodMs;
+        }
+        this.timer = setTimeout(() => { this.inFlight = this.cycle(); }, Math.max(1, Math.ceil(this.due - this.now())));
+      }
     } catch (error) {
       this.state = 'faulted'; this.finished = true;
       this.error = error instanceof Error ? error.message : 'Graph cycle failed'; clearTimeout(this.timer);
       await this.revoke(this.error);
-    } finally { clearTimeout(deadline); }
+    } finally { clearTimeout(deadline); this.timing.maxExecutionMs = Math.max(this.timing.maxExecutionMs, this.now() - started); }
   }
   private async calculate(): Promise<void> {
       const snapshots = await this.io.read(this.ids);

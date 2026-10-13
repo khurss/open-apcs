@@ -1,3 +1,4 @@
+import { statefulGraph } from '../fixtures/stateful-graph.js';
 import { expect, test } from '@playwright/test';
 test('edits, saves, simulates and prepares a graph, then persists an HMI with undo and redo', async ({ page }) => {
   test.setTimeout(90000);
@@ -245,4 +246,35 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByRole('button', { name: 'Alarms', exact: true }).click();
   await expect(numericAlarm).toContainText('ActiveAcknowledged');
   await expect(numericAlarm).toContainText('Input unavailable');
+  await page.getByRole('button', { name: 'Logic', exact: true }).click();
+  await page.getByLabel('Scheme name', { exact: true }).fill('Count and filter');
+  await page.getByRole('button', { name: 'Create graph', exact: true }).click();
+  await page.getByLabel('Block type', { exact: true }).selectOption('counter', { timeout: 5000 });
+  await page.getByRole('button', { name: 'Add block', exact: true }).click();
+  await page.getByLabel('Counter limit', { exact: true }).fill('4');
+  await page.getByLabel('Block type', { exact: true }).selectOption('filter');
+  await page.getByRole('button', { name: 'Add block', exact: true }).click();
+  await page.getByLabel('Time constant (ms)', { exact: true }).fill('750');
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  const stateful = statefulGraph(numeric.nodes[1]!.signalId!);
+  await page.getByRole('textbox', { name: 'JSON document', exact: true }).fill(JSON.stringify(stateful));
+  await page.getByRole('button', { name: 'Apply JSON', exact: true }).click();
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Run simulation', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Simulation result' })).toContainText('ON');
+  await expect(page.locator('.logic-block').filter({ has: page.getByRole('button', { name: 'Select Count', exact: true }) }).locator('.block-value')).toHaveText('1');
+  await page.getByRole('button', { name: 'Select Smoothed count', exact: true }).click();
+  await expect(page.getByLabel('Time constant (ms)', { exact: true })).toHaveValue('750');
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/stateful-editor.png', fullPage: true });
+  await page.setViewportSize({ width: 360, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+  await page.screenshot({ path: 'test-results/stateful-editor-phone.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Prepare revision', exact: true }).click();
+  await page.getByLabel('Activation reason', { exact: true }).fill('Reviewed counter and filter');
+  await page.getByRole('button', { name: 'Activate revision 2', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Graph runtime' })).toContainText('running · r2');
+
 });

@@ -1,15 +1,15 @@
-export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis';
-export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
+export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter';
+export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
 export interface ScriptEvaluation { source: string; language: 'javascript' | 'typescript'; inputs: { a: boolean; b: boolean }; nowMs: number; }
 export type ScriptEvaluator = (request: ScriptEvaluation) => Promise<boolean>;
 export interface LogicEdge { id: string; source: string; target: string; port: string; }
 export interface LogicGraph { schemaVersion: 1; nodes: LogicNode[]; edges: LogicEdge[]; }
 export interface LogicValue { value: boolean | number | null; quality: 'Good' | 'Bad'; reason: string | null; }
 export interface LogicResult { nodes: Record<string, LogicValue>; outputs: Record<string, LogicValue>; }
-export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'] };
+export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'] };
 export type LogicType = 'boolean' | 'number';
-const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide']);
-const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis']);
+const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide', 'filter', 'counter']);
+const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis', 'filter']);
 export const outputType = (kind: BlockKind): LogicType => numericOutputs.has(kind) ? 'number' : 'boolean';
 export const portType = (kind: BlockKind, _port: string): LogicType => numericInputs.has(kind) ? 'number' : 'boolean';
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -27,7 +27,7 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
   if (graph.schemaVersion !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 256 || graph.edges.length > 1024) throw new Error('Invalid graph version or size');
   const nodes = new Map<string, LogicNode>(); const writers = new Set<string>(); const bindings = new Map<string, LogicType>();
   for (const value of graph.nodes) {
-    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high'], 'node');
+    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount'], 'node');
     if (!identifier(n.id) || nodes.has(n.id) || typeof n.kind !== 'string' || !kinds.includes(n.kind) || !title(n.label) || !coordinate(n.x) || !coordinate(n.y)) throw new Error('Invalid or duplicate node');
     const kind = n.kind as BlockKind;
     if (kind === 'input' || kind === 'analog' || kind === 'output') {
@@ -40,6 +40,10 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
     else if ('value' in n) throw new Error('Unexpected constant value');
     if (kind === 'hysteresis') { if (!finite(n.low) || !finite(n.high) || n.low >= n.high) throw new Error('Invalid hysteresis band'); }
     else if ('low' in n || 'high' in n) throw new Error('Unexpected hysteresis fields');
+    if (kind === 'filter') { if (!Number.isSafeInteger(n.timeConstantMs) || (n.timeConstantMs as number) < 1 || (n.timeConstantMs as number) > 86400000) throw new Error('Invalid filter time constant'); }
+    else if ('timeConstantMs' in n) throw new Error('Unexpected filter time constant');
+    if (kind === 'counter') { if (!Number.isSafeInteger(n.maxCount) || (n.maxCount as number) < 1) throw new Error('Invalid counter limit'); }
+    else if ('maxCount' in n) throw new Error('Unexpected counter limit');
     if (timers.has(kind)) { if (!Number.isSafeInteger(n.delayMs) || (n.delayMs as number) < 0 || (n.delayMs as number) > 86400000) throw new Error('Invalid timer delay'); }
     else if ('delayMs' in n) throw new Error('Unexpected timer delay');
     if (kind === 'script') {
@@ -77,8 +81,8 @@ function order(graph: LogicGraph): LogicNode[] {
   if (result.length !== graph.nodes.length) throw new Error('Graph contains a cycle');
   return result;
 }
-interface State { out: boolean; previous: boolean; candidate: boolean; since: number | null; }
-const fresh = (): State => ({ out: false, previous: false, candidate: false, since: null });
+interface State { out: boolean; previous: boolean; candidate: boolean; since: number | null; numeric: number; initialized: boolean; sampleAt: number; }
+const fresh = (): State => ({ out: false, previous: false, candidate: false, since: null, numeric: 0, initialized: false, sampleAt: 0 });
 const good = (value: boolean | number): LogicValue => ({ value, quality: 'Good', reason: null });
 const bad = (reason: string): LogicValue => ({ value: null, quality: 'Bad', reason });
 export class LogicEngine {
@@ -137,6 +141,24 @@ export class LogicEngine {
         }
         else if (n.kind === 'greater' || n.kind === 'less') result = good(n.kind === 'greater' ? number('a') > number('b') : number('a') < number('b'));
         else if (n.kind === 'hysteresis') { if (number('in') >= n.high!) state.out = true; else if (number('in') <= n.low!) state.out = false; result = good(state.out); }
+        else if (n.kind === 'filter') {
+          const value = number('in');
+          if (!state.initialized) state.numeric = value;
+          else {
+            const alpha = -Math.expm1(-(now - state.sampleAt) / n.timeConstantMs!);
+            // A convex combination avoids overflowing the subtraction of opposite-sign extremes.
+            state.numeric = (1 - alpha) * state.numeric + alpha * value;
+          }
+          state.initialized = true; state.sampleAt = now;
+          result = finite(state.numeric) ? good(state.numeric) : bad('Filter result is not finite');
+          if (result.quality === 'Bad') this.states.set(n.id, fresh());
+        }
+        else if (n.kind === 'counter') {
+          const value = read('in');
+          if (read('reset')) state.numeric = 0;
+          else if (state.initialized && value && !state.previous && state.numeric < n.maxCount!) state.numeric++;
+          state.previous = value; state.initialized = true; result = good(state.numeric);
+        }
         else if (n.kind === 'not') result = good(!read('in'));
         else if (n.kind === 'and') result = good(read('a') && read('b'));
         else if (n.kind === 'or') result = good(read('a') || read('b'));

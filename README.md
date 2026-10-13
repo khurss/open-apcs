@@ -33,7 +33,7 @@ All repository documentation, source comments, UI text, and commit messages must
 
 Publication target: [khurss/open-apcs](https://github.com/khurss/open-apcs). Completed implementation phases must be documented, checked in Docker, committed, and pushed. See [contributor instructions](AGENTS.md). The open-source license remains an explicit open decision; no license has been selected yet.
 
-Numeric constants, arithmetic, comparisons and hysteresis are available in Logic with typed wiring and simulation traces. Existing boolean LED outputs can be controlled; the Virtual thermal process supplies a live numeric sensor and heater for closed-loop testing. Physical numeric drivers remain pending. See [numeric logic](docs/numeric-logic.md) and [virtual process](docs/virtual-process.md).
+Numeric constants, arithmetic, comparisons, hysteresis, elapsed-time filters and bounded edge counters are available in Logic with typed wiring and simulation traces. Existing boolean LED outputs can be controlled; the Virtual thermal process supplies a live numeric sensor and heater for closed-loop testing. Physical numeric drivers remain pending. See [numeric logic](docs/numeric-logic.md) and [virtual process](docs/virtual-process.md).
 
 JS/TS boolean blocks are edited in Logic and run by a separate bounded Docker service. See [script execution and current limits](docs/script-runtime.md).
 

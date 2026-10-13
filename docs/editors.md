@@ -29,6 +29,8 @@ The engine copies its input graph, uses a deterministic topological order, and e
 | Add / Subtract / Multiply / Divide | Numeric `a`, `b`; produce a finite numeric result |
 | Greater than / Less than | Numeric `a`, `b`; strict comparison, boolean output |
 | Hysteresis | Numeric `in`; boolean state, ON at/above `high`, OFF at/below `low`, hold inside |
+| Low-pass filter | Numeric `in`; elapsed-time smoothing with `timeConstantMs`, initializes on first valid sample |
+| Rising-edge counter | Boolean `in`, `reset`; numeric count of observed rising edges, saturates at `maxCount` |
 | NOT | `in` |
 | AND / OR / XOR | `a`, `b`; all input qualities must be Good |
 | TON | `in`; output becomes true after the input remains true for the delay |
@@ -96,3 +98,5 @@ Both graph and HMI revisions can be compared with another prepared revision or t
 `POST /api/v1/{graphs|screens}/:id/restore` takes `{ "revision": 2, "reason": "Restore reviewed behavior" }` with the saved draft's `If-Match` header. The server locks the draft, verifies ownership/checksum/schema/current signal bindings, copies the prepared name/document to a new monotonically numbered draft, and writes the restore audit event in the same transaction. Audit failure rolls back the draft. Concurrent requests cannot silently overwrite the winning revision.
 
 Restoration never modifies an immutable prepared snapshot, activates a graph, changes its running generation, sends an equipment command, or restores live timer state. The restored draft must be separately prepared and explicitly activated to change running logic. An unprepared draft being replaced is not automatically archived: prepare any valid work that must remain recoverable before restoration. General draft autosave history and whole-project rollback remain separate future work.
+
+Filter/counter parameters, initialization, reset, invalid-input behavior and sampling limitations are specified in [numeric logic](numeric-logic.md#stateful-numeric-blocks). Their state is not retained across activation or restart.

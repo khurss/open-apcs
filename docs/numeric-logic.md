@@ -1,6 +1,6 @@
 # Numeric logic engineering profile
 
-This partial M2 increment adds typed numeric ports, finite constants, four arithmetic operations, strict greater/less comparisons, and hysteresis to the existing graph editor, pure simulation engine and headless task. It does not complete PID, filters, counters, formulas with arbitrary numeric scripts, schedules, physical numeric device drivers or numeric actuators.
+This partial M2 increment adds typed numeric ports, finite constants, four arithmetic operations, strict greater/less comparisons, hysteresis, a low-pass filter and a bounded rising-edge counter to the existing graph editor, pure simulation engine and headless task. It does not complete PID, retentive/hardware counters, arbitrary filters, formulas with arbitrary numeric scripts, schedules, physical numeric device drivers or numeric actuators.
 
 ## Use through the web
 
@@ -21,3 +21,13 @@ The catalog permits boolean input/output signals and float64 inputs; numeric out
 Values are finite float64 numbers. Arithmetic overflow and any division by zero produce Bad with a reason; they do not saturate or silently convert. Comparisons are strict, so equality is false for both greater and less. Hysteresis is inclusive at its thresholds, holds inside its band, starts OFF, and resets OFF on invalid input or new task creation. This engineering default is not a universal process-safe state.
 
 The API rejects wrong catalog types, cross-project bindings, numeric outputs and unsupported integer catalog types. The kernel rejects graph type conflicts and nonfinite constants. Docker tests cover arithmetic results, boundaries, invalid values, overflow, hysteresis state/reset, task revocation, preflight across multiple outputs, database upgrade, numeric API simulation, MQTT command verification and rejection without disturbing the active revision. Chromium exercises numeric properties, typed wiring rejection, simulation traces, controlled activation and the phone layout. Physical analog inputs and hardware acceptance remain untested.
+
+## Stateful numeric blocks
+
+`filter` takes numeric `in` and requires an integer `timeConstantMs` from 1 to 86,400,000. Its first valid sample initializes the result directly. Later samples use `alpha = 1 - exp(-elapsedMs / timeConstantMs)` and the convex combination `(1 - alpha) * previous + alpha * current`. The current sampled input applies to this update; this is a sampled smoothing rule, not a reconstruction of unobserved signal changes. Equal timestamps keep the previous result. A long interval approaches the current input without replaying intermediate ticks. The implementation uses `expm1` and avoids subtracting opposite-sign extreme inputs. Nonfinite results are Bad.
+
+`counter` takes boolean `in` and `reset`, returns a number, and requires an integer `maxCount` from 1 to 9,007,199,254,740,991. It counts observed OFF-to-ON transitions, starts at zero and uses its first valid input only to establish the previous level. Reset takes priority and keeps tracking the input level, so releasing reset while input is ON does not invent an edge. The count holds at its configured limit instead of wrapping. Pulses between graph evaluations can be missed; this is not a hardware pulse counter.
+
+Both blocks propagate invalid input as Bad and clear their internal state. The next valid filter sample initializes its value; the next valid counter sample establishes its level with a zero count. A new engine, graph activation or revision switch also starts fresh. No state is retained across restart. Reset cannot bypass invalid counter input. Downstream boolean outputs retain the common whole-output preflight, ownership and journal rules.
+
+Both blocks are available in the web block selector, Properties, JSON editor and simulation trace. A test graph delays a rising edge, counts it, filters the count, compares it with 0.5 and commands a virtual LED. Docker tests verify the virtual-time trace, immutable saved revision and actual MQTT acknowledgement.

@@ -1,3 +1,4 @@
+import { statefulGraph } from '../fixtures/stateful-graph.js';
 import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
 import { ScriptClient } from '../../packages/script-runtime/src/client.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -343,4 +344,24 @@ it('creates typed numeric alarms and rejects incompatible bindings and unauthent
   expect((await app.inject({ method: 'POST', url, headers: { cookie: headers.cookie! }, payload })).statusCode).toBe(403);
   expect((await app.inject({ method: 'POST', url, headers, payload: { ...payload, definition: { ...payload.definition, condition: { ...payload.definition.condition, deadband: -1 } } } })).statusCode).toBe(422);
   expect((await pool.query('SELECT definition FROM apcs_alarms WHERE id=$1', [created.json().id])).rows[0].definition).toEqual(payload.definition);
+});
+
+
+it('persists, simulates and activates a counter/filter graph through the common MQTT output path', async () => {
+  await app.close();
+  const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const id = (await create()).json().id; const document = statefulGraph(signalId);
+  const saved = await save(id, document); expect(saved.statusCode, saved.body).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  const simulated = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [0, 500, 1000, 1500, 2000].map((atMs) => ({ atMs, inputs: {} })) } });
+  expect(simulated.statusCode, simulated.body).toBe(200);
+  expect(simulated.json().steps.map((step: { nodes: Record<string, { value: unknown }> }) => step.nodes.count!.value)).toEqual([0, 0, 1, 1, 1]);
+  expect(simulated.json().steps.map((step: { outputs: Record<string, { value: unknown }> }) => step.outputs[signalId]!.value)).toEqual([false, false, false, true, true]);
+  expect((await pool.query('SELECT count(*) FROM apcs_commands')).rows[0].count).toBe('0');
+  const device = (await pool.query('SELECT device_id FROM apcs_signals WHERE id=$1', [signalId])).rows[0].device_id;
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device}/runtime`, headers, payload: { action: 'start', reason: 'Stateful numeric fixture' } })).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed edge counting and smoothing' } })).statusCode).toBe(200);
+  await expect.poll(async () => (await runtime.readSignal(signalId)).value, { timeout: 5000 }).toBe(true);
+  await expect.poll(async () => (await pool.query("SELECT snapshot->>'state' AS state FROM apcs_commands WHERE target_signal_id=$1 ORDER BY created_at DESC LIMIT 1", [signalId])).rows[0]?.state).toBe('Verified');
 });

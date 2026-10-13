@@ -2,7 +2,7 @@ import { fork } from 'node:child_process';
 import { readFileSync, unlinkSync } from 'node:fs';
 import { request } from '@playwright/test';
 import { supervise } from '../../packages/bench/src/supervise.js';
-const child = fork(new URL('./rigol-led.ts', import.meta.url), ['led-pulse'], { execArgv: ['--import', '/workspace/apps/api/node_modules/tsx/dist/loader.mjs'], stdio: ['ignore','inherit','inherit','ipc'] });
+const child = fork(new URL('./rigol-led.ts', import.meta.url), [process.env.APCS_HIL_MODE ?? 'led-pulse'], { execArgv: ['--import', '/workspace/apps/api/node_modules/tsx/dist/loader.mjs'], stdio: ['ignore','inherit','inherit','ipc'] });
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => child.kill('SIGKILL'));
 await supervise(child, async (armed, locked) => {
   try {

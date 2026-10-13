@@ -21,8 +21,9 @@ export function decodeWaveform(preamble: string, block: Buffer): Sample[] {
     return { seconds: (i - p.xReference) * p.xIncrement + p.xOrigin, volts: (raw - p.yOrigin - p.yReference) * p.yIncrement };
   });
 }
-/** Deliberately narrow fixture: one 3.3 V pulse, 0.7–2.5 s, with 0.1 s of low on both sides. */
-export function assessPulse(samples: Sample[]) {
+/** One 3.3 V pulse; defaults require 0.7–2.5 s with 0.1 s of low on both sides. */
+export function assessPulse(samples: Sample[], bounds = { minimumSeconds: 0.7, maximumSeconds: 2.5, lowSeconds: 0.1 }) {
+  if (![bounds.minimumSeconds, bounds.maximumSeconds, bounds.lowSeconds].every(Number.isFinite) || bounds.minimumSeconds <= 0 || bounds.maximumSeconds < bounds.minimumSeconds || bounds.lowSeconds <= 0) throw new Error('Invalid pulse bounds');
   if (samples.length < 3) throw new Error('Insufficient waveform evidence');
   for (let i = 0; i < samples.length; i++) {
     const p = samples[i]!;
@@ -36,7 +37,7 @@ export function assessPulse(samples: Sample[]) {
   if (rising.length !== 1 || falling.length !== 1 || rising[0]! >= falling[0]!) throw new Error('Expected exactly one complete pulse');
   const r = rising[0]!, f = falling[0]!;
   const start = samples[r]!.seconds, end = samples[f]!.seconds, width = end - start;
-  if (width < 0.7 || width > 2.5 || start - samples[0]!.seconds < 0.1 || samples.at(-1)!.seconds - end < 0.1) throw new Error('Pulse duration or evidence window outside bounds');
+  if (width < bounds.minimumSeconds || width > bounds.maximumSeconds || start - samples[0]!.seconds < bounds.lowSeconds || samples.at(-1)!.seconds - end < bounds.lowSeconds) throw new Error('Pulse duration or evidence window outside bounds');
   // Exclude one sample at each transition; do not count a short spike as a valid plateau.
   const high = samples.slice(r + 1, f - 1);
   const low = [...samples.slice(0, r - 1), ...samples.slice(f + 1)];

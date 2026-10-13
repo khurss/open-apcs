@@ -68,16 +68,24 @@ describe('LED gateway with real PostgreSQL and Mosquitto', () => {
     expect(simulator.peer.read()).toBe(true);
   });
 
-  it('rejects a command accepted for the previous device boot', async () => {
+  it('requires explicit restart after a device boot change and cancels old commands', async () => {
     await start(); const input = request();
     await journal.request(input, gateway.context(input));
     await simulator.stop();
     const origin = performance.now();
     simulator = new MqttLedSimulator(options, new LedPeer(() => performance.now() - origin, randomUUID()));
-    await simulator.start(); await gateway.synchronize();
-    expect(await gateway.dispatchNext()).toBe(false);
-    expect((await journal.get(input.id)).state).toBe('Rejected');
+    await simulator.start();
+    await expect(gateway.synchronize()).rejects.toThrow(/boot.*restart/i);
+    await expect(gateway.synchronize()).rejects.toThrow(/boot.*restart/i);
+    expect(gateway.context(request()).quality).toBe('Disconnected');
+    expect(simulator.peer.telemetry().sessionId).toBeNull();
+    await waitFor(async () => (await journal.get(input.id)).state === 'Cancelled');
     expect(simulator.peer.read()).toBe(false);
+    await gateway.stop(); await gateway.start(); await gateway.synchronize();
+    expect(simulator.peer.read()).toBe(false);
+    const fresh = request(); await journal.request(fresh, gateway.context(fresh));
+    await gateway.dispatchNext();
+    await waitFor(async () => (await journal.get(fresh.id)).state === 'Verified');
   });
 
   it('requires a fresh session after gateway restart and never replays an old request', async () => {

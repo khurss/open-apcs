@@ -79,6 +79,7 @@ export class MqttLedGateway {
   private lastError: string | null = null;
   private dispatching = false;
   private synchronizing = false;
+  private establishedBoot: string | null = null;
 
   constructor(private readonly options: LedConnection, private readonly signals: SignalStore,
     private readonly journal: PgCommandJournal, private readonly clock: Clock,
@@ -90,6 +91,7 @@ export class MqttLedGateway {
   async start(): Promise<void> {
     if (this.client) throw new Error('Gateway already started');
     await this.loss;
+    this.establishedBoot = null;
     this.session = new GatewaySession(() => this.clock.monotonicNow(), randomUUID());
     const client = await connectAsync(this.options.url, clientOptions(this.options));
     this.client = client;
@@ -127,9 +129,14 @@ export class MqttLedGateway {
       await this.journal.recoverExpired();
       const nonce = randomUUID();
       const snapshot = await this.exchange(this.session.probe(nonce), 'snapshot', nonce);
+      if (snapshot.kind !== 'snapshot') throw new Error('Invalid snapshot');
+      if (this.establishedBoot !== null && snapshot.bootId !== this.establishedBoot) {
+        throw new Error('Device boot changed; explicit gateway restart required');
+      }
       const ready = await this.exchange(this.session.snapshot(snapshot), 'ready', nonce);
       this.session.ready(ready);
       if (ready.kind !== 'ready') throw new Error('Invalid session reply');
+      this.establishedBoot = ready.bootId;
       this.signals.beginSession(this.options.deviceId, ready.bootId);
       this.ingest(ready);
     } catch (error) {

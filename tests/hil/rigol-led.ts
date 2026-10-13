@@ -1,13 +1,18 @@
-import { openSync, closeSync, fstatSync, readSync, writeSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { openSync, closeSync, fstatSync, readSync, writeSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { request } from '@playwright/test';
 import { Scpi } from '../../packages/bench/src/scpi.js';
+import { assessFaultPulse, assessLow, failureDelay } from '../../packages/bench/src/fault-evidence.js';
 import { decodeWaveform, assessPulse } from '../../packages/bench/src/rigol.js';
 
 // Explicit, private LED-only bench config. This entry point is never included in make test.
 const cfg = JSON.parse(readFileSync('/run/bench/config.json', 'utf8')) as { origin: string; deviceId: string; scopeSerial: string; gpio: number; credentialsFile: string };
-if (process.argv[2] !== 'led-pulse' || cfg.gpio !== 18 || !/^[0-9a-f-]{36}$/.test(cfg.deviceId) || !/^DS1[A-Z0-9]+$/.test(cfg.scopeSerial) || new URL(cfg.origin).protocol !== 'https:') throw new Error('Explicit HTTPS, scope identity, GPIO18 and led-pulse mode required');
+const mode = process.argv[2] ?? 'led-pulse';
+const faultMode = mode !== 'led-pulse';
+const monotonic = () => Number(process.hrtime.bigint()) / 1e9;
+if (!['led-pulse', 'lease-expiry', 'broker-loss', 'device-reset'].includes(mode) || cfg.gpio !== 18 || !/^[0-9a-f-]{36}$/.test(cfg.deviceId) || !/^DS1[A-Z0-9]+$/.test(cfg.scopeSerial) || new URL(cfg.origin).protocol !== 'https:') throw new Error('Explicit HTTPS, scope identity, GPIO18 and a supported LED mode required');
+if (['broker-loss', 'device-reset'].includes(mode) && !/^[0-9a-f]{32}$/.test(process.env.APCS_FAULT_TOKEN ?? '')) throw new Error('External faults require scripts/hil-fault.py');
 const access = readFileSync(cfg.credentialsFile, 'utf8');
 const username = access.match(/^Username: (.+)$/m)?.[1], password = access.match(/^Password: (.+)$/m)?.[1];
 if (!username || !password) throw new Error('Private credentials file is incomplete');
@@ -25,6 +30,23 @@ let mayBeArmed = false;
 let csrf = '';
 let failure: unknown;
 let result: unknown;
+let observation: unknown;
+let faultBracket: [number, number] | undefined;
+const timebase = faultMode ? 1 : 0.5;
+async function external(action: 'inject' | 'restore') {
+  const token = process.env.APCS_FAULT_TOKEN;
+  if (!token || !/^[0-9a-f]{32}$/.test(token)) throw new Error('External faults require the host orchestrator');
+  const prefix = `/artifacts/fault-${token}-${action}`;
+  writeFileSync(prefix + '.tmp', JSON.stringify({ mode, action }), { flag: 'wx' });
+  renameSync(prefix + '.tmp', prefix + '.request');
+  await waitFor(() => {
+    try {
+      const reply = JSON.parse(readFileSync(prefix + '.ack', 'utf8'));
+      if (reply.ok !== true) throw new Error('Host fault action failed');
+      return true;
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+  }, 20000);
+}
 const api = await request.newContext({ baseURL: cfg.origin, extraHTTPHeaders: { origin: cfg.origin }, timeout: 5000 });
 const commands: unknown[] = [];
 async function get(path: string) { const r = await api.get(path); if (!r.ok()) throw new Error(`API GET ${path} returned ${r.status()}`); return r.json(); }
@@ -53,10 +75,10 @@ try {
   if ((await get(`/api/v1/devices/${device.id}/runtime`)).state !== 'stopped') throw new Error('Bench must be stopped before this test');
   writeFileSync(`${directory}/scope-before.json`, JSON.stringify({ at: new Date().toISOString(), identity, probe: scope.queryText(':CHAN1:PROB?'), scale: scope.queryText(':CHAN1:SCAL?'), offset: scope.queryText(':CHAN1:OFFS?'), timebase: scope.queryText(':TIM:SCAL?') }, null, 2));
   // No factory reset. These settings are explicit and remain for inspection after the test.
-  for (const command of [':STOP', ':CHAN1:DISP ON', ':CHAN1:PROB 10', ':CHAN1:COUP DC', ':CHAN1:INV OFF', ':CHAN1:SCAL 1', ':CHAN1:OFFS -1.6', ':CHAN2:DISP OFF', ':CHAN3:DISP OFF', ':CHAN4:DISP OFF', ':TIM:MODE MAIN', ':TIM:SCAL 0.5', ':TIM:OFFS 0', ':ACQ:TYPE NORM', ':TRIG:MODE EDGE', ':TRIG:COUP DC', ':TRIG:EDGE:SOUR CHAN1', ':TRIG:EDGE:SLOP POS', ':TRIG:EDGE:LEV 1.65', ':WAV:SOUR CHAN1', ':WAV:MODE NORM', ':WAV:FORM BYTE', ':WAV:STAR 1', ':WAV:STOP 1200']) scope.write(command);
+  for (const command of [':STOP', ':CHAN1:DISP ON', ':CHAN1:PROB 10', ':CHAN1:COUP DC', ':CHAN1:INV OFF', ':CHAN1:SCAL 1', ':CHAN1:OFFS -1.6', ':CHAN2:DISP OFF', ':CHAN3:DISP OFF', ':CHAN4:DISP OFF', ':TIM:MODE MAIN', `:TIM:SCAL ${timebase}`, ':TIM:OFFS 0', ':ACQ:TYPE NORM', ':TRIG:MODE EDGE', ':TRIG:COUP DC', ':TRIG:EDGE:SOUR CHAN1', ':TRIG:EDGE:SLOP POS', ':TRIG:EDGE:LEV 1.65', ':WAV:SOUR CHAN1', ':WAV:MODE NORM', ':WAV:FORM BYTE', ':WAV:STAR 1', ':WAV:STOP 1200']) scope.write(command);
   if (scope.queryText('*OPC?') !== '1' || Number(scope.queryText(':CHAN1:PROB?')) !== 10) throw new Error('Scope configuration was not confirmed');
   // This firmware times out on SYST:ERR?; verify settings directly and inspect ESR.
-  const checks: [string, string | number][] = [[':CHAN1:COUP?', 'DC'], [':CHAN1:INV?', 0], [':CHAN1:SCAL?', 1], [':CHAN1:OFFS?', -1.6], [':TIM:SCAL?', 0.5], [':TIM:OFFS?', 0], [':TRIG:MODE?', 'EDGE'], [':TRIG:EDGE:SOUR?', 'CHAN1'], [':TRIG:EDGE:SLOP?', 'POS'], [':TRIG:EDGE:LEV?', 1.65], [':WAV:SOUR?', 'CHAN1'], [':WAV:MODE?', 'NORM'], [':WAV:FORM?', 'BYTE'], [':ACQ:TYPE?', 'NORM']];
+  const checks: [string, string | number][] = [[':CHAN1:COUP?', 'DC'], [':CHAN1:INV?', 0], [':CHAN1:SCAL?', 1], [':CHAN1:OFFS?', -1.6], [':TIM:SCAL?', timebase], [':TIM:OFFS?', 0], [':TRIG:MODE?', 'EDGE'], [':TRIG:EDGE:SOUR?', 'CHAN1'], [':TRIG:EDGE:SLOP?', 'POS'], [':TRIG:EDGE:LEV?', 1.65], [':WAV:SOUR?', 'CHAN1'], [':WAV:MODE?', 'NORM'], [':WAV:FORM?', 'BYTE'], [':ACQ:TYPE?', 'NORM']];
   for (const [query, expected] of checks) {
     const actual = scope.queryText(query);
     if ((typeof expected === 'number' ? Number(actual) : actual) !== expected) throw new Error(`Scope readback mismatch: ${query} ${actual}`);
@@ -69,24 +91,35 @@ try {
   if (armed.state !== 'running') throw new Error('Device did not arm');
   async function command(value: boolean) {
     const sentAt = new Date().toISOString();
+    const start = monotonic();
     const accepted = await post('/api/v1/commands', { targetSignalId: outputs[0].id, value, ttlMs: 3000, expectedProjectRevision: project.revision, reason: 'Rigol GPIO18 pulse measurement' }, { 'idempotency-key': randomUUID() });
     await waitFor(async () => {
       const c = await get(`/api/v1/commands/${accepted.id}`);
       if (['Rejected','Failed','Expired','Uncertain','Cancelled'].includes(c.state)) throw new Error(`Command ended ${c.state}`);
       return c.state === 'Verified';
     }, 4000);
-    commands.push({ id: accepted.id, value, sentAt, verifiedAt: new Date().toISOString() });
+    const bracket: [number, number] = [start, monotonic()];
+    commands.push({ id: accepted.id, value, sentAt, verifiedAt: new Date().toISOString(), bracket });
+    return bracket;
   }
   await command(false);
   scope.write(':SING');
   await waitFor(() => scope.queryText(':TRIG:STAT?') === 'WAIT');
   // Allow the low pretrigger window to fill before commanding the rising edge.
-  await sleep(3500);
+  await sleep(faultMode ? 6500 : 3500);
   if (scope.queryText(':TRIG:STAT?') !== 'WAIT') throw new Error('Unexpected trigger before ON');
-  console.log('Capturing one ON/OFF pulse on CH1.');
-  await command(true);
-  await sleep(1000);
-  await command(false);
+  console.log(`Capturing ${mode} on CH1.`);
+  const on = await command(true);
+  await sleep(faultMode ? 500 : 1000);
+  if (!faultMode) await command(false);
+  else {
+    const start = monotonic();
+    if (mode === 'lease-expiry') {
+      const stopped = await post(`/api/v1/devices/${device.id}/commission`, { action: 'stop', reason: 'Measure GPIO lease expiry without an OFF command' });
+      if (stopped.state !== 'stopped') throw new Error('Disarm was not confirmed');
+    } else await external('inject');
+    faultBracket = [start, monotonic()];
+  }
   await waitFor(() => scope.queryText(':TRIG:STAT?') === 'STOP');
   const preamble = scope.queryText(':WAV:PRE?');
   const block = scope.queryBlock(':WAV:DATA?');
@@ -94,7 +127,27 @@ try {
   writeFileSync(`${directory}/waveform.bin`, block);
   const wave = decodeWaveform(preamble, block);
   writeFileSync(`${directory}/waveform.csv`, 'seconds,volts\n' + wave.map(p => `${p.seconds},${p.volts}`).join('\n') + '\n');
-  result = assessPulse(wave);
+  const pulse = faultMode ? assessFaultPulse(wave) : assessPulse(wave);
+  result = faultMode ? { ...pulse, on, faultBracket, delay: mode === 'device-reset' ? null : failureDelay({ pulseSeconds: pulse.widthSeconds, sampleSeconds: pulse.sampleIntervalSeconds, on, fault: faultBracket!, maximumSeconds: 3.5 }) } : pulse;
+  if (faultMode) {
+    if (mode !== 'lease-expiry') await external('restore');
+    // A separate fresh AUTO sweep checks the recovered/stopped output. The gap is not covered.
+    scope.write(':TRIG:SWE AUTO');
+    if (scope.queryText(':TRIG:SWE?') !== 'AUTO') throw new Error('AUTO sweep was not confirmed');
+    scope.write(':RUN');
+    await sleep(14000);
+    scope.write(':STOP');
+    await waitFor(() => scope.queryText(':TRIG:STAT?') === 'STOP');
+    const lowPreamble = scope.queryText(':WAV:PRE?');
+    const lowBlock = scope.queryBlock(':WAV:DATA?');
+    writeFileSync(`${directory}/recovery-preamble.txt`, lowPreamble + '\n');
+    writeFileSync(`${directory}/recovery-waveform.bin`, lowBlock);
+    const lowWave = decodeWaveform(lowPreamble, lowBlock);
+    writeFileSync(`${directory}/recovery-waveform.csv`, 'seconds,volts\n' + lowWave.map(p => `${p.seconds},${p.volts}`).join('\n') + '\n');
+    const runtime = await get(`/api/v1/devices/${device.id}/runtime`);
+    if (!['stopped', 'faulted'].includes(runtime.state)) throw new Error('Runtime automatically resumed');
+    observation = { low: assessLow(lowWave, 10), runtime };
+  }
   checkStatus();
   console.log(JSON.stringify(result));
 } catch (error) { failure = error; }
@@ -102,13 +155,13 @@ finally {
   if (mayBeArmed) {
     try {
       const stopped = await post(`/api/v1/devices/${cfg.deviceId}/commission`, { action: 'stop', reason: 'End automated Rigol LED check' });
-      if (stopped.state !== 'stopped' || stopped.error) throw new Error('Bench did not stop cleanly');
+      if (stopped.state !== 'stopped' || (!faultMode && stopped.error)) throw new Error('Bench did not stop cleanly');
       console.log('LED bench disarmed.');
     } catch (error) { failure ??= error; }
   }
   if (fd !== undefined) closeSync(fd);
   await api.dispose();
-  writeFileSync(`${directory}/result.json`, JSON.stringify({ at: new Date().toISOString(), passed: !failure, gpio: 18, commands, measurement: result, error: failure instanceof Error ? failure.message : failure ? 'Unknown failure' : null }, null, 2));
+  writeFileSync(`${directory}/result.json`, JSON.stringify({ at: new Date().toISOString(), passed: !failure, mode, gpio: 18, commands, measurement: result, observation, error: failure instanceof Error ? failure.message : failure ? 'Unknown failure' : null }, null, 2));
 }
 if (failure) throw failure;
 console.log(`Evidence saved to ${directory}`);

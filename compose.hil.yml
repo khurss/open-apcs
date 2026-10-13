@@ -21,6 +21,8 @@ services:
     environment:
       NODE_EXTRA_CA_CERTS: /run/bench/server-ca.crt
       HOME: /tmp
+      APCS_HIL_MODE: ${APCS_HIL_MODE:-led-pulse}
+      APCS_FAULT_TOKEN: ${APCS_FAULT_TOKEN:-}
     tmpfs: ["/tmp:rw,nosuid,size=67108864"]
     # Parent remains responsive during blocking USB reads and independently disarms.
     stop_grace_period: 25s

@@ -19,7 +19,7 @@ Baseline rules:
 
 ## 2. Container environment
 
-The target development interface provides the following commands. Unit, integration, browser E2E, networkless dependency checks, backup/restore, native firmware tests, and ESP32 cross-compilation services are implemented. Failure scenarios run in the unit/integration suites; separate contract/fault/load/HIL services remain planned. Do not treat an absent service as a completed test.
+The target development interface provides the following commands. Unit, integration, browser E2E, networkless dependency checks, backup/restore, native firmware tests, and ESP32 cross-compilation services are implemented. Failure scenarios run in the unit/integration suites. An opt-in physical Rigol fixture is available through `make hil-rigol` and the host fault orchestrator; see [setup and measured coverage](rigol-hil.md). The separate generic contract/fault/load/HIL services in the target interface below remain planned. Do not treat an absent service as a completed test.
 
 ```bash
 docker compose -f compose.test.yml run --rm unit

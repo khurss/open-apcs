@@ -20,7 +20,7 @@ watch-bg:
 watch-integration: mqtt-tls-fixture
 	docker compose -f compose.test.yml up integration-watch
 
-test: firmware-test firmware-build mqtt-tls-fixture renderer-recovery
+test: firmware-test firmware-build hil-orchestrator-test mqtt-tls-fixture renderer-recovery
 	docker compose -f compose.test.yml run --rm all
 	docker compose -f compose.test.yml run --rm offline-check
 	docker compose -f compose.test.yml run --rm backup-test
@@ -110,3 +110,8 @@ renderer-recovery:
 # Explicit physical fixture: see docs/rigol-hil.md for wiring and private variables.
 hil-rigol:
 	docker compose -f compose.hil.yml run --rm rigol-led
+
+.PHONY: hil-orchestrator-test
+# Test code uses fake Docker calls and never opens hardware or the Docker socket.
+hil-orchestrator-test:
+	docker compose -f compose.test.yml run --rm firmware-test -c 'PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /workspace/tests/hil -p "*_test.py"'

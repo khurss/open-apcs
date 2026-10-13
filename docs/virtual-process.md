@@ -4,7 +4,7 @@ The `virtual-thermal` device profile supplies a boolean heater output and a floa
 
 ## Operator workflow
 
-In Devices, register a Virtual thermal process and start its simulator. In Logic, create a graph and choose Thermostat template. The template binds the first thermal device in the selected project: temperature → hysteresis (low 23, high 24) → NOT → heater. Review the bindings when a project has several thermal devices. Save, prepare, give an activation reason and activate. Initial temperature is 20 C, so the heater turns ON. At the high threshold it turns OFF; cooling to the low threshold turns it back ON. The intermediate NOT is necessary because the hysteresis block represents the warm condition.
+In Devices, register a Virtual thermal process and start its simulator. In Logic, create a graph and choose Thermostat template. Select Template device when the project has several thermal devices. The template binds that device: temperature → hysteresis (low 23, high 24) → NOT → heater. Review the generated bindings before activation. Save, prepare, give an activation reason and activate. Initial temperature is 20 C, so the heater turns ON. At the high threshold it turns OFF; cooling to the low threshold turns it back ON. The intermediate NOT is necessary because the hysteresis block represents the warm condition.
 
 Signals displays temperature to two decimal places, its type and quality. Display rounding does not change control inputs or archived values. Input signals have no manual control; the command API also rejects attempts to command them before writing a journal entry. Screens supports a read-only Value item bound to a float64 signal; indicator lamps and buttons keep boolean bindings. Add units to the item label. A prepared screen shows the number and quality on the scene and in a readable responsive Readings panel, preserving the last number with Disconnected/Stale quality rather than showing a fabricated zero.
 
@@ -16,7 +16,9 @@ The fixed model starts at ambient 20 C. Its heated equilibrium is 40 C and its t
 
 `temperature = equilibrium + (previousTemperature - equilibrium) * exp(-elapsedMs / 20000)`
 
-This is a sampled approximation with up to one sample of heater observation delay, not a continuous model of actuator timing. Sampling is scheduled one second after the preceding publication completes; it does not overlap or catch up. An elapsed interval exceeding 2500 ms faults the process. Temperature stays within 20–40 C. Five kernel cases exercise heating, cooling, equilibrium, invalid/late time and a repeatable 120-second virtual-time closed loop. They are not a 120-second wall-clock load or HIL test.
+This is a sampled approximation with up to one sample of heater observation delay, not a continuous model of actuator timing. Heater observation/model updates are scheduled approximately every 50 ms; numeric telemetry is published one second after the preceding publication completes. Neither loop overlaps itself or catches up. Short heater pulses between publications can therefore affect the temperature. An elapsed interval exceeding 2500 ms faults the process. Temperature stays within 20–40 C. Five kernel cases exercise heating, cooling, equilibrium, invalid/late time and a repeatable 120-second virtual-time closed loop. They are not a 120-second wall-clock load or HIL test.
+
+A separate PID thermostat template supports normalized regulation and time proportioning; see [PID contracts](pid-control.md). Both templates use the explicit Template device selector.
 
 ## Transport and failure behavior
 

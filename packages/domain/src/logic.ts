@@ -1,17 +1,18 @@
-export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter';
-export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
+import { PidController, TimeProportioner, validatePidSettings, type PidSettings } from './pid.js';
+export type BlockKind = 'constant' | 'input' | 'not' | 'and' | 'or' | 'xor' | 'ton' | 'tof' | 'pulse' | 'debounce' | 'latch' | 'interlock' | 'mode' | 'output' | 'script' | 'number' | 'analog' | 'add' | 'subtract' | 'multiply' | 'divide' | 'greater' | 'less' | 'hysteresis' | 'filter' | 'counter' | 'pid' | 'pwm';
+export interface LogicNode { id: string; kind: BlockKind; label: string; x: number; y: number; signalId?: string; value?: boolean | number; low?: number; high?: number; timeConstantMs?: number; maxCount?: number; pid?: PidSettings; windowMs?: number; delayMs?: number; source?: string; language?: 'javascript' | 'typescript'; }
 export interface ScriptEvaluation { source: string; language: 'javascript' | 'typescript'; inputs: { a: boolean; b: boolean }; nowMs: number; }
 export type ScriptEvaluator = (request: ScriptEvaluation) => Promise<boolean>;
 export interface LogicEdge { id: string; source: string; target: string; port: string; }
 export interface LogicGraph { schemaVersion: 1; nodes: LogicNode[]; edges: LogicEdge[]; }
 export interface LogicValue { value: boolean | number | null; quality: 'Good' | 'Bad'; reason: string | null; }
 export interface LogicResult { nodes: Record<string, LogicValue>; outputs: Record<string, LogicValue>; }
-export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'] };
+export const ports: Record<BlockKind, string[]> = { constant: [], input: [], not: ['in'], and: ['a', 'b'], or: ['a', 'b'], xor: ['a', 'b'], ton: ['in'], tof: ['in'], pulse: ['in'], debounce: ['in'], latch: ['set', 'reset'], interlock: ['in', 'permit'], mode: ['auto', 'manual', 'isAuto', 'permit'], output: ['in'], script: ['a', 'b'], number: [], analog: [], add: ['a', 'b'], subtract: ['a', 'b'], multiply: ['a', 'b'], divide: ['a', 'b'], greater: ['a', 'b'], less: ['a', 'b'], hysteresis: ['in'], filter: ['in'], counter: ['in', 'reset'], pid: ['pv', 'setpoint', 'manual', 'auto', 'enable', 'reset'], pwm: ['in'] };
 export type LogicType = 'boolean' | 'number';
-const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide', 'filter', 'counter']);
-const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis', 'filter']);
+const numericOutputs = new Set<BlockKind>(['number', 'analog', 'add', 'subtract', 'multiply', 'divide', 'filter', 'counter', 'pid']);
+const numericInputs = new Set<BlockKind>(['add', 'subtract', 'multiply', 'divide', 'greater', 'less', 'hysteresis', 'filter', 'pwm']);
 export const outputType = (kind: BlockKind): LogicType => numericOutputs.has(kind) ? 'number' : 'boolean';
-export const portType = (kind: BlockKind, _port: string): LogicType => numericInputs.has(kind) ? 'number' : 'boolean';
+export const portType = (kind: BlockKind, port: string): LogicType => numericInputs.has(kind) || (kind === 'pid' && ['pv', 'setpoint', 'manual'].includes(port)) ? 'number' : 'boolean';
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const kinds = Object.keys(ports);
 const timers = new Set<BlockKind>(['ton', 'tof', 'pulse', 'debounce']);
@@ -27,7 +28,7 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
   if (graph.schemaVersion !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 256 || graph.edges.length > 1024) throw new Error('Invalid graph version or size');
   const nodes = new Map<string, LogicNode>(); const writers = new Set<string>(); const bindings = new Map<string, LogicType>();
   for (const value of graph.nodes) {
-    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount'], 'node');
+    const n = record(value, ['id', 'kind', 'label', 'x', 'y', 'signalId', 'value', 'delayMs', 'source', 'language', 'low', 'high', 'timeConstantMs', 'maxCount', 'pid', 'windowMs'], 'node');
     if (!identifier(n.id) || nodes.has(n.id) || typeof n.kind !== 'string' || !kinds.includes(n.kind) || !title(n.label) || !coordinate(n.x) || !coordinate(n.y)) throw new Error('Invalid or duplicate node');
     const kind = n.kind as BlockKind;
     if (kind === 'input' || kind === 'analog' || kind === 'output') {
@@ -44,6 +45,10 @@ export function validateGraph(input: unknown, complete = true): LogicGraph {
     else if ('timeConstantMs' in n) throw new Error('Unexpected filter time constant');
     if (kind === 'counter') { if (!Number.isSafeInteger(n.maxCount) || (n.maxCount as number) < 1) throw new Error('Invalid counter limit'); }
     else if ('maxCount' in n) throw new Error('Unexpected counter limit');
+    if (kind === 'pid') validatePidSettings(n.pid);
+    else if ('pid' in n) throw new Error('Unexpected PID settings');
+    if (kind === 'pwm') new TimeProportioner(n.windowMs as number);
+    else if ('windowMs' in n) throw new Error('Unexpected time-proportioning window');
     if (timers.has(kind)) { if (!Number.isSafeInteger(n.delayMs) || (n.delayMs as number) < 0 || (n.delayMs as number) > 86400000) throw new Error('Invalid timer delay'); }
     else if ('delayMs' in n) throw new Error('Unexpected timer delay');
     if (kind === 'script') {
@@ -89,6 +94,9 @@ export class LogicEngine {
   private readonly ordered: LogicNode[];
   private readonly wires = new Map<string, Map<string, string>>();
   private readonly states = new Map<string, State>();
+  private readonly pids = new Map<string, PidController>();
+  private readonly proportioners = new Map<string, TimeProportioner>();
+  private resetNode(id: string): void { this.states.set(id, fresh()); this.pids.delete(id); this.proportioners.delete(id); }
   private lastTime = 0;
   private evaluating = false;
   constructor(graph: LogicGraph) {
@@ -125,7 +133,7 @@ export class LogicEngine {
       const values = new Map([...this.wires.get(n.id)!].map(([port, id]) => [port, nodes[id]!]));
       const invalid = [...values.values()].find((v) => v.quality !== 'Good');
       let result: LogicValue;
-      if (invalid) { this.states.set(n.id, fresh()); result = bad(invalid.reason ?? 'Invalid input'); }
+      if (invalid) { this.resetNode(n.id); result = bad(invalid.reason ?? 'Invalid input'); }
       else if (n.kind === 'constant' || n.kind === 'number') result = good(n.value!);
       else if (n.kind === 'input' || n.kind === 'analog') {
         const sample = Object.hasOwn(inputs, n.signalId!) ? inputs[n.signalId!] : undefined;
@@ -158,6 +166,17 @@ export class LogicEngine {
           if (read('reset')) state.numeric = 0;
           else if (state.initialized && value && !state.previous && state.numeric < n.maxCount!) state.numeric++;
           state.previous = value; state.initialized = true; result = good(state.numeric);
+        }
+        else if (n.kind === 'pid' || n.kind === 'pwm') {
+          try {
+            if (n.kind === 'pid') {
+              let controller = this.pids.get(n.id); if (!controller) { controller = new PidController(n.pid!); this.pids.set(n.id, controller); }
+              result = good(controller.step(now, { pv: number('pv'), setpoint: number('setpoint'), manual: number('manual'), auto: read('auto'), enable: read('enable'), reset: read('reset') }));
+            } else {
+              let controller = this.proportioners.get(n.id); if (!controller) { controller = new TimeProportioner(n.windowMs!); this.proportioners.set(n.id, controller); }
+              result = good(controller.step(now, number('in')));
+            }
+          } catch (error) { this.resetNode(n.id); result = bad(error instanceof Error ? error.message : 'Controller calculation failed'); }
         }
         else if (n.kind === 'not') result = good(!read('in'));
         else if (n.kind === 'and') result = good(read('a') && read('b'));

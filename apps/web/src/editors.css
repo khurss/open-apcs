@@ -31,3 +31,5 @@
 .operator-values dd { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 0 0; }
 .operator-values dd strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .inspector-fields>p,.inspector-fields>button{grid-column:1/-1}
+
+.logic-block.multi-port{min-height:190px}

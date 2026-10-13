@@ -1,4 +1,4 @@
-/** One-second sampled engineering model: ambient 20 C, heated equilibrium 40 C, time constant 20 s. */
+/** Elapsed-time sampled engineering model: ambient 20 C, heated equilibrium 40 C, time constant 20 s. */
 export class ThermalModel {
   private last: number | null = null;
   private temperature = 20;

@@ -1,6 +1,6 @@
 # Numeric logic engineering profile
 
-This partial M2 increment adds typed numeric ports, finite constants, four arithmetic operations, strict greater/less comparisons, hysteresis, a low-pass filter and a bounded rising-edge counter to the existing graph editor, pure simulation engine and headless task. It does not complete PID, retentive/hardware counters, arbitrary filters, formulas with arbitrary numeric scripts, schedules, physical numeric device drivers or numeric actuators.
+This partial M2 increment adds typed numeric ports, finite constants, four arithmetic operations, strict greater/less comparisons, hysteresis, a low-pass filter and a bounded rising-edge counter, PID and time proportioning to the existing graph editor, pure simulation engine and headless task. It does not complete retentive/hardware counters, arbitrary filters, formulas with arbitrary numeric scripts, schedules, physical numeric device drivers or numeric actuators.
 
 ## Use through the web
 
@@ -31,3 +31,5 @@ The API rejects wrong catalog types, cross-project bindings, numeric outputs and
 Both blocks propagate invalid input as Bad and clear their internal state. The next valid filter sample initializes its value; the next valid counter sample establishes its level with a zero count. A new engine, graph activation or revision switch also starts fresh. No state is retained across restart. Reset cannot bypass invalid counter input. Downstream boolean outputs retain the common whole-output preflight, ownership and journal rules.
 
 Both blocks are available in the web block selector, Properties, JSON editor and simulation trace. A test graph delays a rising edge, counts it, filters the count, compares it with 0.5 and commands a virtual LED. Docker tests verify the virtual-time trace, immutable saved revision and actual MQTT acknowledgement.
+
+PID, mixed controller ports, normalized duty conversion, tuning boundaries and Manual/Auto semantics are specified in [PID control](pid-control.md).

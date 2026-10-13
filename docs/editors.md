@@ -30,6 +30,8 @@ The engine copies its input graph, uses a deterministic topological order, and e
 | Greater than / Less than | Numeric `a`, `b`; strict comparison, boolean output |
 | Hysteresis | Numeric `in`; boolean state, ON at/above `high`, OFF at/below `low`, hold inside |
 | Low-pass filter | Numeric `in`; elapsed-time smoothing with `timeConstantMs`, initializes on first valid sample |
+| PID controller | Numeric `pv`, `setpoint`, `manual`; boolean `auto`, `enable`, `reset`; normalized numeric output |
+| Time proportioning | Numeric `in` in [0,1]; windowed boolean output with immediate zero cancellation |
 | Rising-edge counter | Boolean `in`, `reset`; numeric count of observed rising edges, saturates at `maxCount` |
 | NOT | `in` |
 | AND / OR / XOR | `a`, `b`; all input qualities must be Good |
@@ -100,3 +102,5 @@ Both graph and HMI revisions can be compared with another prepared revision or t
 Restoration never modifies an immutable prepared snapshot, activates a graph, changes its running generation, sends an equipment command, or restores live timer state. The restored draft must be separately prepared and explicitly activated to change running logic. An unprepared draft being replaced is not automatically archived: prepare any valid work that must remain recoverable before restoration. General draft autosave history and whole-project rollback remain separate future work.
 
 Filter/counter parameters, initialization, reset, invalid-input behavior and sampling limitations are specified in [numeric logic](numeric-logic.md#stateful-numeric-blocks). Their state is not retained across activation or restart.
+
+The thermal template selector chooses the device for either Thermostat or PID thermostat. The PID properties, reset/mode behavior and sampling limits follow [PID control](pid-control.md).

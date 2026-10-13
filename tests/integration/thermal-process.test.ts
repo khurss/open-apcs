@@ -13,7 +13,7 @@ function fixture(now = () => performance.now()) {
   const signals = new SignalStore({ monotonicNow: now, wallNow: () => new Date() }); signals.register({ id: signalId, deviceId, dataType: 'float64', freshnessMs: 3000 }); signals.beginSession(deviceId, boot);
   let heating = false; const fault = vi.fn();
   const thermal = new MqttThermalProcess(options, boot, () => heating, signals, fault, now); closers.push(() => thermal.stop());
-  return { options, boot, signalId, signals, process: thermal, fault, heat: () => { heating = true; } };
+  return { options, boot, signalId, signals, process: thermal, fault, heat: (value = true) => { heating = value; } };
 }
 describe('virtual thermal telemetry through actual MQTT', () => {
   it('receives ordered finite temperature samples and marks them disconnected on stop', async () => {
@@ -55,4 +55,13 @@ it('disconnects sensor quality when the real broker transport is interrupted', a
   for (const socket of sockets) socket.destroy();
   await expect.poll(() => f.fault.mock.calls.length).toBe(1);
   expect(f.signals.get(f.signalId).quality).toBe('Disconnected');
+});
+
+
+it('integrates a heater pulse between one-second telemetry samples', async () => {
+  const f = fixture(); await f.process.start();
+  f.heat(); await new Promise((resolve) => setTimeout(resolve, 300)); f.heat(false);
+  await expect.poll(() => Number(f.signals.get(f.signalId).value), { timeout: 2500 }).toBeGreaterThan(20.1);
+  expect(f.signals.get(f.signalId).sequence).toBeLessThanOrEqual(3);
+  expect(f.fault).not.toHaveBeenCalled();
 });

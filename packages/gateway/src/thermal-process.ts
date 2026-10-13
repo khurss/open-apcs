@@ -10,6 +10,7 @@ export class MqttThermalProcess {
   private publisher: MqttClient | null = null;
   private receiver: MqttClient | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private modelTimer: ReturnType<typeof setTimeout> | undefined;
   private work: Promise<void> = Promise.resolve();
   private readonly model = new ThermalModel();
   private sequence = 0;
@@ -48,20 +49,27 @@ export class MqttThermalProcess {
       const first = new Promise<void>((resolve, reject) => { this.initial = resolve; timeout = setTimeout(() => reject(new Error('Virtual process initial sample unavailable')), 1500); });
       try { await Promise.all([first, this.send()]); } finally { clearTimeout(timeout); this.initial = null; }
       if (this.stopped) throw new Error('Virtual process stopped during startup');
-      this.schedule();
+      this.scheduleModel(); this.schedule();
     } catch (error) { await this.stop(); throw error; }
   }
   async stop(): Promise<void> {
-    this.stopped = true; clearTimeout(this.timer); this.signals.disconnect(this.options.deviceId);
+    this.stopped = true; clearTimeout(this.timer); clearTimeout(this.modelTimer); this.signals.disconnect(this.options.deviceId);
     await Promise.allSettled([this.publisher?.endAsync(true), this.receiver?.endAsync(true)]);
     await this.work;
   }
   get rejectedFrames(): number { return this.rejected; }
   private fail(reason: string): void {
     if (this.stopped) return;
-    this.stopped = true; clearTimeout(this.timer); this.signals.disconnect(this.options.deviceId);
+    this.stopped = true; clearTimeout(this.timer); clearTimeout(this.modelTimer); this.signals.disconnect(this.options.deviceId);
     void this.publisher?.endAsync(true).catch(() => {}); void this.receiver?.endAsync(true).catch(() => {});
     this.fault(reason);
+  }
+  private scheduleModel(): void {
+    if (!this.stopped) this.modelTimer = setTimeout(() => {
+      if (this.stopped) return;
+      try { this.model.step(this.now(), this.heater()); this.scheduleModel(); }
+      catch { this.fail('Virtual process sampling failed'); }
+    }, 50);
   }
   private schedule() { if (!this.stopped) this.timer = setTimeout(() => { this.work = this.tick(); }, 1000); }
   private async tick() {

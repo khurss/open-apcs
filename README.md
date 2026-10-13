@@ -33,10 +33,12 @@ All repository documentation, source comments, UI text, and commit messages must
 
 Publication target: [khurss/open-apcs](https://github.com/khurss/open-apcs). Completed implementation phases must be documented, checked in Docker, committed, and pushed. See [contributor instructions](AGENTS.md). The open-source license remains an explicit open decision; no license has been selected yet.
 
-Numeric constants, arithmetic, comparisons, hysteresis, elapsed-time filters and bounded edge counters are available in Logic with typed wiring and simulation traces. Existing boolean LED outputs can be controlled; the Virtual thermal process supplies a live numeric sensor and heater for closed-loop testing. Physical numeric drivers remain pending. See [numeric logic](docs/numeric-logic.md) and [virtual process](docs/virtual-process.md).
+Numeric constants, arithmetic, comparisons, hysteresis, elapsed-time filters, bounded edge counters, normalized PID and time proportioning are available in Logic with typed wiring and simulation traces. Existing boolean LED outputs can be controlled; the Virtual thermal process supplies a live numeric sensor and heater for closed-loop testing. Physical numeric drivers remain pending. See [numeric logic](docs/numeric-logic.md) and [virtual process](docs/virtual-process.md).
 
 JS/TS boolean blocks are edited in Logic and run by a separate bounded Docker service. See [script execution and current limits](docs/script-runtime.md).
 
 Alarm SMTP/webhook notifications run in a private background process with durable attempts, bounded retries and an audited delivery log in Alarms. Destinations are disabled by default; see [local configuration and delivery semantics](docs/notifications.md).
 
 Minute/hour history aggregates now run in a private background process with explicit quality/gap duration, protected late-data recalculation and annual cleanup. Open Signals → History → Show aggregates; see [semantics and current bounds](docs/history-aggregates.md).
+
+The PID thermal template has explicit Auto/Manual, reset, anti-windup and timing semantics; see [PID control](docs/pid-control.md). It is verified against virtual devices, with physical tuning and acceptance still pending.

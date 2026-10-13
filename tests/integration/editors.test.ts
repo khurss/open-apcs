@@ -1,3 +1,4 @@
+import { pidGraph } from '../fixtures/pid-graph.js';
 import { statefulGraph } from '../fixtures/stateful-graph.js';
 import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
 import { ScriptClient } from '../../packages/script-runtime/src/client.js';
@@ -364,4 +365,25 @@ it('persists, simulates and activates a counter/filter graph through the common 
   expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed edge counting and smoothing' } })).statusCode).toBe(200);
   await expect.poll(async () => (await runtime.readSignal(signalId)).value, { timeout: 5000 }).toBe(true);
   await expect.poll(async () => (await pool.query("SELECT snapshot->>'state' AS state FROM apcs_commands WHERE target_signal_id=$1 ORDER BY created_at DESC LIMIT 1", [signalId])).rows[0]?.state).toBe('Verified');
+});
+
+
+it('simulates PID faults and controls a virtual thermal process through a prepared revision', async () => {
+  await app.close();
+  const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` });
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const created = await app.inject({ method: 'POST', url: '/api/v1/devices', headers, payload: { projectId, name: 'PID bench', kind: 'virtual-thermal', siteId: 'pid', deviceId: 'heater' } });
+  expect(created.statusCode).toBe(201); const device = created.json();
+  const id = (await create()).json().id; const document = pidGraph(device.temperatureSignalId, device.signalId);
+  const saved = await save(id, document); expect(saved.statusCode, saved.body).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/revisions`, headers: { ...headers, 'if-match': '"2"' } })).statusCode).toBe(201);
+  const simulated = await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/simulate`, headers, payload: { steps: [[0, 24], [1000, 20], [2000, 20], [5001, 20]].map(([atMs, value]) => ({ atMs, inputs: { [device.temperatureSignalId]: value } })) } });
+  expect(simulated.statusCode, simulated.body).toBe(200);
+  expect(simulated.json().steps.map((step: { outputs: Record<string, { value: unknown }> }) => step.outputs[device.signalId]!.value)).toEqual([false, false, true, null]);
+  expect((await pool.query('SELECT count(*) FROM apcs_commands')).rows[0].count).toBe('0');
+  expect((await app.inject({ method: 'POST', url: `/api/v1/devices/${device.id}/runtime`, headers, payload: { action: 'start', reason: 'PID virtual fixture' } })).statusCode).toBe(200);
+  expect((await app.inject({ method: 'POST', url: `/api/v1/graphs/${id}/runtime`, headers, payload: { action: 'activate', revision: 2, reason: 'Reviewed PID parameters' } })).statusCode).toBe(200);
+  await expect.poll(async () => (await pool.query("SELECT count(*)::int AS n FROM apcs_commands WHERE target_signal_id=$1 AND request->>'value'='true' AND snapshot->>'state'='Verified'", [device.signalId])).rows[0].n, { timeout: 5000 }).toBeGreaterThan(0);
+  await expect.poll(async () => Number((await runtime.readSignal(device.temperatureSignalId)).value), { timeout: 5000 }).toBeGreaterThan(20);
+  await runtime.stop(device.id); await expect.poll(async () => (await runtime.graphStatus(id)).state).toBe('faulted');
 });

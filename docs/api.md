@@ -51,13 +51,15 @@ All paths use `/api/v1`.
 | `GET /signals` | Owner-scoped typed signal catalog; supports projectId and literal name query q |
 | `PATCH /devices/:id`, `PATCH /signals/:id` | Audited name changes with If-Match catalog revision; protocol identity and type remain unchanged |
 | `POST /demo` | Idempotent per-owner installation of stopped virtual equipment and prepared graphs/screens |
+| `GET /ai/status` | Authenticated optional provider/model status, without credentials |
+| `POST /projects/:id/ai/proposals` | Owner-scoped, consent-required graph/HMI proposal; validation and preview only |
 | `GET /signals/values?ids=uuid,uuid` | One bounded current-state batch for 1–100 distinct signals owned by the session user |
 | `GET /signals/:id/value` | Current state from a trusted reader, otherwise Disconnected/null |
 | `GET /audit` | Newest-first audit with bounded cursor pagination |
 | `POST /commands` | Validate input, derive actor from session, persist Accepted/Rejected outcome |
 | `GET /commands/:id` | Durable command state and transition history |
 
-Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. Bench GPIO review is matched against the private server allowlist. Device editing and profiles beyond the initial LED types are not yet implemented. Virtual startup is documented in the runtime contract.
+Project/device/signal lists default to 100 items and accept a limit of 1–100. Device creation atomically creates its boolean output and audit entry. A site/device MQTT address must be unique. Bench GPIO review is matched against the private server allowlist. Metadata name editing is available; editing protocol addresses, types and arbitrary device profiles remains future work. Virtual startup is documented in the runtime contract.
 
 Signal batches return an object keyed by normalized UUID. Malformed or duplicate IDs return 400; any missing or foreign-owned signal returns 404 for the whole batch. Each valid request makes one catalog ownership query and one private runtime request. Inactive signals return Disconnected/null. The Signals monitor refreshes sequential batches, publishes only a complete refresh, aborts after three seconds and disables controls on failure. It schedules the next refresh 250 ms after completion and cancels pending work when leaving the monitor. This polling interval is not a telemetry-to-paint latency guarantee.
 
@@ -78,3 +80,5 @@ The existing owner-authenticated graph runtime response now includes `pending` c
 ## Resource ownership
 
 Catalog and document lists are scoped to the authenticated owner before pagination. Project, device, signal, command receipt and editor reads/mutations reject inaccessible resources. Original catalog/editor routes return 404 for absent or foreign resources; graph-runtime and command-recovery routes retain their existing 403 response for a foreign owner. Mutating another owner’s project cannot create an audit event, document, signal or command. The audit list contains the current actor’s actions; anonymous failed-login events remain stored in the database. Account roles and shared-project collaboration require a future explicit permission model.
+
+Optional external authoring, private model configuration and generation bounds are described in [AI draft authoring](ai-authoring.md).

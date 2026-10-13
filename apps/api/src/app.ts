@@ -1,3 +1,5 @@
+import {registerAi} from './ai-api.js';
+import type {AiProvider} from './ai-provider.js';
 import { registerDemo } from './demo-api.js';
 import { registerCatalog } from './catalog-api.js';
 import { requireProjectOwner } from './ownership.js';
@@ -28,6 +30,7 @@ export interface ApiOptions {
   runtime?: RuntimeControl;
   scripts?: ScriptClient;
   reportsEnabled?: boolean;
+  ai?: AiProvider;
   resolveContext?: (request: CommandRequest) => CommandContext | Promise<CommandContext>;
   readSignal?: (id: string) => SignalSnapshot | Promise<SignalSnapshot>;
 }
@@ -159,6 +162,7 @@ export async function createApi(options: ApiOptions) {
   });
   registerCatalog(app, pool);
   registerDemo(app, pool);
+  registerAi(app, pool, options.ai);
   app.get<{Querystring:{ids:string}}>('/api/v1/signals/values', {schema:{querystring:object({ids:{type:'string',minLength:36,maxLength:3699,pattern:'^[0-9a-fA-F,-]+$'}})}}, async request => {
     const ids = request.query.ids.toLowerCase().split(',');
     if (ids.length > 100 || new Set(ids).size !== ids.length || ids.some(id=>!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))) throw new HttpError(400,'INVALID_SIGNAL_BATCH','Expected 1–100 distinct signal UUIDs');

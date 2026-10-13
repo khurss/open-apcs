@@ -1,3 +1,5 @@
+import {loadAiConfig} from './ai-file.js';
+import {OpenAiProvider} from './ai-provider.js';
 import { ReportProcess } from './report-process.js';
 import { AggregateProcess } from './aggregate-process.js';
 import { NotificationProcess } from './notification-process.js';
@@ -13,7 +15,8 @@ const pool = new Pool({ connectionString, max: 10, connectionTimeoutMillis: 2000
 const origin = process.env.APCS_ORIGIN ?? 'http://localhost:5173';
 const scripts = process.env.APCS_SCRIPT_URL ? new ScriptClient(process.env.APCS_SCRIPT_URL) : undefined;
 const runtime = process.env.APCS_MQTT_URL ? new RuntimeProcess({ connectionString, ...(process.env.APCS_SCRIPT_URL ? { scriptUrl: process.env.APCS_SCRIPT_URL } : {}), mqttUrl: process.env.APCS_MQTT_URL, ...(process.env.APCS_PHYSICAL_CONFIG ? { physicalConfigPath: process.env.APCS_PHYSICAL_CONFIG } : {}) }) : undefined;
-const app = await createApi({ pool, reportsEnabled: Boolean(process.env.APCS_REPORT_URL), origin, ...(scripts ? { scripts } : {}), secureCookies: origin.startsWith('https://'), ...(runtime ? { runtime } : {}) });
+const ai = process.env.APCS_AI_CONFIG ? new OpenAiProvider(await loadAiConfig(process.env.APCS_AI_CONFIG)) : undefined;
+const app = await createApi({ pool, ...(ai ? {ai} : {}), reportsEnabled: Boolean(process.env.APCS_REPORT_URL), origin, ...(scripts ? { scripts } : {}), secureCookies: origin.startsWith('https://'), ...(runtime ? { runtime } : {}) });
 runtime?.enableMonitoring();
 const notifications = process.env.APCS_NOTIFICATIONS_CONFIG ? new NotificationProcess({ connectionString, configPath: process.env.APCS_NOTIFICATIONS_CONFIG }) : undefined;
 if (!notifications) await syncNotificationRoutes(pool, []);

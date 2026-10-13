@@ -1,3 +1,4 @@
+import type {AiProvider} from '../../apps/api/src/ai-provider.js';
 import { ReportProcess } from '../../apps/api/src/report-process.js';
 import { AggregateProcess } from '../../apps/api/src/aggregate-process.js';
 import { createServer } from 'node:http';
@@ -26,7 +27,9 @@ await writeFile(physicalConfigPath, JSON.stringify({ url: 'mqtts://mqtt-tls:8883
 const simulator = new MqttLedSimulator({ url: 'mqtts://mqtt-tls:8883', siteId: 'tls-e2e', deviceId: 'led', signalId: 'fixture', credentials: { ca, username: 'e2e-device', password: 'fixture-e2e-device-password' } }, new LedPeer(() => performance.now(), randomUUID()));
 await simulator.start();
 const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath, scriptUrl: process.env.APCS_SCRIPT_URL! });
-const app = await createApi({ pool, reportsEnabled: true, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
+// No external model calls or credentials in browser acceptance.
+const ai:AiProvider={model:'fixture-model',async generate(context){return {name:'Fixture proposal',summary:'Review this local deterministic fixture before saving.',document:JSON.stringify(context.kind==='graph'?{schemaVersion:1,nodes:[{id:'ai-constant',kind:'constant',label:'AI constant',value:false,x:80,y:80}],edges:[]}:{schemaVersion:1,width:1000,height:600,items:[{id:'ai-title',kind:'label',label:'AI overview',x:40,y:40,width:700,height:100}]})};}};
+const app = await createApi({ pool, ai, reportsEnabled: true, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
 runtime.enableMonitoring();
 await mkdir(new URL('../../.cache/e2e/', import.meta.url), { recursive: true });
 await writeFile(new URL('../../.cache/e2e/schema.json', import.meta.url), JSON.stringify({ schema }), { mode: 0o600 });

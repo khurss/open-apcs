@@ -6,6 +6,7 @@ The repository separates browser interaction, authenticated application workflow
 | --- | --- |
 | `apps/web/src/features/projects` | Project routing and scoped workspace guidance |
 | `apps/web/src/features/catalog` | Revision-aware catalog metadata editing |
+| `apps/web/src/features/ai` | Explicit external-context consent and proposal preview/application |
 | `apps/web/src/features/editors` | Graph/HMI canvases, shared editor model and archive trend presentation |
 | `apps/web/src/editors.tsx` | Draft lifecycle orchestration, inspector, simulation and revision workflows |
 | `apps/web/src/main.tsx` | Authenticated shell, navigation and catalog orchestration |

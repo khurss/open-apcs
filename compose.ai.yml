@@ -1,0 +1,12 @@
+# Optional external draft authoring. Keep the configuration outside the repository.
+services:
+  api:
+    environment:
+      APCS_AI_CONFIG: /run/open-apcs-ai.json
+    volumes:
+      - type: bind
+        source: ${APCS_AI_CONFIG_FILE:?Set APCS_AI_CONFIG_FILE to a private absolute file path}
+        target: /run/open-apcs-ai.json
+        read_only: true
+        bind:
+          create_host_path: false

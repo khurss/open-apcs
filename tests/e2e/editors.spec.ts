@@ -12,6 +12,7 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByLabel('Project name', { exact: true }).fill('Editor bench');
   await page.getByRole('button', { name: 'Create project', exact: true }).click();
   await expect(page.getByText('Editor bench', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Open Editor bench', exact: true }).click();
   await page.getByRole('button', { name: 'Devices', exact: true }).click();
   await page.getByLabel('Device name', { exact: true }).fill('Editor LED');
   await page.getByLabel('Site ID', { exact: true }).fill('editor');

@@ -15,9 +15,8 @@ export function AlarmWorkspace({ projects, devices, signals, initialProject }: {
   const eligible = signals.filter((s) => devices.some((d) => d.id === s.deviceId && d.projectId === project) && (condition === 'unavailable' || s.dataType === (numeric ? 'float64' : 'boolean')));
   const active = items.find((item) => item.id === selected);
   async function refresh(abort?: AbortSignal) {
-    if (!project) return;
     const options = abort ? { signal: abort } : {};
-    const [list, status, history] = await Promise.all([api<{ items: Alarm[] }>(`/projects/${project}/alarms`, options), api<{ state: string }>('/alarms/status', options), selected ? api<{ items: Event[] }>(`/alarms/${selected}/events`, options) : Promise.resolve({ items: [] })]);
+    const [list, status, history] = await Promise.all([project ? api<{ items: Alarm[] }>(`/projects/${project}/alarms`, options) : Promise.resolve({ items: [] }), api<{ state: string }>('/alarms/status', options), selected ? api<{ items: Event[] }>(`/alarms/${selected}/events`, options) : Promise.resolve({ items: [] })]);
     if (abort?.aborted) return; setItems(list.items); setMonitor(status.state); setEvents(history.items); setOnline(true);
   }
   useEffect(() => {
@@ -50,7 +49,7 @@ export function AlarmWorkspace({ projects, devices, signals, initialProject }: {
       <label className="field">Return delay (seconds)<input type="number" min="0" max="86400" step="1" required value={returnDelay} onChange={(e) => setReturnDelay(Number(e.target.value))} /></label>
       <button className="primary" disabled={busy || !project || !eligible.length}>Create alarm</button>
     </form></section>
-    <section className="panel"><div className="panel-heading"><h2>Alarm monitor</h2><span role="status">{online ? `Monitor ${monitor}` : 'Monitor connection unavailable'}</span></div><p className="muted system-copy">Acknowledgement records inspection. It does not clear the cause or operate equipment. Start a virtual simulator to begin monitoring.</p>
+    <section className="panel"><div className="panel-heading"><h2>Alarm monitor</h2><span role="status">{online ? `Monitor ${monitor}` : 'Monitor connection unavailable'}</span></div><p className="muted system-copy">Acknowledgement records inspection. It does not clear the cause or operate equipment. Monitoring starts with the server. Equipment requires an explicit start after a runtime restart.</p>
       <div className="table-scroll"><table aria-label="Alarm states"><thead><tr><th>Alarm</th><th>Priority</th><th>State</th><th>Evaluation</th><th>Suppression</th><th>Actions</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.name}<div className="muted">{describeCondition(item.definition.condition)}</div></td><td>{item.priority}</td><td>{item.phase}</td><td>{!online || monitor !== 'running' || item.evaluationStale ? 'Not current' : item.state.available ? 'Current' : 'Input unavailable'}</td><td>{item.state.suppressedUntil ? 'Suppressed' : 'None'}</td><td><button className="secondary" onClick={() => { setSelected(item.id); setReason(''); }}>Inspect</button></td></tr>)}</tbody></table></div>
     </section>
     {active && <section className="panel"><div className="panel-heading"><h2>{active.name}</h2><span>Occurrence {active.state.occurrence}</span></div><div className="system-copy"><label className="field">Alarm action reason<input required maxLength={256} value={reason} onChange={(e) => setReason(e.target.value)} /></label><div className="inline-form">

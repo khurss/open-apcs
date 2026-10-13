@@ -21,7 +21,8 @@ process.on('message', (message: unknown) => {
   queue = queue.then(async () => {
     try {
       let result: unknown;
-      if (method === 'start' && args.length === 2 && args.every((v) => typeof v === 'string')) result = await runtime.start(args[0] as string, args[1] as string);
+      if (method === 'startMonitoring' && args.length === 0) result = await runtime.startMonitoring();
+      else if (method === 'start' && args.length === 2 && args.every((v) => typeof v === 'string')) result = await runtime.start(args[0] as string, args[1] as string);
       else if (method === 'startPhysical' && args.length === 3 && typeof args[0] === 'string' && typeof args[1] === 'string' && Number.isSafeInteger(args[2])) result = await runtime.startPhysical(args[0], args[1], args[2] as number);
       else if (method === 'activateGraph' && args.length === 4 && typeof args[0] === 'string' && Number.isSafeInteger(args[1]) && typeof args[2] === 'string' && typeof args[3] === 'string') result = await runtime.activateGraph(args[0], args[1] as number, args[2], args[3]);
       else if (method === 'stopGraph' && typeof args[0] === 'string') result = await runtime.stopGraph(args[0], typeof args[1] === 'string' ? args[1] : undefined);

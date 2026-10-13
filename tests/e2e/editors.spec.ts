@@ -5,6 +5,8 @@ test('edits, saves, simulates and prepares a graph, then persists an HMI with un
   await page.getByLabel('Username', { exact: true }).fill('operator');
   await page.getByLabel('Password', { exact: true }).fill('E2E fixture password only!');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Alarms', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Monitor running' })).toBeVisible();
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
   await page.getByLabel('Project name', { exact: true }).fill('Editor bench');
   await page.getByRole('button', { name: 'Create project', exact: true }).click();

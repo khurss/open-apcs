@@ -13,7 +13,20 @@ export class RuntimeProcess implements RuntimeControl {
   private child: ChildProcess | null = null;
   private readonly pending = new Map<string, Pending>();
   private closed = false;
+  private monitoring = false;
+  private monitorTimer: ReturnType<typeof setTimeout> | undefined;
   constructor(private readonly options: RuntimeProcessOptions) {}
+  /** Called after application migrations. Never arms a device or activates a graph. */
+  enableMonitoring(): void {
+    if (this.closed) throw new Error('Runtime client closed');
+    if (this.monitoring) return; this.monitoring = true; void this.monitor();
+  }
+  private async monitor(): Promise<void> {
+    if (!this.monitoring || this.closed) return;
+    try { await this.call('startMonitoring', []); }
+    catch { /* Status and evaluation freshness expose failure; retry only passive startup. */ }
+    finally { if (this.monitoring && !this.closed) this.monitorTimer = setTimeout(() => { void this.monitor(); }, 10000); }
+  }
   get pid(): number | undefined { return this.child?.pid; }
   alarmStatus(): Promise<AlarmServiceStatus> { return this.call('alarmStatus', []); }
   alarmAction(id: string, actor: string, action: AlarmAction): Promise<void> { return this.call('alarmAction', [id, actor, action]); }
@@ -29,6 +42,7 @@ export class RuntimeProcess implements RuntimeControl {
   context(request: CommandRequest): Promise<CommandContext> { return this.call('context', [request]); }
   async close(): Promise<void> {
     if (this.closed) return;
+    this.monitoring = false; clearTimeout(this.monitorTimer);
     const child = this.child;
     if (child) { try { await this.call('close', []); } catch {} finally { if (child.connected) child.disconnect(); child.kill('SIGTERM'); } }
     this.closed = true;
@@ -55,7 +69,7 @@ export class RuntimeProcess implements RuntimeControl {
     child.once('error', exited); child.once('exit', exited); child.once('disconnect', exited);
     return child;
   }
-  private call<T>(method: keyof RuntimeControl, args: unknown[]): Promise<T> {
+  private call<T>(method: keyof RuntimeControl | 'startMonitoring', args: unknown[]): Promise<T> {
     if (this.pending.size >= 256) return Promise.reject(new Error('Runtime request queue is full'));
     const child = this.ensure(); const id = randomUUID();
     return new Promise<T>((resolve, reject) => {

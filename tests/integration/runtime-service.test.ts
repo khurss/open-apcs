@@ -153,3 +153,54 @@ describe('catalog-driven simulation runtime', () => {
     expect((await journal.request(input, await runtime.context(input))).state).toBe('Rejected');
   });
 });
+
+async function unavailableAlarm() {
+  const id = randomUUID();
+  await pool.query('INSERT INTO apcs_alarms(id,project_id,signal_id,name,priority,definition) VALUES($1,$2,$3,$4,$5,$6)', [id, projectId, signalId, 'Device unavailable', 'high', { condition: { kind: 'quality', values: ['Disconnected'] }, activationDelayMs: 0, returnDelayMs: 0 }]);
+  return id;
+}
+it('monitors unavailable catalog signals before any device is armed and requires exclusive ownership', async () => {
+  const id = await unavailableAlarm();
+  await runtime.startMonitoring(); await runtime.startMonitoring();
+  await waitFor(async () => (await pool.query('SELECT state FROM apcs_alarms WHERE id=$1', [id])).rows[0].state.active);
+  expect(await runtime.alarmStatus()).toMatchObject({ state: 'running', rules: 1 });
+  expect((await runtime.status(deviceId)).state).toBe('stopped');
+  expect((await pool.query('SELECT count(*) FROM apcs_commands')).rows[0].count).toBe('0');
+  expect(await runtime.readSignal(signalId)).toMatchObject({ quality: 'Disconnected', value: null });
+  const competitor = new SimulationRuntime(pool, process.env.APCS_TEST_MQTT_URL!); other = competitor;
+  await expect(competitor.startMonitoring()).rejects.toThrow(/owner/i);
+  expect((await competitor.alarmStatus()).state).toBe('stopped');
+  await runtime.close(); await competitor.startMonitoring();
+  expect((await competitor.alarmStatus()).state).toBe('running');
+});
+it('stops passive monitoring when its ownership database session is terminated', async () => {
+  await unavailableAlarm(); await runtime.startMonitoring();
+  const lock = await pool.query<{ pid: number }>(`WITH key AS (SELECT hashtextextended(current_schema() || ':open-apcs-simulation-runtime', 0) AS value) SELECT pid FROM pg_locks, key WHERE locktype='advisory' AND granted AND classid::bigint=((key.value >> 32) & 4294967295) AND objid::bigint=(key.value & 4294967295)`);
+  expect(lock.rows).toHaveLength(1); await admin.query('SELECT pg_terminate_backend($1)', [lock.rows[0]!.pid]);
+  await waitFor(async () => (await runtime.alarmStatus()).state !== 'running');
+  await expect(runtime.startMonitoring()).rejects.toThrow(/ownership/i);
+});
+it('supervises passive monitoring across worker death without browser calls or restoring graph authority', async () => {
+  const id = await unavailableAlarm(); const graph = await prepared(true);
+  const client = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}` }); other = client;
+  client.enableMonitoring();
+  await waitFor(async () => (await pool.query('SELECT state FROM apcs_alarms WHERE id=$1', [id])).rows[0].state.active);
+  await client.alarmAction(id, actorId, { kind: 'acknowledge', occurrence: 1, reason: 'Inspected before arming' });
+  await client.start(deviceId, actorId); await client.activateGraph(graph, 1, actorId);
+  await waitFor(async () => (await client.readSignal(signalId)).value === true);
+  await waitFor(async () => !(await pool.query('SELECT state FROM apcs_alarms WHERE id=$1', [id])).rows[0].state.active);
+  const beforePid = client.pid!; process.kill(beforePid, 'SIGKILL');
+  const deadline = performance.now() + 18000;
+  let recovered = false;
+  // Only database observations: no IPC read is allowed to spawn the replacement worker.
+  while (performance.now() < deadline) {
+    if (client.pid && client.pid !== beforePid && (await pool.query('SELECT state FROM apcs_alarms WHERE id=$1', [id])).rows[0].state.active) { recovered = true; break; }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  expect(recovered).toBe(true);
+  expect((await client.status(deviceId)).state).toBe('stopped');
+  expect((await client.graphStatus(graph)).state).toBe('stopped');
+  expect(await client.readSignal(signalId)).toMatchObject({ quality: 'Disconnected', value: null });
+  expect((await client.context(request())).ownerId).toBe(null);
+  await client.close(); expect(() => client.enableMonitoring()).toThrow(/closed/i);
+}, 25000);

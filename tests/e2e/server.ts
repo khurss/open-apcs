@@ -26,6 +26,7 @@ const simulator = new MqttLedSimulator({ url: 'mqtts://mqtt-tls:8883', siteId: '
 await simulator.start();
 const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath, scriptUrl: process.env.APCS_SCRIPT_URL! });
 const app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
+runtime.enableMonitoring();
 await mkdir(new URL('../../.cache/e2e/', import.meta.url), { recursive: true });
 await writeFile(new URL('../../.cache/e2e/schema.json', import.meta.url), JSON.stringify({ schema }), { mode: 0o600 });
 // Isolated local recipient: reject the first delivery per project so scenarios stay independent.

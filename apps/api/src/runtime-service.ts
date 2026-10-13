@@ -54,6 +54,11 @@ export class SimulationRuntime implements RuntimeControl {
   private readonly physicalConfig: PhysicalConfig | undefined;
   constructor(private readonly pool: Pool, private readonly mqttUrl: string, physicalConfig?: PhysicalConfig, private readonly scripts?: ScriptClient) { this.physicalConfig = physicalConfig ? parsePhysicalConfig(physicalConfig) : undefined; this.alarms = new AlarmService(pool, (id) => this.registered.has(id) && !this.closed && !this.lockLost ? this.signals.get(id) : disconnected()); this.journal = new PgCommandJournal(pool); this.history = new HistoryService(pool, this.signals, () => this.registered); }
   private serial<T>(work: () => Promise<T>): Promise<T> { const result = this.operations.then(work); this.operations = result.then(() => {}, () => {}); return result; }
+  /** Start read-only monitoring under the same exclusive workspace ownership as control. */
+  startMonitoring(): Promise<void> { return this.serial(async () => {
+    if (this.closed || this.lockLost) throw new Error('Runtime is closed or lost ownership');
+    await this.acquire(); this.history.start(); this.alarms.start();
+  }); }
   start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.startDevice(deviceId, actorId); }
   startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus> { return this.startDevice(deviceId, actorId, { gpio }); }
   private startDevice(deviceId: string, actorId: string, physical?: { gpio: number }): Promise<RuntimeStatus> { return this.serial(async () => {

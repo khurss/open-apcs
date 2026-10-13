@@ -68,3 +68,11 @@ Prepared revisions and audit history are durable. Active ownership and timer sta
 ## Virtual thermal extension
 
 The runtime also supports the [virtual thermal process](virtual-process.md): one boolean heater plus a float64 sensor in the same boot session. Numeric input graph bindings execute only for this supported profile; arbitrary physical numeric drivers remain unavailable. MQTT sensor faults stop the device runtime, and dependent graphs revoke their output authority when their input quality becomes unavailable. Unknown reconciliation supports the virtual heater under the existing new-boot/Good/OFF requirements. This adds no physical acceptance or scale claim.
+
+## Passive monitoring startup
+
+After migrations, the configured API starts the private worker's alarm/history services under the existing exclusive workspace ownership lock. No device is commissioned, output session created or graph activated by this step. Alarm status is available even before a project exists; catalog signals without a running driver are Disconnected. History has no fabricated samples for unregistered signals.
+
+A bounded supervisor retries passive initialization ten seconds after each completed attempt. A dead worker can be replaced without a browser request; its control entries and graph tasks remain empty. Original command journal outcomes are preserved and uncertain commands are not replayed. A lock-session loss closes the runtime, and an internal alarm persistence fault still requires service restart. This is single-server recovery, not HA.
+
+Tests kill a worker after a graph drives an actual MQTT simulator, then observe recovery using only database reads. They verify that alarm evaluation resumes while the device, graph and command ownership remain stopped. Competing owners and termination of a passive owner's database session are also exercised.

@@ -1,3 +1,4 @@
+import { requireProjectOwner } from './ownership.js';
 import { ScriptClientError, type ScriptClient } from '../../../packages/script-runtime/src/client.js';
 import { diffDocuments } from '../../../packages/domain/src/document-diff.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -49,7 +50,7 @@ async function preparedSnapshot(client: PoolClient, id: string, revision: number
 export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: ScriptClient) {
   for (const kind of ['graph', 'screen'] as const) {
     const route = `${kind}s`;
-    async function owned(client: PoolClient, id: string, actor: string, lock = false) {
+    async function owned(client: Pool | PoolClient, id: string, actor: string, lock = false) {
       const found = await client.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id=$1 AND kind=$2 AND project_id IN (SELECT id FROM apcs_projects WHERE owner_id=$3)${lock ? ' FOR UPDATE' : ''}`, [id, kind, actor]);
       if (!found.rows[0]) throw missing(); return found.rows[0];
     }
@@ -81,26 +82,26 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
     app.post<{ Params: { id: string }; Body: { name: string } }>(`/api/v1/projects/:id/${route}`, { schema: { params, body: object({ name }) } }, async (request, reply) => {
       const document = kind === 'graph' ? { schemaVersion: 1, nodes: [], edges: [] } : { schemaVersion: 1, width: 1200, height: 800, items: [] };
       const row = await transaction(pool, async (client) => {
+        await requireProjectOwner(client, request.params.id, request.sessionUser!.id, true);
         const result = await client.query<Document>(`INSERT INTO apcs_documents (id, project_id, kind, name, document) VALUES ($1,$2,$3,$4,$5) RETURNING ${fields}`, [randomUUID(), request.params.id, kind, request.body.name, document]);
         const created = result.rows[0]!; await audit(client, request.sessionUser!.id, `${kind}.created`, created.id); return created;
       });
       return reply.code(201).header('ETag', '"1"').send(row);
     });
     app.get<{ Params: { id: string }; Querystring: { cursor?: string; limit?: string } }>(`/api/v1/projects/:id/${route}`, { schema: { params, querystring: object({ cursor: uuid, limit: { type: 'string', pattern: '^(100|[1-9][0-9]?)$' } }, []) } }, async (request) => {
+      await requireProjectOwner(pool, request.params.id, request.sessionUser!.id);
       const limit = Number(request.query.limit ?? 100);
       const result = await pool.query<Document>(`SELECT id, project_id AS "projectId", name, revision FROM apcs_documents WHERE project_id = $1 AND kind = $2 AND ($3::uuid IS NULL OR id > $3) ORDER BY id LIMIT $4`, [request.params.id, kind, request.query.cursor ?? null, limit + 1]);
       return { items: result.rows.slice(0, limit), nextCursor: result.rows.length > limit ? result.rows[limit - 1]!.id : null };
     });
     app.get<{ Params: { id: string } }>(`/api/v1/${route}/:id`, { schema: { params } }, async (request, reply) => {
-      const result = await pool.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = $2`, [request.params.id, kind]);
-      if (!result.rows[0]) throw missing();
-      return reply.header('ETag', `"${result.rows[0].revision}"`).send(result.rows[0]);
+      const row = await owned(pool, request.params.id, request.sessionUser!.id);
+      return reply.header('ETag', `"${row.revision}"`).send(row);
     });
     app.put<{ Params: { id: string }; Body: { name: string; document: unknown } }>(`/api/v1/${route}/:id`, { schema: { params, body: object({ name, document: { type: 'object' } }) } }, async (request, reply) => {
       const expected = precondition(request.headers['if-match']);
       const updated = await transaction(pool, async (client) => {
-        const existing = await client.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = $2 FOR UPDATE`, [request.params.id, kind]);
-        if (!existing.rows[0]) throw missing(); const row = existing.rows[0]; conflict(row, expected); const document = validate(kind, request.body.document, false); await bindings(client, row.projectId, kind, document);
+        const row = await owned(client, request.params.id, request.sessionUser!.id, true); conflict(row, expected); const document = validate(kind, request.body.document, false); await bindings(client, row.projectId, kind, document);
         const result = await client.query<Document>(`UPDATE apcs_documents SET name = $1, document = $2, revision = revision + 1, updated_at = clock_timestamp() WHERE id = $3 RETURNING ${fields}`, [request.body.name, document, row.id]);
         await audit(client, request.sessionUser!.id, `${kind}.updated`, row.id, { revision: result.rows[0]!.revision }); return result.rows[0]!;
       });
@@ -109,8 +110,7 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
     app.post<{ Params: { id: string } }>(`/api/v1/${route}/:id/revisions`, { schema: { params } }, async (request, reply) => {
       const expected = precondition(request.headers['if-match']);
       const result = await transaction(pool, async (client) => {
-        const existing = await client.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = $2 FOR UPDATE`, [request.params.id, kind]);
-        if (!existing.rows[0]) throw missing(); const row = existing.rows[0]; conflict(row, expected);
+        const row = await owned(client, request.params.id, request.sessionUser!.id, true); conflict(row, expected);
         const document = validate(kind, row.document, true); await bindings(client, row.projectId, kind, document);
         if (kind === 'graph' && !(document as LogicGraph).nodes.length) throw invalid('An empty graph cannot be prepared');
         if (kind === 'graph') for (const node of (document as LogicGraph).nodes.filter((node) => node.kind === 'script')) {
@@ -125,7 +125,7 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
       return reply.code(result.created ? 201 : 200).send(result.body);
     });
     app.get<{ Params: { id: string }; Querystring: { before?: string } }>(`/api/v1/${route}/:id/revisions`, { schema: { params, querystring: object({ before: { type: 'string', pattern: '^[1-9][0-9]{0,8}$' } }, []) } }, async (request) => {
-      if (!(await pool.query('SELECT id FROM apcs_documents WHERE id = $1 AND kind = $2', [request.params.id, kind])).rowCount) throw missing();
+      await owned(pool, request.params.id, request.sessionUser!.id);
       const result = await pool.query('SELECT revision, name, document, checksum, created_at AS "createdAt" FROM apcs_document_revisions WHERE document_id = $1 AND ($2::integer IS NULL OR revision < $2) ORDER BY revision DESC LIMIT 21', [request.params.id, request.query.before ?? null]);
       return { items: result.rows.slice(0, 20), nextBefore: result.rows.length > 20 ? result.rows[19].revision : null };
     });
@@ -133,7 +133,7 @@ export function registerEditors(app: FastifyInstance, pool: Pool, scripts?: Scri
   app.post<{ Params: { id: string }; Body: { startAt?: string; steps: Array<{ atMs: number; inputs: Record<string, boolean | number | null> }> } }>('/api/v1/graphs/:id/simulate', {
     schema: { params, body: object({ startAt: { type: 'string', maxLength: 32 }, steps: { type: 'array', minItems: 1, maxItems: 100, items: object({ atMs: { type: 'number', minimum: 0, maximum: 86400000 }, inputs: { type: 'object', maxProperties: 256, propertyNames: { pattern: '^[A-Za-z0-9_-]{1,128}$' }, additionalProperties: { anyOf: [{ type: 'boolean' }, { type: 'number' }, { type: 'null' }] } } }) } }, ['steps']) },
   }, async (request) => {
-    const found = await pool.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = 'graph'`, [request.params.id]); if (!found.rows[0]) throw missing();
+    const found = await pool.query<Document>(`SELECT ${fields} FROM apcs_documents WHERE id = $1 AND kind = 'graph' AND project_id IN (SELECT id FROM apcs_projects WHERE owner_id=$2)`, [request.params.id, request.sessionUser!.id]); if (!found.rows[0]) throw missing();
     const graph = validate('graph', found.rows[0].document, true) as LogicGraph;
     const scheduled = graph.nodes.some((node) => node.kind === 'schedule');
     const startAt = request.body.startAt; let epoch: number | undefined;

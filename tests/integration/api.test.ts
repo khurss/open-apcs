@@ -48,6 +48,34 @@ async function project(name = 'LED Demo') {
 }
 
 describe('local API authentication and catalog with real PostgreSQL', () => {
+  it('isolates catalog, drafts, receipts and runtime actions from a different project owner', async () => {
+    await setup(); const projectId = (await project('Private project')).json().id;
+    const deviceInput = {projectId,name:'Private LED',siteId:'private',deviceId:'led',kind:'virtual-led'};
+    const device = (await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:deviceInput})).json();
+    const graph = (await app!.inject({method:'POST',url:`/api/v1/projects/${projectId}/graphs`,headers:headers(),payload:{name:'Private logic'}})).json();
+    const screen = (await app!.inject({method:'POST',url:`/api/v1/projects/${projectId}/screens`,headers:headers(),payload:{name:'Private screen'}})).json();
+    const commandInput = {targetSignalId:device.signalId,value:true,ttlMs:1000,expectedProjectRevision:1,reason:'Owner fixture'};
+    const receipt = (await app!.inject({method:'POST',url:'/api/v1/commands',headers:{...headers(),'idempotency-key':randomUUID()},payload:commandInput})).json();
+    const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'other-owner','fixture')",[foreign]);
+    await pool.query('UPDATE apcs_sessions SET user_id=$1',[foreign]);
+    for(const kind of ['projects','devices','signals','audit']) expect((await app!.inject({url:`/api/v1/${kind}`,headers:headers()})).json().items,kind).toEqual([]);
+    const urls = [`projects/${projectId}`,`projects/${projectId}/graphs`,`projects/${projectId}/screens`,`signals/${device.signalId}/value`,`devices/${device.id}/runtime`,`commands/${receipt.id}`,`graphs/${graph.id}`,`screens/${screen.id}`,`graphs/${graph.id}/revisions`];
+    for(const url of urls) expect((await app!.inject({url:`/api/v1/${url}`,headers:headers()})).statusCode,url).toBe(404);
+    const writes = [
+      {method:'PATCH' as const,url:`/api/v1/projects/${projectId}`,payload:{name:'Hijacked'}},
+      {method:'POST' as const,url:'/api/v1/devices',payload:{...deviceInput,deviceId:'injected'}},
+      {method:'POST' as const,url:`/api/v1/projects/${projectId}/graphs`,payload:{name:'Injected'}},
+      {method:'PUT' as const,url:`/api/v1/graphs/${graph.id}`,payload:{name:'Hijacked',document:graph.document}},
+      {method:'POST' as const,url:`/api/v1/graphs/${graph.id}/revisions`,payload:{}},
+      {method:'POST' as const,url:`/api/v1/graphs/${graph.id}/simulate`,payload:{steps:[{atMs:0,inputs:{}}]}},
+      {method:'POST' as const,url:`/api/v1/devices/${device.id}/runtime`,payload:{action:'stop',reason:'Unauthorized stop'}},
+      {method:'POST' as const,url:'/api/v1/commands',payload:commandInput},
+    ];
+    for(const write of writes) expect((await app!.inject({...write,headers:{...headers(),'if-match':'"1"','idempotency-key':randomUUID()}})).statusCode,write.url).toBe(404);
+    expect((await pool.query('SELECT name,revision FROM apcs_projects WHERE id=$1',[projectId])).rows[0]).toEqual({name:'Private project',revision:1});
+    expect((await pool.query('SELECT count(*)::int AS count FROM apcs_devices WHERE project_id=$1',[projectId])).rows[0].count).toBe(1);
+    expect((await pool.query('SELECT count(*)::int AS count FROM apcs_audit WHERE actor_id=$1',[foreign])).rows[0].count).toBe(0);
+  });
   it('reads bounded owner-only signal batches through the private runtime', async () => {
     await setup(); const projectId = (await project()).json().id;
     const device = (await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:{projectId,name:'Batch LED',siteId:'batch',deviceId:'led',kind:'virtual-led'}})).json();

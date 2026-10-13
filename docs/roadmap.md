@@ -71,3 +71,19 @@ flowchart LR
 ```
 
 Priorities between M3 and M4 depend on initial measurements and available equipment. Initial physical-device flashing, networking and visible external GPIO18 LED operation are verified; the remaining hardware and load gates are pending. Publishing the initial repository does not mark an unfinished implementation phase complete.
+
+## Product usability and engineering expansion (requested 2026-10-13)
+
+This delivery sequence adds to M1–M3; it does not waive their remaining physical or scale gates. Each delivery uses reproducing tests before behavior changes, Docker-only executable checks, a complete `make test` gate, English documentation, a reviewed commit and a push to the existing GitHub repository. Existing application data and physical provisioning are preserved.
+
+| Delivery | Scope and exit criteria | Status |
+| --- | --- | --- |
+| P1 — Acceptance baseline and critical defects | Browser exploration of every existing section on desktop and mobile; maintain an acceptance matrix. Review project ownership and command boundaries. Reproduce and fix unauthorized reads/mutations and other confirmed critical defects. | Complete; see product acceptance |
+| P2 — Project workspace and working demo | Clickable project navigation with a persistent selected-project context; project-specific devices, signals, logic and screens; search and useful empty states. An idempotent, audited demo installer creates virtual equipment, prepared logic and HMI screens. A clear start/stop workflow uses virtual devices only. Extend catalog editing with validation and optimistic concurrency. | In progress |
+| P3 — Editor tools, trends and maintainability | Extract UI and API responsibilities into feature modules while preserving contracts. Add useful graph/screen editing actions, selection controls and reusable chart rendering. Provide live/history trend widgets with explicit unavailable quality. Demonstrate them in the installed demo. | Planned |
+| P4 — AI-assisted draft authoring | Configurable external API first; local providers later. Server-side credentials, bounded requests, explicit disclosure of the project context sent, schema and binding validation, preview and deliberate draft application. Generated content never publishes or activates equipment automatically. Provider-independent contract tests run offline; a real-provider check requires configured credentials. | Planned |
+| P5 — Product README and final browser acceptance | Replace the implementation diary in README with product value, accurate capabilities, real screenshots, reproducible Docker startup/demo instructions and links to detailed docs. Use descriptive headings/image text and honest SCADA/HMI/ESP32 terminology; search ranking is not guaranteed. Repeat the acceptance matrix on desktop/mobile and both themes, inspect screenshots and console/network failures, fix confirmed defects, and publish the results. | Planned |
+
+The owner selected an external AI API before local-model support and confirmed GitHub as the publication target. Core operation and existing editors remain offline-capable; AI authoring is optional. The initial provider is OpenAI; its model and private credentials are configurable. No provider key is stored in Git or exposed to the browser.
+
+Acceptance covers implemented user journeys: authentication, project creation/opening/editing, device registration/start/stop, signal inspection/manual control/history, graph construction/simulation/preparation/activation/revision changes, screen construction/operator view, alarms/acknowledgement/suppression, notification delivery inspection, CSV/PDF reports, audit, themes and responsive navigation. Hardware-only, external-service and unimplemented roadmap features receive explicit coverage labels rather than an invented pass. The defect review cannot establish the absence of every possible defect.

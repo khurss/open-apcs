@@ -1,3 +1,4 @@
+import { requireProjectOwner } from './ownership.js';
 import { registerReports } from './report-api.js';
 import { registerAggregates } from './aggregate-api.js';
 import { registerNotifications } from './notification-api.js';
@@ -117,11 +118,11 @@ export async function createApi(options: ApiOptions) {
   });
   app.get<{ Querystring: { limit?: string; cursor?: string } }>('/api/v1/projects', { schema: { querystring: pageSchema } }, async (request) => {
     const limit = Number(request.query.limit ?? 100);
-    const result = await pool.query('SELECT id, name, revision FROM apcs_projects WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2', [request.query.cursor ?? null, limit + 1]);
+    const result = await pool.query('SELECT id, name, revision FROM apcs_projects WHERE owner_id=$3 AND ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2', [request.query.cursor ?? null, limit + 1, request.sessionUser!.id]);
     return page(result.rows, limit);
   });
   app.get<{ Params: { id: string } }>('/api/v1/projects/:id', { schema: { params: idParams } }, async (request, reply) => {
-    const result = await pool.query('SELECT id, name, revision FROM apcs_projects WHERE id = $1', [request.params.id]);
+    const result = await pool.query('SELECT id, name, revision FROM apcs_projects WHERE id = $1 AND owner_id=$2', [request.params.id, request.sessionUser!.id]);
     if (!result.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Project not found');
     return reply.header('ETag', `"${result.rows[0].revision}"`).send(result.rows[0]);
   });
@@ -129,6 +130,7 @@ export async function createApi(options: ApiOptions) {
     const match = request.headers['if-match'];
     if (typeof match !== 'string' || !/^"[1-9][0-9]{0,8}"$/.test(match)) throw new HttpError(428, 'REVISION_REQUIRED', 'An If-Match revision is required');
     const updated = await transaction(pool, async (client) => {
+      await requireProjectOwner(client, request.params.id, request.sessionUser!.id, true);
       const result = await client.query(`UPDATE apcs_projects SET name = $1, revision = revision + 1 WHERE id = $2 AND revision = $3 RETURNING id, name, revision`, [request.body.name, request.params.id, Number(match.slice(1, -1))]);
       if (!result.rows[0]) throw new HttpError(412, 'REVISION_CONFLICT', 'Project revision changed or project is missing');
       await audit(client, request.sessionUser!.id, 'project.updated', request.params.id, { name: request.body.name, revision: result.rows[0].revision });
@@ -142,6 +144,7 @@ export async function createApi(options: ApiOptions) {
   }, async (request, reply) => {
     const input = request.body;
     const device = await transaction(pool, async (client) => {
+      await requireProjectOwner(client, input.projectId, request.sessionUser!.id, true);
       const id = randomUUID(); const signalId = randomUUID();
       await client.query('INSERT INTO apcs_devices (id, project_id, name, kind, site_id, protocol_device_id) VALUES ($1,$2,$3,$4,$5,$6)', [id, input.projectId, input.name, input.kind, input.siteId, input.deviceId]);
       await client.query("INSERT INTO apcs_signals (id, device_id, name, data_type, direction) VALUES ($1,$2,$3,'boolean','output')", [signalId, id, `${input.name}.${input.kind === 'virtual-thermal' ? 'heater' : 'led'}`]);
@@ -155,9 +158,12 @@ export async function createApi(options: ApiOptions) {
   for (const kind of ['devices', 'signals'] as const) {
     app.get<{ Querystring: { limit?: string; cursor?: string } }>(`/api/v1/${kind}`, { schema: { querystring: pageSchema } }, async (request) => {
       const limit = Number(request.query.limit ?? 100);
-      const fields = kind === 'devices' ? 'id, project_id AS "projectId", name, kind, site_id AS "siteId", protocol_device_id AS "deviceId"'
-        : 'id, device_id AS "deviceId", name, data_type AS "dataType", direction, freshness_ms AS "freshnessMs"';
-      const result = await pool.query(`SELECT ${fields} FROM apcs_${kind} WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2`, [request.query.cursor ?? null, limit + 1]);
+      const fields = kind === 'devices' ? 'd.id, d.project_id AS "projectId", d.name, d.kind, d.site_id AS "siteId", d.protocol_device_id AS "deviceId"'
+        : 's.id, s.device_id AS "deviceId", s.name, s.data_type AS "dataType", s.direction, s.freshness_ms AS "freshnessMs"';
+      const source = kind === 'devices' ? 'apcs_devices d JOIN apcs_projects p ON p.id=d.project_id'
+        : 'apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id';
+      const key = kind === 'devices' ? 'd.id' : 's.id';
+      const result = await pool.query(`SELECT ${fields} FROM ${source} WHERE p.owner_id=$3 AND ($1::uuid IS NULL OR ${key} > $1) ORDER BY ${key} LIMIT $2`, [request.query.cursor ?? null, limit + 1, request.sessionUser!.id]);
       return page(result.rows, limit);
     });
   }
@@ -170,14 +176,14 @@ export async function createApi(options: ApiOptions) {
     return Object.fromEntries(await Promise.all(ids.map(async id=>[id,await (options.readSignal?.(id) ?? options.runtime?.readSignal(id) ?? {value:null,quality:'Disconnected',sourceTime:null,receivedTime:null,bootId:null,sequence:null})])));
   });
   app.get<{ Params: { id: string } }>('/api/v1/signals/:id/value', { schema: { params: idParams } }, async (request) => {
-    if (!(await pool.query('SELECT id FROM apcs_signals WHERE id = $1', [request.params.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
+    if (!(await pool.query('SELECT s.id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE s.id=$1 AND p.owner_id=$2', [request.params.id, request.sessionUser!.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
     return options.readSignal?.(request.params.id) ?? options.runtime?.readSignal(request.params.id) ?? { value: null, quality: 'Disconnected', sourceTime: null, receivedTime: null, bootId: null, sequence: null };
   });
   app.get<{ Querystring: { limit?: string; cursor?: string } }>('/api/v1/audit', {
     schema: { querystring: object({ limit: { type: 'string', pattern: '^(100|[1-9][0-9]?)$' }, cursor: { type: 'string', pattern: '^[0-9]{1,18}$' } }, []) },
   }, async (request) => {
     const limit = Number(request.query.limit ?? 100);
-    const result = await pool.query('SELECT id::text, actor_id AS "actorId", action, resource_id AS "resourceId", data, at FROM apcs_audit WHERE ($1::bigint IS NULL OR id < $1) ORDER BY id DESC LIMIT $2', [request.query.cursor ?? null, limit + 1]);
+    const result = await pool.query('SELECT id::text, actor_id AS "actorId", action, resource_id AS "resourceId", data, at FROM apcs_audit WHERE actor_id=$3 AND ($1::bigint IS NULL OR id < $1) ORDER BY id DESC LIMIT $2', [request.query.cursor ?? null, limit + 1, request.sessionUser!.id]);
     return page(result.rows, limit);
   });
 
@@ -188,7 +194,7 @@ export async function createApi(options: ApiOptions) {
     const key = request.headers['idempotency-key'];
     if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(key)) throw new HttpError(400, 'IDEMPOTENCY_REQUIRED', 'A valid Idempotency-Key is required');
     const input: CommandRequest = { ...request.body, id: randomUUID(), idempotencyKey: key, actorId: request.sessionUser!.id };
-    const target = await pool.query<{ revision: number; direction: string; data_type: string }>(`SELECT p.revision,s.direction,s.data_type FROM apcs_signals s JOIN apcs_devices d ON d.id = s.device_id JOIN apcs_projects p ON p.id = d.project_id WHERE s.id = $1`, [input.targetSignalId]);
+    const target = await pool.query<{ revision: number; direction: string; data_type: string }>(`SELECT p.revision,s.direction,s.data_type FROM apcs_signals s JOIN apcs_devices d ON d.id = s.device_id JOIN apcs_projects p ON p.id = d.project_id WHERE s.id = $1 AND p.owner_id=$2`, [input.targetSignalId, request.sessionUser!.id]);
     if (!target.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Signal not found');
     if (target.rows[0].direction !== 'output' || target.rows[0].data_type !== 'boolean') throw new HttpError(422, 'NOT_AN_OUTPUT', 'Commands require a boolean output signal');
     const context = await (options.resolveContext?.(input) ?? options.runtime?.context(input) ?? { bootId: null, projectRevision: target.rows[0].revision, quality: 'Disconnected', interlockReason: 'Output has not been commissioned', ownerId: null, maxTtlMs: 3000 });
@@ -199,19 +205,20 @@ export async function createApi(options: ApiOptions) {
     }
   });
   app.get<{ Params: { id: string } }>('/api/v1/commands/:id', { schema: { params: idParams } }, async (request) => {
+    if (!(await pool.query('SELECT c.id FROM apcs_commands c JOIN apcs_signals s ON s.id::text=c.target_signal_id JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE c.id=$1 AND p.owner_id=$2', [request.params.id, request.sessionUser!.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Command not found');
     try { return await journal.get(request.params.id); }
     catch (error) { if (error instanceof Error && error.message.startsWith('Unknown command:')) throw new HttpError(404, 'NOT_FOUND', 'Command not found'); throw error; }
   });
   app.get<{ Params: { id: string } }>('/api/v1/devices/:id/runtime', { schema: { params: idParams } }, async (request) => {
-    if (!(await pool.query('SELECT id FROM apcs_devices WHERE id=$1', [request.params.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
+    if (!(await pool.query('SELECT d.id FROM apcs_devices d JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND p.owner_id=$2', [request.params.id, request.sessionUser!.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
     return options.runtime?.status(request.params.id) ?? { deviceId: request.params.id, environment: 'Simulation', state: 'stopped', error: 'Runtime service is not configured' };
   });
   app.post<{ Params: { id: string }; Body: { action: 'start' | 'stop'; reason: string } }>('/api/v1/devices/:id/runtime', {
     schema: { params: idParams, body: object({ action: { type: 'string', enum: ['start', 'stop'] }, reason: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } }) },
   }, async (request) => {
-    if (!options.runtime) throw new HttpError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
-    const found = await pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [request.params.id]);
+    const found = await pool.query<{ kind: string }>('SELECT d.kind FROM apcs_devices d JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND p.owner_id=$2', [request.params.id, request.sessionUser!.id]);
     if (!found.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
+    if (!options.runtime) throw new HttpError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
     if (!['virtual-led', 'virtual-thermal'].includes(found.rows[0].kind)) throw new HttpError(422, 'PHYSICAL_PROFILE_UNSUPPORTED', 'This runtime supports virtual devices only');
     const { action, reason } = request.body;
     try { await transaction(pool, (client) => audit(client, request.sessionUser!.id, `runtime.${action}.requested`, request.params.id, { reason })); }

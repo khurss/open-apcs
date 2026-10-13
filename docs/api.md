@@ -72,3 +72,7 @@ The web workspace, private simulation runtime, prepared graph activation, and fo
 ## Graph calculation snapshots
 
 The existing owner-authenticated graph runtime response now includes `pending` command IDs and a nullable `evaluation` (`at`, `cycle`, active `blocks`, and calculated `result`). See [graph diagnostics](graph-diagnostics.md) for bounds, freshness and the distinction between calculations and actuator feedback. This read does not activate a graph or send commands.
+
+## Resource ownership
+
+Catalog and document lists are scoped to the authenticated owner before pagination. Project, device, signal, command receipt and editor reads/mutations reject inaccessible resources. Original catalog/editor routes return 404 for absent or foreign resources; graph-runtime and command-recovery routes retain their existing 403 response for a foreign owner. Mutating another owner’s project cannot create an audit event, document, signal or command. The audit list contains the current actor’s actions; anonymous failed-login events remain stored in the database. Account roles and shared-project collaboration require a future explicit permission model.

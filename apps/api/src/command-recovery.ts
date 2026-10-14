@@ -33,7 +33,7 @@ export function registerCommandRecovery(app: FastifyInstance, pool: Pool, journa
     if (!existing.rows[0]) throw new RecoveryError(404, 'NOT_FOUND', 'Command not found');
     const target = existing.rows[0].target_signal_id; const actor = request.sessionUser!.id;
     const profile = await signal(target, actor); const physical = profile.kind === 'esp32-led';
-    if (!physical && !['virtual-led', 'virtual-thermal'].includes(profile.kind)) throw new RecoveryError(422, 'PROFILE_UNSUPPORTED', 'Recovery requires a supported LED or virtual profile');
+    if (!physical && !['virtual-led', 'virtual-thermal', 'virtual-input-bank'].includes(profile.kind)) throw new RecoveryError(422, 'PROFILE_UNSUPPORTED', 'Recovery requires a supported LED or virtual profile');
     if (physical !== (request.body.gpio !== undefined && request.body.acknowledgeLedOnly === true)) throw new RecoveryError(422, 'RECOVERY_REVIEW_REQUIRED', 'Physical LED recovery requires a reviewed GPIO and isolated LED acknowledgement');
     if (!runtime) throw new RecoveryError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
     if (physical) {

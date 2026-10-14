@@ -49,7 +49,7 @@ export function ManualControl({ signal, revision, quality, close }: { signal: Si
   const [recoveryReason, setRecoveryReason] = useState(''); const [accepted, setAccepted] = useState(false);
   const [recoveryGpio, setRecoveryGpio] = useState(''); const [ledReviewed, setLedReviewed] = useState(false);
   const physicalRecovery = history.profile === 'esp32-led';
-  const supportedRecovery = physicalRecovery || ['virtual-led', 'virtual-thermal'].includes(history.profile ?? '');
+  const supportedRecovery = physicalRecovery || ['virtual-led', 'virtual-thermal', 'virtual-input-bank'].includes(history.profile ?? '');
   const mounted = useRef(true);
   const unresolved = (value: Command) => pendingStates.has(value.state) || (value.state === 'Unknown' && !value.reconciliation);
   async function loadHistory() {

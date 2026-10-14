@@ -25,6 +25,7 @@ psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/009-numeric-inputs.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/010-virtual-thermal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/011-report-jobs.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/012-project-workspace.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/013-input-bank.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'

@@ -590,3 +590,36 @@ cross-build, renderer recovery, TypeScript, English validation, frontend and
 offline dependency checks, and backup/restore. Existing images and source mounts
 were used; the regression ran after the preserved hour/resource measurement.
 Only English acceptance documentation changed in this delivery.
+
+## 2026-10-14: Multichannel virtual input bank
+
+Docker RED: bank registration returned 400 instead of 201; the runtime fixture
+failed the database kind constraint. The frame parser's initial stub failed the
+valid-frame test. After implementing migration 013, bounded atomic catalog
+creation, the MQTT bank and runtime bindings, those checks passed. Additional
+real-MQTT cases verify whole-frame rejection, retained/foreign/replayed frames
+and disconnect on transport loss. A numeric graph consumes a bank input and
+controls its virtual LED through the normal journal.
+
+The initial browser fixture exposed an exact-label selector mistake and a
+reused project name during reruns. It now selects the profile by accessible
+combobox role and uses a unique project name. The numeric input count has a
+separate accessible name and help description. The corrected Chromium scenario
+passes creation, live changes, disabled input controls and all-channel stop.
+
+The new functional capacity scenario exercises 200 virtual signals across 13
+banks; it is not a timed L0 qualification. No physical commissioning, firmware
+change or relaxed runtime/command limit is part of this delivery. Full Docker
+regression and final results follow.
+
+The first full gate caught an overly broad `unknown` payload type in the new
+API test helper. Narrowing it to `Record<string, unknown>` restored the inject
+overload and TypeScript check; the complete gate was restarted after this fix.
+
+Final `make test` exited 0: **628 unit/integration tests in 77 files and 15
+Chromium scenarios**, plus native firmware tests, ESP32 cross-build,
+orchestration checks, renderer recovery, TypeScript, English validation,
+frontend build, offline dependencies and backup/restore. Existing Docker images
+and source mounts were used. The LAN deployment is healthy, the virtual Climate
+demo and its PID graph are running, and physical control remains stopped.
+The 200-signal hour/resource qualification remains pending.

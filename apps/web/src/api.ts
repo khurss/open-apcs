@@ -1,6 +1,6 @@
 export interface User { id: string; username: string; csrfToken: string; }
 export interface Project { id: string; name: string; revision: number; }
-export interface Device { revision?: number; id: string; name: string; projectId: string; siteId: string; deviceId: string; kind: 'virtual-led' | 'esp32-led' | 'virtual-thermal'; }
+export interface Device { revision?: number; id: string; name: string; projectId: string; siteId: string; deviceId: string; kind: 'virtual-led' | 'esp32-led' | 'virtual-thermal' | 'virtual-input-bank'; }
 export interface Signal { revision?: number; id: string; deviceId: string; name: string; dataType: string; direction: string; }
 export interface Sample { value: boolean | number | string | null; quality: string; receivedTime: string | null; }
 export interface Audit { id: string; action: string; at: string; resourceId: string | null; }

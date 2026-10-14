@@ -204,3 +204,55 @@ it('supervises passive monitoring across worker death without browser calls or r
   expect((await client.context(request())).ownerId).toBe(null);
   await client.close(); expect(() => client.enableMonitoring()).toThrow(/closed/i);
 }, 25000);
+
+it('runs fifteen numeric bank inputs through MQTT and archives every channel before disconnecting them', async () => {
+  await pool.query("UPDATE apcs_devices SET kind='virtual-input-bank' WHERE id=$1",[deviceId]);
+  const ids = Array.from({length:15},()=>randomUUID()).sort();
+  for (const [index,id] of ids.entries()) await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,$3,'float64','input')",[id,deviceId,`Input ${index}`]);
+  await runtime.start(deviceId, actorId);
+  const first = await runtime.readSignals(ids);
+  for (const [index,id] of ids.entries()) expect(first[id]).toMatchObject({value:index*100,quality:'Good',sequence:0,bootId:(await runtime.readSignal(signalId)).bootId});
+  await waitFor(async () => (await runtime.readSignal(ids[14]!)).sequence! > 0);
+  await waitFor(async () => (await pool.query("SELECT count(DISTINCT signal_id)::int AS n FROM apcs_signal_history WHERE signal_id=ANY($1::uuid[]) AND snapshot->>'quality'='Good'",[ids])).rows[0].n===15);
+  const input = request(); await journal.request(input, await runtime.context(input));
+  await waitFor(async () => (await journal.get(input.id)).state==='Verified');
+  const graphId=randomUUID(),name='Bank input control';
+  const document={schemaVersion:1,nodes:[
+    {id:'sensor',kind:'analog',signalId:ids[14],label:'Bank sensor',x:0,y:0},
+    {id:'limit',kind:'number',value:2000,label:'Limit',x:0,y:100},
+    {id:'compare',kind:'greater',label:'Above limit',x:150,y:0},
+    {id:'output',kind:'output',signalId,label:'LED',x:300,y:0},
+  ],edges:[{id:'a',source:'sensor',target:'compare',port:'a'},{id:'b',source:'limit',target:'compare',port:'b'},{id:'out',source:'compare',target:'output',port:'in'}]};
+  const checksum=createHash('sha256').update(canonicalJson({name,document})).digest('hex');
+  await pool.query("INSERT INTO apcs_documents(id,project_id,kind,name,document,revision) VALUES($1,$2,'graph',$3,$4,1)",[graphId,projectId,name,document]);
+  await pool.query('INSERT INTO apcs_document_revisions(document_id,revision,name,document,checksum,actor_id) VALUES($1,1,$2,$3,$4,$5)',[graphId,name,document,checksum,actorId]);
+  expect((await runtime.activateGraph(graphId,1,actorId)).state).toBe('running');
+  await waitFor(async()=>(await runtime.readSignal(signalId)).value===false);
+  await runtime.stopGraph(graphId);
+  await runtime.stop(deviceId);
+  for (const id of ids) expect((await runtime.readSignal(id)).quality).toBe('Disconnected');
+});
+
+it('keeps 200 virtual signals live and archived within thirteen input-bank devices', async () => {
+  const devices:string[]=[];const signals:string[]=[];
+  for(let bank=0;bank<13;bank++){
+    const id=bank===0?deviceId:randomUUID();const output=bank===0?signalId:randomUUID();
+    if(bank===0)await pool.query("UPDATE apcs_devices SET kind='virtual-input-bank' WHERE id=$1",[id]);
+    else {
+      await pool.query("INSERT INTO apcs_devices(id,project_id,name,kind,site_id,protocol_device_id) VALUES($1,$2,$3,'virtual-input-bank','bank-capacity',$4)",[id,projectId,`Bank ${bank}`,`bank-${bank}`]);
+      await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,'Output','boolean','output')",[output,id]);
+    }
+    const inputs=Array.from({length:bank===12?7:15},()=>randomUUID()).sort();
+    await pool.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) SELECT id,$2,'Input','float64','input' FROM unnest($1::uuid[]) AS id",[inputs,id]);
+    devices.push(id);signals.push(output,...inputs);
+    await runtime.start(id,actorId);
+  }
+  expect(signals).toHaveLength(200);
+  for(let offset=0;offset<200;offset+=100){
+    const samples=Object.values(await runtime.readSignals(signals.slice(offset,offset+100)));
+    expect(samples).toHaveLength(100);expect(samples.every(s=>s.quality==='Good')).toBe(true);
+  }
+  await waitFor(async()=>(await pool.query("SELECT count(DISTINCT signal_id)::int AS n FROM apcs_signal_history WHERE signal_id=ANY($1::uuid[]) AND snapshot->>'quality'='Good'",[signals])).rows[0].n===200);
+  for(const id of devices)await runtime.stop(id);
+  for(const id of signals)expect((await runtime.readSignal(id)).quality).toBe('Disconnected');
+},30000);

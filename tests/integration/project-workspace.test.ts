@@ -84,3 +84,35 @@ describe('project workspace and demo', () => {
     expect((await app!.inject({method:'PATCH',url:`/api/v1/devices/${a.id}`,headers:{...headers(),'if-match':'"2"'},payload:{name:'Hijacked'}})).statusCode).toBe(404);
   });
 });
+
+it('creates a bounded virtual input bank atomically with owned numeric inputs', async () => {
+  await setup(); const projectId = (await project()).json().id;
+  const input = {projectId,name:'Sensor bank',kind:'virtual-input-bank',siteId:'bank',deviceId:'bank',inputCount:15};
+  const result = await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:input});
+  expect(result.statusCode).toBe(201);
+  const device = result.json(); expect(device.inputSignalIds).toHaveLength(15);
+  const rows = (await pool.query('SELECT * FROM apcs_signals WHERE device_id=$1',[device.id])).rows;
+  expect(rows).toHaveLength(16);
+  expect(rows.filter(s=>s.direction==='input').every(s=>s.data_type==='float64')).toBe(true);
+  expect(new Set(device.inputSignalIds).size).toBe(15);
+  for (const inputCount of [0,16,1.5]) {
+    expect((await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:{...input,deviceId:randomUUID(),inputCount}})).statusCode).toBe(400);
+  }
+  expect((await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:{...input,kind:'virtual-led',deviceId:'wrong'}})).statusCode).toBe(400);
+  expect((await pool.query('SELECT count(*)::int AS n FROM apcs_devices')).rows[0].n).toBe(1);
+});
+
+it('uses bounded bank defaults, enforces ownership and rolls back channels when audit fails',async()=>{
+  await setup();const projectId=(await project()).json().id;
+  const input={projectId,name:'Bank',kind:'virtual-input-bank',siteId:'bank-default',deviceId:'default'};
+  const create=(payload:Record<string,unknown>,custom=headers())=>app!.inject({method:'POST',url:'/api/v1/devices',headers:custom,payload});
+  expect((await create(input,{origin,cookie,'x-csrf-token':'wrong'})).statusCode).toBe(403);
+  expect((await create({...input,projectId:randomUUID()})).statusCode).toBe(404);
+  expect((await create(input)).json().inputSignalIds).toHaveLength(15);
+  expect((await create({...input,deviceId:'one',inputCount:1})).json().inputSignalIds).toHaveLength(1);
+  await pool.query("CREATE FUNCTION reject_bank_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Audit unavailable'; END $$");
+  await pool.query('CREATE TRIGGER reject_bank_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION reject_bank_audit()');
+  expect((await create({...input,deviceId:'rollback'})).statusCode).toBe(500);
+  expect((await pool.query('SELECT count(*)::int AS n FROM apcs_devices')).rows[0].n).toBe(2);
+  expect((await pool.query('SELECT count(*)::int AS n FROM apcs_signals')).rows[0].n).toBe(18);
+});

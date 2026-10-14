@@ -1,3 +1,4 @@
+import { MqttInputBank } from '../../../packages/gateway/src/input-bank.js';
 import type { GraphEvaluation } from '../../../packages/domain/src/graph-evaluation.js';
 import { MqttThermalProcess } from '../../../packages/gateway/src/thermal-process.js';
 import { ScriptClient } from '../../../packages/script-runtime/src/client.js';
@@ -35,7 +36,7 @@ export interface RuntimeControl {
   close(): Promise<void>;
 }
 interface Catalog { siteId: string; deviceId: string; signalId: string; projectId: string; kind: string; revision: number; ownerId: string; protocolDeviceId: string; }
-interface Entry { physicalGpio: number | null; temperatureSignalId: string | null; process: MqttThermalProcess | null; processError: string | null; catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator | null; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
+interface Entry { physicalGpio: number | null; inputSignalIds: string[]; temperatureSignalId: string | null; process: MqttThermalProcess | MqttInputBank | null; processError: string | null; catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator | null; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
 interface GraphEntry { blocks: GraphEvaluation['blocks']; revision: number; activationId: string; ownerId: string; task: GraphTask; }
 const disconnected = (): SignalSnapshot => ({ value: null, quality: 'Disconnected', bootId: null, sourceTime: null, receivedTime: null, sequence: null });
 const lockKey = "hashtextextended(current_schema() || ':open-apcs-simulation-runtime', 0)";
@@ -68,21 +69,23 @@ export class SimulationRuntime implements RuntimeControl {
     const found = await this.pool.query<Catalog>(`SELECT d.site_id AS "siteId", d.id AS "deviceId", s.id AS "signalId", d.project_id AS "projectId", d.kind, d.protocol_device_id AS "protocolDeviceId", p.revision, p.owner_id AS "ownerId" FROM apcs_devices d JOIN apcs_signals s ON s.device_id=d.id JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND s.direction='output'`, [deviceId]);
     const catalog = found.rows[0]; if (!catalog) throw new Error('Device not found');
     if (catalog.ownerId !== actorId) throw new Error('Project owner required');
-    if (!physical && !['virtual-led', 'virtual-thermal'].includes(catalog.kind)) throw new Error('Only virtual profiles are supported by the simulation runtime');
+    if (!physical && !['virtual-led', 'virtual-thermal', 'virtual-input-bank'].includes(catalog.kind)) throw new Error('Only virtual profiles are supported by the simulation runtime');
     if (physical && catalog.kind !== 'esp32-led') throw new Error('Physical commissioning requires an ESP32 LED profile');
     if (physical && !this.physicalConfig) throw new Error('Physical connection is not configured');
     // Validate the reviewed address and pin before even accepting an idempotent start.
     const physicalLink = physical ? physicalConnection(this.physicalConfig!, { siteId: catalog.siteId, deviceId: catalog.protocolDeviceId, signalId: catalog.signalId }, physical.gpio) : null;
-    const temperatures = catalog.kind === 'virtual-thermal' ? await this.pool.query<{ id: string }>("SELECT id FROM apcs_signals WHERE device_id=$1 AND direction='input' AND data_type='float64'", [deviceId]) : null;
-    if (temperatures && temperatures.rows.length !== 1) throw new Error('Virtual thermal profile requires exactly one numeric sensor');
-    const temperatureSignalId = temperatures?.rows[0]?.id ?? null;
+    const temperatures = ['virtual-thermal','virtual-input-bank'].includes(catalog.kind) ? await this.pool.query<{ id: string }>("SELECT id FROM apcs_signals WHERE device_id=$1 AND direction='input' AND data_type='float64' ORDER BY id", [deviceId]) : null;
+    if (catalog.kind === 'virtual-thermal' && temperatures?.rows.length !== 1) throw new Error('Virtual thermal profile requires exactly one numeric sensor');
+    const inputSignalIds = temperatures?.rows.map(row=>row.id) ?? [];
+    if (catalog.kind === 'virtual-input-bank' && (inputSignalIds.length < 1 || inputSignalIds.length > 15)) throw new Error('Input bank requires 1–15 numeric inputs');
+    const temperatureSignalId = catalog.kind === 'virtual-thermal' ? inputSignalIds[0]! : null;
     const prior = this.entries.get(deviceId);
     if (prior?.runtime.status.state === 'running' && !prior.stopping) return this.status(deviceId);
     if ([...this.entries.values()].filter((entry) => entry.runtime.status.state === 'running').length >= 16) throw new Error('Initial runtime limit is 16 active devices');
     await this.acquire();
     if (prior) await this.stopEntry(prior);
     if (!this.registered.has(catalog.signalId)) { this.signals.register({ id: catalog.signalId, deviceId, dataType: 'boolean', freshnessMs: 3000 }); this.registered.add(catalog.signalId); }
-    if (temperatureSignalId && !this.registered.has(temperatureSignalId)) { this.signals.register({ id: temperatureSignalId, deviceId, dataType: 'float64', freshnessMs: 3000 }); this.registered.add(temperatureSignalId); }
+    for (const id of inputSignalIds) if (!this.registered.has(id)) { this.signals.register({ id, deviceId, dataType: 'float64', freshnessMs: 3000 }); this.registered.add(id); }
     // A random simulation namespace cannot target a catalog's physical MQTT address.
     const connection = physicalLink ? { ...physicalLink, deviceId, protocolDeviceId: catalog.protocolDeviceId } : { url: this.mqttUrl, siteId: randomUUID(), deviceId, protocolDeviceId: catalog.protocolDeviceId, signalId: catalog.signalId };
     // A surviving controller boot must never revive an old server intent.
@@ -90,12 +93,13 @@ export class SimulationRuntime implements RuntimeControl {
     const startAt = performance.now(); const bootId = randomUUID(); const simulator = physical ? null : new MqttLedSimulator(connection, new LedPeer(() => performance.now() - startAt, bootId));
     const policy: Entry['policy'] = { ownerId: actorId, projectRevision: catalog.revision, maxTtlMs: 3000, interlockReason: null };
     const gateway = new MqttLedGateway(connection, this.signals, this.journal, this.clock, () => ({ ...policy, interlockReason: this.lockLost || this.closed ? 'Runtime ownership unavailable' : policy.interlockReason }));
-    const entry = { physicalGpio: physical?.gpio ?? null, catalog, simulator, gateway, policy, temperatureSignalId, process: null, processError: null, stopping: false, stopPromise: null } as Entry;
+    const entry = { physicalGpio: physical?.gpio ?? null, catalog, simulator, gateway, policy, inputSignalIds, temperatureSignalId, process: null, processError: null, stopping: false, stopPromise: null } as Entry;
     entry.runtime = new LedRuntime({ start: () => gateway.start(), stop: () => gateway.stop(),
       synchronize: async () => { await this.refresh(entry); await gateway.synchronize(); },
       dispatchNext: async () => { await this.refresh(entry); return gateway.dispatchNext(); },
     }, () => performance.now());
     if (temperatureSignalId && simulator) entry.process = new MqttThermalProcess({ ...connection, temperatureSignalId }, bootId, () => simulator.peer.read(), this.signals, (reason) => { entry.processError = reason; void this.stopEntry(entry).catch(() => {}); });
+    if (catalog.kind === 'virtual-input-bank' && simulator) entry.process = new MqttInputBank({...connection,inputSignalIds},bootId,this.signals,(reason)=>{entry.processError=reason;void this.stopEntry(entry).catch(()=>{});});
     this.entries.set(deviceId, entry);
     try {
       await simulator?.start(); await entry.runtime.start(); await entry.process?.start();
@@ -149,8 +153,8 @@ export class SimulationRuntime implements RuntimeControl {
     const prior = this.graphs.get(id); const outputs: Entry[] = [];
     for (const node of graph.nodes) {
       if (!node.signalId) continue;
-      const entry = [...this.entries.values()].find((item) => item.catalog.signalId === node.signalId || item.temperatureSignalId === node.signalId);
-      if (node.kind === 'analog' && (!entry || entry.temperatureSignalId !== node.signalId)) throw new Error('Numeric input drivers are not available in the current runtime profile');
+      const entry = [...this.entries.values()].find((item) => item.catalog.signalId === node.signalId || item.inputSignalIds.includes(node.signalId!));
+      if (node.kind === 'analog' && (!entry || !entry.inputSignalIds.includes(node.signalId))) throw new Error('Numeric input drivers are not available in the current runtime profile');
       if (!entry || entry.catalog.projectId !== saved.projectId || entry.stopping || entry.runtime.status.state !== 'running' || (await this.readSignal(node.signalId)).quality !== 'Good') throw new Error('All graph devices must be running in this project');
       if (node.kind === 'output') {
         if (entry.policy.ownerId !== actorId && entry.policy.ownerId !== prior?.ownerId) throw new Error('Output belongs to another owner');

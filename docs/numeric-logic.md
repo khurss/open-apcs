@@ -10,7 +10,7 @@ An arithmetic branch takes `a` and `b` ports and produces a number. Connect its 
 
 ## Numeric inputs and current delivery boundary
 
-The catalog permits boolean input/output signals and float64 inputs; numeric outputs remain prohibited. Devices can register a Virtual thermal process with a boolean heater and float64 temperature sensor. See [virtual process operation](virtual-process.md). The ordinary LED profiles still create a single boolean output.
+The catalog permits boolean input/output signals and float64 inputs; numeric outputs remain prohibited. Devices can register a Virtual thermal process with a boolean heater and float64 temperature sensor. See [virtual process operation](virtual-process.md). The ordinary LED profiles still create a single boolean output. [Virtual input banks](input-bank.md) provide 1–15 synthetic float64 inputs plus a virtual LED; their inputs also bind to live analog graph nodes.
 
 `analog` nodes bind to the same project's float64 signals. The authenticated simulation endpoint accepts numeric samples, including 0 and 1, without boolean coercion; null or a mismatched boolean sample produces Bad quality. Browser controls can simulate these inputs. The thermal profile can also supply live numeric inputs to a prepared graph. Other numeric hardware/third-party driver bindings remain unsupported: activation returns 422 `UNSUPPORTED_DRIVER` before pausing or transferring the current graph. Internal numeric constants/calculations/comparisons can also command existing boolean LED outputs.
 

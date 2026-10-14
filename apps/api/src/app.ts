@@ -144,10 +144,11 @@ export async function createApi(options: ApiOptions) {
     return reply.header('ETag', `"${updated.revision}"`).send(updated);
   });
 
-  app.post<{ Body: { projectId: string; name: string; siteId: string; deviceId: string; kind: string } }>('/api/v1/devices', {
-    schema: { body: object({ projectId: uuid, name, siteId: slug, deviceId: slug, kind: { enum: ['virtual-led', 'esp32-led', 'virtual-thermal'], type: 'string' } }) },
+  app.post<{ Body: { projectId: string; name: string; siteId: string; deviceId: string; kind: string; inputCount?: number } }>('/api/v1/devices', {
+    schema: { body: object({ projectId: uuid, name, siteId: slug, deviceId: slug, kind: { enum: ['virtual-led', 'esp32-led', 'virtual-thermal', 'virtual-input-bank'], type: 'string' }, inputCount: {type:'integer',minimum:1,maximum:15} }, ['projectId','name','siteId','deviceId','kind']) },
   }, async (request, reply) => {
     const input = request.body;
+    if (input.kind !== 'virtual-input-bank' && input.inputCount !== undefined) throw new HttpError(400,'INVALID_PROFILE','Input count is only supported for virtual input banks');
     const device = await transaction(pool, async (client) => {
       await requireProjectOwner(client, input.projectId, request.sessionUser!.id, true);
       const id = randomUUID(); const signalId = randomUUID();
@@ -155,8 +156,10 @@ export async function createApi(options: ApiOptions) {
       await client.query("INSERT INTO apcs_signals (id, device_id, name, data_type, direction) VALUES ($1,$2,$3,'boolean','output')", [signalId, id, `${input.name}.${input.kind === 'virtual-thermal' ? 'heater' : 'led'}`]);
       const temperatureSignalId = input.kind === 'virtual-thermal' ? randomUUID() : null;
       if (temperatureSignalId) await client.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,$3,'float64','input')", [temperatureSignalId, id, `${input.name}.temperature (C)`]);
-      await audit(client, request.sessionUser!.id, 'device.created', id, { projectId: input.projectId, signalId, temperatureSignalId });
-      return { id, ...input, signalId, ...(temperatureSignalId ? { temperatureSignalId } : {}) };
+      const inputSignalIds = input.kind === 'virtual-input-bank' ? Array.from({length:input.inputCount ?? 15},()=>randomUUID()).sort() : [];
+      for (const [index,inputId] of inputSignalIds.entries()) await client.query("INSERT INTO apcs_signals(id,device_id,name,data_type,direction) VALUES($1,$2,$3,'float64','input')",[inputId,id,`${input.name}.input-${String(index+1).padStart(2,'0')}`]);
+      await audit(client, request.sessionUser!.id, 'device.created', id, { projectId: input.projectId, signalId, temperatureSignalId, ...(inputSignalIds.length ? {inputSignalIds} : {}) });
+      return { id, ...input, signalId, ...(inputSignalIds.length ? {inputSignalIds,inputCount:inputSignalIds.length} : {}), ...(temperatureSignalId ? { temperatureSignalId } : {}) };
     });
     return reply.code(201).send(device);
   });
@@ -215,7 +218,7 @@ export async function createApi(options: ApiOptions) {
     const found = await pool.query<{ kind: string }>('SELECT d.kind FROM apcs_devices d JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND p.owner_id=$2', [request.params.id, request.sessionUser!.id]);
     if (!found.rows[0]) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
     if (!options.runtime) throw new HttpError(503, 'RUNTIME_UNAVAILABLE', 'Runtime service is not configured');
-    if (!['virtual-led', 'virtual-thermal'].includes(found.rows[0].kind)) throw new HttpError(422, 'PHYSICAL_PROFILE_UNSUPPORTED', 'This runtime supports virtual devices only');
+    if (!['virtual-led', 'virtual-thermal', 'virtual-input-bank'].includes(found.rows[0].kind)) throw new HttpError(422, 'PHYSICAL_PROFILE_UNSUPPORTED', 'This runtime supports virtual devices only');
     const { action, reason } = request.body;
     try { await transaction(pool, (client) => audit(client, request.sessionUser!.id, `runtime.${action}.requested`, request.params.id, { reason })); }
     catch (error) { if (action === 'stop') await options.runtime.stop(request.params.id); throw error; }

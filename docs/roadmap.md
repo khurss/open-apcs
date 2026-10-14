@@ -104,3 +104,9 @@ Extended endurance follow-up (2026-10-14): the full 16-output hour and resource
 gate now pass on `c286ba6`; [the result](load-l0.md#extended-hour-pass-2026-10-14)
 closes this specific outstanding check while preserving all earlier failures
 and the remaining M1 hardware/scale boundaries.
+
+Multichannel simulation increment: [virtual input banks](input-bank.md) now
+provide 1–15 numeric inputs plus a virtual LED, with web registration, real
+MQTT telemetry, history, graph bindings and disconnect handling. The short
+functional 200-signal test is distinct from pending mixed/one-hour capacity
+qualification; the 16-active-device limit is unchanged.

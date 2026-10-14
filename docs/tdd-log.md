@@ -707,3 +707,30 @@ Post-fix full Docker `make test` passed: **636 unit/integration tests in 80 file
 TypeScript, language, offline and backup gates. The final report catch path also
 preserves an already completed measurement interval on a verification failure,
 instead of counting post-measurement archive inspection as workload time.
+
+
+### Mixed-200 hour evidence and resource rejection
+
+On clean `626aaa4`, host run `3e900cbbe98b46c1a5f42bf9e38f5057` completed
+3600.929 measured seconds: 50,400 commands Verified and archived, zero missed
+ticks, 186 numeric channels / 669,972 samples passing. Numeric worst-channel
+UI p95/p99 were 364/476 ms; command acceptance p95 was 194.90 ms. Physical UI,
+alarm and read-only graph criteria passed. Full evidence and limitations are in
+[Mixed-200 qualification](load-200.md#hour-workload-pass-resource-rejection-2026-10-14).
+
+The host command correctly exited 1: aggregate memory growth was 8.326%, above
+5%, despite peak memory of only 3.794 GiB. The workload/browser container gained
+193.3 MiB between evaluation windows; API gained 60.0 MiB and PostgreSQL 39.0 MiB.
+Code inspection found whole-run numeric UI retention in the generator in addition
+to disk evidence. This is an actionable retention path, not proof that all
+container growth has one cause. No gate was relaxed and no full capacity pass
+is claimed. A bounded evidence-store TDD increment and API memory investigation
+are explicitly outstanding.
+
+The non-Markdown source fingerprint still matches host metadata after testing.
+No source changes or concurrent regression suite contaminated the hour.
+The existing full Docker gate for this exact source remains 636 unit/integration
+tests and 15 Chromium scenarios, with the additional firmware/build, offline,
+backup, renderer, type and language gates documented above. This follow-up changes
+only documentation. Demo restoration verified the virtual process and PID graph
+running, physical runtime stopped, and API ready.

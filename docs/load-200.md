@@ -59,7 +59,72 @@ commands, 186 numeric channels and 33,837 boundary-inclusive samples, no missed
 ticks. Worst-channel UI p95/p99 were 414/588 ms and command acceptance p95 was
 190.90 ms. The earlier hour attempt aborted at the minute-sized evidence drain;
 five-second drains and reserved simulator sample slots address the observed
-failures. Full one-hour/resource qualification is pending. A short functional or
+failures. The subsequent hour passed workload checks but failed the resource growth gate,
+as detailed below. Full qualification remains pending. A short functional or
 smoke pass does not establish one-hour performance. This profile does not qualify
 10,000 devices, 100,000 signals, radio interference, power loss or continuous
 electrical waveform correctness.
+
+
+## Hour workload pass, resource rejection (2026-10-14)
+
+Clean revision `626aaa42d2e204e6072d82dd963413817c1107c6` ran for
+3600.929 measured seconds, from 20:08:01.446 to 21:08:02.422 UTC.
+The non-Markdown source fingerprint was verified unchanged after the run:
+`6d76f4a3b62c4532f60c49870bd8f1b2314b1df019d4bdf78dd51400f9ec88f7`.
+Private artifacts remain under `.cache/hil/` (not committed):
+
+- Workload: `l0-2026-10-14T20-06-51.699Z`.
+- Host/resource evidence: `l0-host-3e900cbbe98b46c1a5f42bf9e38f5057`.
+
+| Check | Observed result |
+| --- | --- |
+| Commands requested / Verified / archived | 50,400 / 50,400 / 50,400 |
+| Missed command ticks | 0 |
+| Numeric channels / boundary-inclusive samples | 186 / 669,972; all passed |
+| Worst numeric channel UI p95 / p99 | 364 / 476 ms |
+| Command acceptance p95 / p99 / maximum | 194.90 / 353.02 / 1184.72 ms |
+| Physical UI transitions / p95 / p99 | 3,600 / 319 / 419 ms |
+| Alarm transitions | 3,600 |
+| Graph starts / late / skipped | 37,239 / 0 / 0 |
+| Graph start delay p99 | 8 ms |
+| Archive drops / errors / observer failures | 0 / 0 / 0 |
+| Resource samples / aggregate peak | 124 / 3.794 GiB |
+| Late-window memory growth | **8.326%; FAIL (limit 5%)** |
+
+The workload report says `hour-workload-passed`; the overall host command exits
+nonzero because resource acceptance fails. This is **not a full mixed-200
+qualification pass**. Peak CPU across sampled containers reached 387.15% on the
+four-logical-CPU host. The acceptance latency p95 passes narrowly; its maximum
+is not a guaranteed command-response bound.
+
+Comparing the evaluator's five-minute baseline and final windows gives these
+mean memory changes (Docker container accounting, not heap measurements):
+
+| Container | Baseline MiB | Final MiB | Change MiB |
+| --- | --- | --- | --- |
+| Load generator and Chromium | 1300.6 | 1493.9 | +193.3 |
+| API | 560.5 | 620.4 | +60.0 |
+| PostgreSQL | 492.5 | 531.5 | +39.0 |
+
+The load generator retains all numeric UI events in `bankEvents` while also
+writing them to disk. This is a concrete unbounded retention path and a candidate
+for the largest increase; the container measurements alone do not attribute all
+of its growth to that array or prove an application leak. API and database growth
+also require investigation. Do not remove the generator from resource accounting
+or loosen the 5% threshold to turn this run into a pass.
+
+Next increment:
+
+1. Add a failing test for bounded numeric evidence storage and preserve exact
+   ordering, malformed-record detection and every-event verification.
+2. Drain numeric events to per-channel evidence on disk, then verify one channel
+   at a time; do not retain the entire hour in memory.
+3. Diagnose remaining API growth using bounded-state and heap evidence, keeping
+   PostgreSQL cache growth separate from application retention.
+4. Run Docker regression checks and a smoke workload, then repeat the unchanged
+   hour and resource gates on a recorded revision.
+
+After this run, the virtual Climate demo and its PID graph were restored and
+verified running; API readiness was confirmed and the physical GPIO18 runtime
+was stopped. No firmware or electrical-waveform qualification is implied.

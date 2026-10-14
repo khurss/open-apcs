@@ -108,8 +108,11 @@ and the remaining M1 hardware/scale boundaries.
 Multichannel simulation increment: [virtual input banks](input-bank.md) now
 provide 1–15 numeric inputs plus a virtual LED, with web registration, real
 MQTT telemetry, history, graph bindings and disconnect handling. The short
-functional 200-signal test is distinct from pending mixed/one-hour capacity
-qualification; the 16-active-device limit is unchanged.
+functional 200-signal test is distinct from full capacity qualification; the
+16-active-device limit is unchanged. The mixed hour now passes command, history
+and per-channel UI checks, but its resource gate fails at 8.326% late-window
+memory growth (limit 5%). Bounded evidence retention and investigation of API
+growth precede another full hour; this milestone remains partial.
 
 The mixed 200-signal endurance runner and per-channel archive/UI criteria are
 specified in [Mixed 200-signal qualification](load-200.md). Its qualification

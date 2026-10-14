@@ -568,3 +568,25 @@ source mounts were used. The separate normal-firmware short L0 run passed with
 p95 491 ms (previous short run 576 ms). The margin is only 9 ms; this is not an
 extended endurance or resource pass. Demo restored; physical control stopped.
 See [cadence evidence](load-l0.md#cadence-correction-smoke-evidence-2026-10-14).
+
+## 2026-10-14: Extended hour acceptance on the cadence correction
+
+No behavior changes were made for this acceptance run. Clean `c286ba6` and its
+non-Markdown source fingerprint were unchanged for the full measurement. The
+Docker-supervised normal-firmware workload completed 3600.939 seconds with all
+57,600 commands Verified and archived, no missed ticks, 3600 UI/alarm
+transitions and UI p95/p99 362/437 ms. The separate Docker resource evaluator
+passed 122 samples: 2.834 GiB peak and -1.58% memory-window change. No acceptance
+threshold changed. Cleanup stopped physical/load control; the virtual demo was
+restored. Historical failed runs and unexecuted hardware/scale boundaries remain
+explicit. See [hour evidence](load-l0.md#extended-hour-pass-2026-10-14).
+
+The required post-phase full Docker regression was started only after load
+measurement and cleanup, so it cannot contaminate the performance sample.
+
+Final post-hour `make test` exited 0: **620 unit/integration tests in 75 files,
+14 Chromium scenarios**, native firmware and orchestration checks, ESP32
+cross-build, renderer recovery, TypeScript, English validation, frontend and
+offline dependency checks, and backup/restore. Existing images and source mounts
+were used; the regression ran after the preserved hour/resource measurement.
+Only English acceptance documentation changed in this delivery.

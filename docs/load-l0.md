@@ -1,5 +1,7 @@
 # L0 LED workload and endurance evidence
 
+Latest verdict: the [extended hour on 2026-10-14](#extended-hour-pass-2026-10-14) passed the implemented 16-output workload, supplemental checks and resource gate. Historical failed runs remain recorded below. Full M1 and larger-scale acceptance remain incomplete.
+
 ## Workload
 
 The opt-in L0 runner uses the reviewed GPIO18 ESP32 plus 15 virtual LED endpoints, one boolean output each, through the live authenticated HTTPS application and its durable MQTT command path. This is 16 active devices and 16 active signals, within the current runtime limit; it is not the upper 200-signal profile or a 10,000-device benchmark.
@@ -37,7 +39,7 @@ The workload requires every measured request to become Verified and its current 
 
 `hour-workload-passed` denotes the implemented command/history workload only. It is not complete L0 or M1 release acceptance. The HTTP command acceptance p95 must also remain at or below 200 ms. Reports publish nearest-rank p50/p95/p99/max for HTTP command acceptance, request-to-Verified-and-current-state observation, and generator lateness. These include client/network overhead. Firmware acknowledgement is not independent electrical feedback.
 
-The browser records physical ON/OFF text changes. The Signals panel reads batches of at most 100 signals, schedules its next refresh 250 ms after completion and aborts a refresh after three seconds. Slow responses may still coalesce intermediate values; this is reported separately from durable archive loss. Normalized MQTT-arrival-to-state latency and exact accepted-telemetry-to-paint latency are not measured by this runner. The supplemental qualification below adds graph, alarm and browser rendering-opportunity measurements. Continuous electrical measurement remains separate work.
+The browser records physical ON/OFF text changes. The Signals panel reads batches of at most 100 signals, schedules serial refreshes on a monotonic 250 ms grid, skipping elapsed slots and aborts a refresh after three seconds. Slow responses may still coalesce intermediate values; this is reported separately from durable archive loss. Normalized MQTT-arrival-to-state latency and exact accepted-telemetry-to-paint latency are not measured by this runner. The supplemental qualification below adds graph, alarm and browser rendering-opportunity measurements. Continuous electrical measurement remains separate work.
 
 Host evidence is linked through `runId` and includes source revision, dirty flag, a hash of non-Markdown authored files, image content IDs, CPU/kernel/Docker information, container placement/limits, and free filesystem space before/after. The disk difference includes other host activity and is not an isolated database-size measurement. Resource samples are collected about every 30 seconds for the development stack, physical broker/time service and workload container; no Docker socket is exposed inside the workload container.
 
@@ -181,3 +183,54 @@ and are not a controlled attribution of every millisecond. Unit tests establish
 the removed response-plus-delay behavior. The observed margin to the UI p95
 limit is only 9 ms. Host contention, larger pages and the one-hour resource and
 endurance gates remain to be qualified. No timing thresholds were relaxed.
+
+## Extended hour pass: 2026-10-14
+
+The extended normal-firmware run on clean revision
+`c286ba68fa7db9c6e6c24644292a2f0a447f8945` completed with
+`hour-workload-passed`; the separate Docker resource assessment also passed.
+Measurement ran from **13:20:24.050 to 14:20:24.988 UTC** for
+**3600.939 seconds**, after a 60-second warmup. No source, firmware or runtime
+configuration was changed during measurement. Non-Markdown source SHA-256
+matched before and after:
+`374ce672ec39e015c4b122a090e3214f66f75f4d009b8d4210e8363310e51689`.
+
+| Evidence | Result | Existing criterion |
+| --- | --- | --- |
+| Commands / Verified observations / archived changes | 57,600 / 57,600 / 57,600 | Exact complete count and ordered history |
+| Missed generator ticks | 0 | 0 |
+| Command acceptance p95 | 162.55 ms | At most 200 ms |
+| UI transitions / alarm transitions | 3600 / 3600 | Exact ordered physical transitions |
+| UI delay p95 / p99 / max | 362 / 437 / 611 ms | p95 at most 500 ms; p99 at most 1000 ms |
+| Graph starts / late / skipped | 36,721 / 0 / 0 | Existing 100 ms graph timing bounds |
+| Graph start delay p99 / max | 8 / 34.30 ms | p99 at most 50 ms |
+| Maximum gateway arrival-to-state time | 12.60 ms across 60,226 samples | Existing per-gateway p95/p99 checks passed |
+| Peak summed container working set | 2.834 GiB | At most 12 GiB |
+| Final memory-window change | -1.58% | At most 5% growth |
+
+Command, archive and UI counts above cover the measured hour; graph/gateway
+counters include activation, warmup and final qualification reads.
+
+Request-to-Verified-and-observed p95/p99/max were 546.02/703.80/1194.07 ms.
+Generator lateness p95/p99/max was 8.45/18.09/373.49 ms; the one-period
+rejection threshold remained unchanged. Archive drop, write-failure and
+observer-failure counters stayed at zero. The graph's maximum execution time
+was 35.66 ms. The resource assessment used 122 samples with consistent
+container membership and acceptable sampling gaps; peak summed CPU was
+345.39% across the monitored containers on a four-CPU shared host. This is
+measured Docker CPU usage, not an additional CPU capacity guarantee.
+
+Private artifacts: `l0-2026-10-14T13-19-16.906Z` and
+`l0-host-df232ca8c05747cca83b11e1e8f7e309`. They contain command receipts,
+per-signal history, UI transitions, alarms, graph/gateway timing, metadata,
+resource samples, resource verdict and post-run source fingerprint. Both the
+workload and independent supervisor completed cleanup. The physical bench and
+all load targets stopped, and the virtual Climate demo was restored.
+
+This closes the extended **16-device / 16-output** hour and resource gates for
+this revision and observed environment. It does not prove the sole cause of
+earlier failures, erase their evidence, establish hard real-time guarantees,
+or qualify 200 signals or 10,000 devices. Continuous electrical trace, radio
+and power interruption, additional physical I/O and the other
+[M1 release boundaries](m1-reliability.md#remaining-release-boundaries) remain
+open. No threshold relaxation or retry-until-pass was used.

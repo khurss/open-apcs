@@ -1,3 +1,4 @@
+import {nextSampleDeadline} from './sample-cadence.js';
 import {connectAsync,type MqttClient} from 'mqtt';
 import type {SignalStore} from '../../domain/src/signals.js';
 import {deviceTopic} from '../../led-protocol/src/index.js';
@@ -17,6 +18,7 @@ export class MqttInputBank {
   private rejected=0;
   private initial:(()=>void)|null=null;
   private origin=0;
+  private sampleDeadline=0;
   constructor(private readonly options:InputBankConnection,private readonly boot:string,private readonly signals:SignalStore,private readonly fault:(reason:string)=>void) {
     if(options.inputSignalIds.length<1 || options.inputSignalIds.length>15 || new Set(options.inputSignalIds).size!==options.inputSignalIds.length) throw new Error('Expected 1–15 distinct bank inputs');
     inputBankTopic(options);
@@ -47,7 +49,7 @@ export class MqttInputBank {
       this.publisher.on('close',()=>this.fail('Input bank disconnected'));
       this.publisher.on('error',()=>this.fail('Input bank transport failed'));
       if(this.stopped) throw new Error('Input bank stopped during startup');
-      this.origin=performance.now();
+      this.origin=performance.now();this.sampleDeadline=this.origin;
       let timeout:ReturnType<typeof setTimeout>|undefined;
       const first=new Promise<void>((resolve,reject)=>{this.initial=resolve;timeout=setTimeout(()=>reject(new Error('Input bank initial samples unavailable')),1500);});
       try{await Promise.all([first,this.send()]);}finally{clearTimeout(timeout);this.initial=null;}
@@ -68,7 +70,8 @@ export class MqttInputBank {
   }
   private schedule(){
     if(this.stopped)return;
-    const now=performance.now();const next=this.origin+(Math.floor((now-this.origin)/1000)+1)*1000;
+    const now=performance.now();const next=nextSampleDeadline(this.origin,this.sampleDeadline,now);
+    this.sampleDeadline=next;
     this.timer=setTimeout(()=>{this.work=this.tick();},Math.ceil(next-now));
   }
   private async tick(){try{await this.send();this.schedule();}catch{this.fail('Input bank publication failed');}}

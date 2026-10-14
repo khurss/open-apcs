@@ -37,7 +37,7 @@ boundary samples are allowed only when their receive-time span supports the
 additional one-Hz intervals; a larger sequence range cannot mask missing rows.
 
 The full signal page is loaded in Chromium. Every numeric value/quality change
-is captured after two animation frames, drained periodically and preserved in
+is captured after two animation frames, drained every five seconds and preserved in
 `numeric-ui.jsonl`. For each channel, every archived value in its exact sequence
 range must match the ordered browser evidence. Each channel independently must
 meet p95 <= 500 ms and p99 <= 1000 ms. Missing or coalesced values fail; later
@@ -54,7 +54,12 @@ not run during the timed acceptance measurement.
 
 ## Evidence status
 
-Implementation and smoke qualification are in progress. A short functional or
+The corrected 180-second smoke passed on 2026-10-14: 2520 Verified/archived
+commands, 186 numeric channels and 33,837 boundary-inclusive samples, no missed
+ticks. Worst-channel UI p95/p99 were 414/588 ms and command acceptance p95 was
+190.90 ms. The earlier hour attempt aborted at the minute-sized evidence drain;
+five-second drains and reserved simulator sample slots address the observed
+failures. Full one-hour/resource qualification is pending. A short functional or
 smoke pass does not establish one-hour performance. This profile does not qualify
 10,000 devices, 100,000 signals, radio interference, power loss or continuous
 electrical waveform correctness.

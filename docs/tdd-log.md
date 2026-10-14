@@ -675,3 +675,35 @@ recovery, TypeScript, English content, frontend build, offline dependencies and
 backup/restore. The expanded 201-row browser scenario preserves an unsaved name
 through live changes and disables controls on a failed refresh. These functional
 checks do not convert the rejected smoke into a performance pass.
+
+The first 3600-second attempt on clean `bd918aa`
+(`l0-host-f379af42fe2747ac8ea3999a0217e5fa`) aborted after 62.495 measured seconds:
+856/856 commands were Verified, but the generator missed tick 60 by 2076 ms.
+The minute-sized browser evidence drain serialized roughly 11,000 numeric events
+on the generator path. Mixed-profile evidence now drains every five seconds;
+thresholds, command cadence and independent cleanup remain unchanged.
+
+A 180-second diagnostic (`l0-host-de9eb550d3194479a038cc71265e0fb5`) then completed
+2520/2520 commands and output history changes, zero missed ticks, and command
+acceptance p95 151.31 ms. Numeric verification exposed a separate simulator bug:
+a timer firing just before its deadline could reuse the same grid slot, producing
+two frames milliseconds apart. All 15 channels of one bank had simultaneous
+receive timestamps; six channels of another bank lost an intermediate UI value.
+The new cadence RED test reproduced reuse of the reserved deadline at an early
+callback. GREEN reserves the next deadline before arming the timer and still
+skips elapsed slots after stalls. The repeat diagnostic follows.
+
+The corrected 180-second diagnostic passed unchanged thresholds:
+`l0-host-690d257019774b75ba556d63faa475f7`, workload
+`l0-2026-10-14T19-51-48.924Z`. All 2520 commands were Verified and archived;
+all 186 numeric channels passed 33,837 inclusive boundary samples. Worst-channel
+UI p95/p99 were 414/588 ms; physical UI p95/p99 353/464 ms, command acceptance
+p95 190.90 ms. There were no missed ticks, late/skipped graph starts or archive
+loss; 180 alarm transitions matched. Supervisor confirmed stopped targets.
+This is a three-minute smoke pass, not a one-hour/resource qualification.
+
+Post-fix full Docker `make test` passed: **636 unit/integration tests in 80 files,
+15 Chromium scenarios**, plus the complete firmware, renderer, orchestration,
+TypeScript, language, offline and backup gates. The final report catch path also
+preserves an already completed measurement interval on a verification failure,
+instead of counting post-measurement archive inspection as workload time.

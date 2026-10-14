@@ -233,7 +233,10 @@ try {
         try {
           await command(target, tick % 2 === 0, measured);
           if (index === 0 && tick % 10 === 0) await inspectHistory();
-          if (index === 0 && tick % 60 === 59) { await drainUi(); console.log(JSON.stringify({phase:measured?'measurement':'warmup',elapsedSeconds:tick+1,commands,verified,history:await inspectHistory()})); }
+          // Bound browser IPC/serialization work; a minute of 186 channels can
+          // block the load generator long enough to miss its own command slots.
+          if(index===0 && tick % (mixed?5:60)===(mixed?4:59))await drainUi();
+          if (index === 0 && tick % 60 === 59) { console.log(JSON.stringify({phase:measured?'measurement':'warmup',elapsedSeconds:tick+1,commands,verified,history:await inspectHistory()})); }
         } catch (error) { failure ??= error; throw error; }
       },
     }).catch(error => { failure ??= error; throw error; })));
@@ -261,7 +264,7 @@ try {
   conclusion = assessLoad({requestedSeconds:seconds, elapsedSeconds, devices:targets.length, commands, verified, historyChanges, missedTicks, errors:[]});
 } catch (error) {
   failure = error;
-  if (measurementStarted !== null) { elapsedSeconds = (performance.now() - measurementStarted) / 1000; measuredTo = new Date().toISOString(); }
+  if (measurementStarted !== null && !measuredTo) { elapsedSeconds = (performance.now() - measurementStarted) / 1000; measuredTo = new Date().toISOString(); }
   try { await drainUi(); } catch { /* Preserve the original failure when the browser is unavailable. */ }
 }
 finally {

@@ -115,3 +115,39 @@ At failure, the host CPU was almost fully occupied and CPU pressure `some avg10`
 The stopped graph retained 21,773 starts, p99 start delay 9 ms, maximum 53.31 ms, one over-50-ms start, no skipped slots and maximum evaluation 43.53 ms. All 16 load runtimes and the observer graph stopped; worker and independent supervisor cleanup succeeded. The normal virtual Climate PID demo was restored afterward. One-hour resource, complete UI/alarm and extended release qualification remain open.
 
 The next performance increment should profile generator/HTTP observation scheduling and development-watch overhead on this four-core host, then validate a justified correction or an explicitly documented deployment profile against the same one-hour criteria. Merely increasing deadlines, suppressing missed ticks or retrying until a pass is not an accepted resolution. The earlier 43-minute physical timeout remains historical evidence; this shorter run did not reproduce it or prove its sole cause.
+
+## Observation profiling and missed-tick accounting
+
+Each completed command in `commands.jsonl` includes `receiptObservation` and
+`signalObservation`: HTTP check count, total/max check duration, actual polling
+wait duration, and elapsed observation time. These client-side durations include
+network, server and scheduler delays; they do not isolate database or device time.
+Failed/incomplete observations still fail the run and are not included in these
+completed-command samples. No extra HTTP reads are introduced.
+
+`missed-ticks.jsonl` records actual cadence deadline violations with signal ID,
+tick, measured/warmup flag, timestamp and lateness. Cancellation propagated from
+another worker does not increment `missedTicks`. Earlier reports could count the
+same shared error once per worker; those historical artifacts remain unchanged.
+The 1 Hz schedule, missed-period rejection, command TTL, handshake and observation
+budgets, and acceptance thresholds are unchanged.
+
+### Short profiling result (2026-10-14)
+
+Private artifacts: `l0-2026-10-14T11-47-56.426Z` and host run
+`139244dada114f3d8fa938a8fe8dd94c`. After 60 seconds of warmup,
+all 960 measured commands were Verified and all 960 changes were archived;
+there were zero missed ticks. Acceptance p95 was 185.23 ms and full
+verification/observation p95 was 603.21 ms. Receipt observation p95 was
+368.31 ms (HTTP checks 242.05 ms, polling waits 134.66 ms); signal observation
+p95 was 124.24 ms, with one read per command. These are separate percentile
+distributions and must not be added to estimate an overall percentile.
+
+**The run failed UI latency acceptance:** all 60 physical transitions were
+observed, but UI p95 was 576 ms against the unchanged 500 ms limit
+(p99/max 630 ms). The earlier missed-tick failure did not recur in this short
+window. Neither the CPU-contention cause nor one-hour endurance is resolved.
+Next: profile the browser signal update path and server/client scheduling under
+the same workload before attempting the extended release gate. The physical and
+load runtimes stopped; the virtual Climate demo was restored using audited
+virtual recovery for an in-flight command interrupted during demo shutdown.

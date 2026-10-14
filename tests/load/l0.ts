@@ -60,12 +60,12 @@ async function command(t: Target, value: boolean, measured: boolean) {
   const acceptedMs = performance.now() - start;
   appendFileSync(`${directory}/requests.jsonl`, JSON.stringify({measured, id:accepted.id, signalId:t.signalId, value, sentAt:new Date(wall).toISOString(), acceptedMs}) + '\n');
   if (measured) { commands++; acceptance.push(acceptedMs); if (t.physical) physicalSends.push({at: wall, value}); }
-  await waitFor(async () => {
+  const receiptObservation = await waitFor(async () => {
     const current = await get(`/api/v1/commands/${accepted.id}`);
     if (!['Accepted','Dispatched','Verified'].includes(current.state)) throw new Error(`L0 command ${accepted.id} ended ${current.state}`);
     return current.state === 'Verified';
   });
-  await waitFor(async () => {
+  const signalObservation = await waitFor(async () => {
     const sample: SignalSnapshot = await get(`/api/v1/signals/${t.signalId}/value`);
     if (sample.quality !== 'Good' || sample.bootId !== t.bootId) throw new Error('L0 output quality or boot changed');
     return sample.value === value;
@@ -73,7 +73,7 @@ async function command(t: Target, value: boolean, measured: boolean) {
   if (measured) {
     verified++; verification.push(performance.now() - start);
   } else warmupTimings.push(performance.now() - start);
-  appendFileSync(`${directory}/commands.jsonl`, JSON.stringify({measured, id: accepted.id, signalId: t.signalId, value, sentAt: new Date(wall).toISOString(), acceptedMs, verifiedAndObservedMs: performance.now() - start}) + '\n');
+  appendFileSync(`${directory}/commands.jsonl`, JSON.stringify({measured, id: accepted.id, signalId: t.signalId, value, sentAt: new Date(wall).toISOString(), acceptedMs, verifiedAndObservedMs: performance.now() - start, receiptObservation, signalObservation}) + '\n');
 }
 async function inspectHistory() {
   const h = await get('/api/v1/history/status');
@@ -160,6 +160,10 @@ try {
     console.log(JSON.stringify({phase: measured ? 'measurement' : 'warmup', duration, directory}));
     const results = await Promise.allSettled(targets.map((target,index) => cadence({
       start,ticks:duration,phaseMs:index*1000/targets.length,now:()=>performance.now(),wait:sleep,
+      onMiss: event => {
+        missedTicks++;
+        appendFileSync(`${directory}/missed-ticks.jsonl`, JSON.stringify({measured,signalId:target.signalId,...event,at:new Date().toISOString()}) + '\n');
+      },
       step:async (tick,late) => {
         if (failure) throw failure;
         if (measured) jitter.push(late);
@@ -170,7 +174,7 @@ try {
           if (index === 0 && tick % 60 === 59) { await drainUi(); console.log(JSON.stringify({phase:measured?'measurement':'warmup',elapsedSeconds:tick+1,commands,verified,history:await inspectHistory()})); }
         } catch (error) { failure ??= error; throw error; }
       },
-    }).catch(error => { if (error instanceof Error && /missed tick/.test(error.message)) missedTicks++; failure ??= error; throw error; })));
+    }).catch(error => { failure ??= error; throw error; })));
     const failed = results.find(r=>r.status==='rejected');
     if (failed?.status === 'rejected') throw failed.reason;
     if (measured) elapsedSeconds = (performance.now() - start) / 1000;

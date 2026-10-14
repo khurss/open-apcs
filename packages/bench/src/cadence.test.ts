@@ -24,3 +24,16 @@ it('rejects a missed period instead of sending a catch-up burst', async () => {
   await vi.advanceTimersByTimeAsync(3000); await failed;
   expect(step).toHaveBeenCalledTimes(1);
 });
+
+it('reports an actual missed deadline once, without counting propagated cancellation', async () => {
+  let now = 0;
+  const onMiss = vi.fn();
+  let original: unknown;
+  try {
+    await cadence({start:0,ticks:3,phaseMs:0,now:()=>now,wait:async ms=>{now+=ms;},step:async()=>{now+=2100;},onMiss});
+  } catch (error) { original = error; }
+  expect(original).toBeInstanceOf(Error);
+  expect(onMiss).toHaveBeenCalledExactlyOnceWith({tick:1,latenessMs:1100});
+  await expect(cadence({start:now,ticks:3,phaseMs:0,now:()=>now,wait:async ms=>{now+=ms;},step:async()=>{throw original;},onMiss})).rejects.toBe(original);
+  expect(onMiss).toHaveBeenCalledTimes(1);
+});

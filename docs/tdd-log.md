@@ -522,3 +522,24 @@ The first complete gate passed all 615 unit/integration cases and all non-browse
 Final **`make test` exited 0** with **615 unit/integration tests in 74 files, 14 Chromium scenarios, 448 native C checks and nine orchestration checks**, plus ESP32 cross-build, renderer recovery, strict TypeScript, English validation, frontend/offline builds and backup/restore. No image rebuild was required. The public API reconciled the prior physical Unknown against a new boot and Good OFF GPIO18 feedback while preserving the original outcome/history. A separate ON/OFF Rigol pulse and all four fault modes passed the existing 20 MHz measurement profile; both cleanup paths stopped control and the physical broker/API were restored. These hardware runs overlapped the independent Docker regression and do not claim isolated resource timing. The ordinary diagnostic-disabled application was flashed with hash verification before the subsequent endurance attempt. See [physical recovery](physical-recovery.md) and [electrical evidence](rigol-hil.md#physical-recovery-regression-2026-10-14).
 
 The normal-firmware extended attempt on `02ea89d` stopped after 2113.928 seconds with a generator tick 1559 ms late. The result remains failed. All 33,797 sent commands were observed Verified, and a separate Docker postmortem check verified all 33,797 archived changes without changing the original result. The full gateway export has 21,120 events, zero handshake timeouts/gaps/read errors and 5978 paired broker acknowledgements. High CPU pressure and a 378 ms durable verification versus 1822 ms client observation identify a measurement/host scheduling investigation, not proof of a sole cause. No deadline or acceptance threshold was relaxed. Source fingerprint remained unchanged. All 16 load runtimes and the graph stopped; independent cleanup succeeded. The virtual demo was restored. See [the endurance record](load-l0.md#recovery-delivery-endurance-attempt-2026-10-14).
+
+## 2026-10-14: Load observation profiling
+
+Docker RED: two new regressions failed while five existing observation/cadence
+cases passed. One separates HTTP check latency from polling waits; the other
+reproduces a missed deadline followed by cancellation of another worker and
+requires exactly one missed-tick report. Docker GREEN: all seven cases passed.
+The load harness now persists separate receipt/signal observation metrics and
+records actual deadline violations at their source. This corrects accounting and
+adds diagnostic evidence; it does not claim to resolve host CPU contention or
+the failed extended endurance gate. Full regression and short bench results follow.
+
+Final `make test` exited 0: 617 unit/integration cases in 74 files, 14 Chromium
+scenarios, native firmware/orchestration checks, ESP32 cross-build, renderer
+recovery, TypeScript, English validation, frontend/offline build checks and
+backup/restore. Existing images and source mounts were used. The separate short
+physical L0 profiling run failed UI latency (p95 576 ms versus 500 ms), while
+960/960 commands were Verified and archived with zero missed ticks. This is not
+a performance acceptance pass. The original extended missed deadline was not
+reproduced; diagnostic accounting is corrected, and the root cause remains open.
+The virtual demo was restored and physical control remains stopped.

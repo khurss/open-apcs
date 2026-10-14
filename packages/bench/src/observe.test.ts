@@ -12,3 +12,9 @@ it('fails missing observations and preserves terminal command errors',async()=>{
   expect(now).toBe(2000);
   await expect(observeUntil(async()=>{throw new Error('Command expired');},()=>0,async()=>{})).rejects.toThrow('Command expired');
 });
+
+it('separates read latency from polling waits', async () => {
+  let now = 0, reads = 0;
+  const evidence = await observeUntil(async () => { now += ++reads === 1 ? 250 : 400; return reads === 2; }, () => now, async ms => { now += ms; });
+  expect(evidence).toEqual({reads:2, readMs:650, waitMs:100, elapsedMs:750, maxReadMs:400});
+});

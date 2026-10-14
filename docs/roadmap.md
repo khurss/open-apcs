@@ -87,3 +87,9 @@ This delivery sequence adds to M1–M3; it does not waive their remaining physic
 The owner selected an external AI API before local-model support and confirmed GitHub as the publication target. Core operation and existing editors remain offline-capable; AI authoring is optional. The initial provider is OpenAI; its model and private credentials are configurable. No provider key is stored in Git or exposed to the browser.
 
 Acceptance covers implemented user journeys: authentication, project creation/opening/editing, device registration/start/stop, signal inspection/manual control/history, graph construction/simulation/preparation/activation/revision changes, screen construction/operator view, alarms/acknowledgement/suppression, notification delivery inspection, CSV/PDF reports, audit, themes and responsive navigation. Hardware-only, external-service and unimplemented roadmap features receive explicit coverage labels rather than an invented pass. The defect review cannot establish the absence of every possible defect.
+
+Load diagnostic follow-up (2026-10-14): receipt/signal HTTP timing is now
+recorded separately, and shared worker cancellation no longer multiplies the
+missed-tick counter. A short 16-output run verified and archived all 960 commands
+but failed the unchanged UI latency criterion (p95 576 ms). Browser update-path
+profiling and extended endurance remain open; see [load evidence](load-l0.md#short-profiling-result-2026-10-14).

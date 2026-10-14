@@ -151,3 +151,33 @@ Next: profile the browser signal update path and server/client scheduling under
 the same workload before attempting the extended release gate. The physical and
 load runtimes stopped; the virtual Climate demo was restored using audited
 virtual recovery for an in-flight command interrupted during demo shutdown.
+
+## Signal monitor cadence correction
+
+The Signals page now schedules serial refreshes on a monotonic 250 ms grid.
+Response time is included in that interval instead of adding a further 250 ms
+after every response. Slow rounds skip elapsed slots and never overlap or
+replay missed requests. All batches still complete before a page snapshot is
+published, errors disable control, and navigation aborts pending reads. This
+can increase request frequency compared with the slower previous loop, but
+retains a single in-flight round and a maximum nominal four rounds per second.
+It does not change command, telemetry, safety or acceptance timing thresholds.
+
+### Cadence correction smoke evidence (2026-10-14)
+
+Private artifacts: `l0-2026-10-14T12-06-44.414Z`; host run
+`1902653bea064743b6fc34f0ba2bf03c`. The normal-firmware 16-output profile
+completed 60 seconds of warmup and 60.938 seconds of measurement:
+960 commands, 960 Verified observations, 960 archived changes, zero missed
+ticks, all 60 UI transitions and 60 alarm transitions. Command acceptance
+p95 was 184.72 ms. UI latency p95 was **491 ms**, p99/max **538 ms**, against
+unchanged 500/1000 ms criteria. The graph recorded 1268 starts, zero late or
+skipped starts and p99 start delay 8 ms. The workload and independent
+supervisor both stopped control.
+
+This is a **smoke pass**, not extended endurance acceptance. The preceding
+short run measured UI p95 576 ms; these runs were sequential on a shared host
+and are not a controlled attribution of every millisecond. Unit tests establish
+the removed response-plus-delay behavior. The observed margin to the UI p95
+limit is only 9 ms. Host contention, larger pages and the one-hour resource and
+endurance gates remain to be qualified. No timing thresholds were relaxed.

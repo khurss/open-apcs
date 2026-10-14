@@ -1,3 +1,4 @@
+import { startPolling } from './polling.js';
 import { views, readRoute, routeHash, type View } from './features/projects/navigation.js';
 import { ProjectWorkspace } from './features/projects/workspace.js';
 import { Rename } from './features/catalog/rename.js';
@@ -105,7 +106,6 @@ function App() {
   useEffect(() => {
     if (!user || view !== 'Signals') return;
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
     let pending: AbortController | undefined;
     const poll = async () => {
       const controller = new AbortController(); pending = controller;
@@ -119,10 +119,9 @@ function App() {
         if (!cancelled) { setValues(updates); setConnected(true); }
       } catch (reason) { if (!cancelled) { setConnected(false); failure(reason); } }
       finally { clearTimeout(deadline); }
-      if (!cancelled) timer = setTimeout(() => { void poll(); }, 250);
     };
-    void poll();
-    return () => { cancelled = true; clearTimeout(timer); pending?.abort(); };
+    const stop = startPolling(poll, 250);
+    return () => { cancelled = true; stop(); pending?.abort(); };
   }, [user, view, signals]);
   function navigate(next: View, context = ['Projects','Overview'].includes(next) ? '' : projectContext) {
     if ((next !== view || context !== projectContext) && editorDirty && !window.confirm('Discard unsaved changes to this draft?')) return;

@@ -543,3 +543,28 @@ physical L0 profiling run failed UI latency (p95 576 ms versus 500 ms), while
 a performance acceptance pass. The original extended missed deadline was not
 reproduced; diagnostic accounting is corrected, and the root cause remains open.
 The virtual demo was restored and physical control remains stopped.
+
+## 2026-10-14: Signal monitor refresh cadence
+
+Extracted the existing serial browser poll scheduling into a small helper.
+Docker RED: two timing regressions failed and disposal passed. With a 150 ms
+HTTP response, the old response-plus-250-ms delay started requests at 0 and
+400 ms instead of 0, 250 and 500 ms. A 600 ms response also delayed the next
+request to 850 ms rather than the next available 750 ms slot. Docker GREEN:
+all three cases pass with a monotonic 250 ms slot schedule. Elapsed slots are
+skipped, requests remain serial, and disposal prevents rescheduling after an
+in-flight request. The Signals view uses this helper while retaining its
+three-second abort, batch size, atomic page update and disconnected-control
+behavior. This removes a demonstrated extra delay; short load and full Docker
+regression results follow.
+
+Final `make test` exited 0: **620 unit/integration cases across 75 files and
+14 Chromium scenarios**, including the 101-signal page, disconnect/recovery
+controls and navigation regression. Native firmware/orchestration checks, ESP32
+cross-build, renderer recovery, strict TypeScript, English validation, frontend
+and offline checks, and backup/restore also passed. Existing Docker images and
+source mounts were used. The separate normal-firmware short L0 run passed with
+960 verified/archived commands, no missed ticks, all UI/alarm transitions and UI
+p95 491 ms (previous short run 576 ms). The margin is only 9 ms; this is not an
+extended endurance or resource pass. Demo restored; physical control stopped.
+See [cadence evidence](load-l0.md#cadence-correction-smoke-evidence-2026-10-14).

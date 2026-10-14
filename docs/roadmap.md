@@ -93,3 +93,9 @@ recorded separately, and shared worker cancellation no longer multiplies the
 missed-tick counter. A short 16-output run verified and archived all 960 commands
 but failed the unchanged UI latency criterion (p95 576 ms). Browser update-path
 profiling and extended endurance remain open; see [load evidence](load-l0.md#short-profiling-result-2026-10-14).
+
+Signal monitor follow-up (2026-10-14): removed the extra response-plus-250-ms
+wait with a serial monotonic refresh schedule. The same short 16-output
+profile now passes: 960 verified/archived commands, UI p95 491 ms and no missed
+ticks. The UI margin is narrow; this is not a one-hour endurance or resource
+qualification. See [cadence smoke evidence](load-l0.md#cadence-correction-smoke-evidence-2026-10-14).

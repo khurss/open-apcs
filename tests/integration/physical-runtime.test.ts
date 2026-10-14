@@ -47,8 +47,15 @@ describe('physical-profile runtime verified with a TLS simulator', () => {
     await simulator.start();
     expect((await app.inject({ method: 'POST', url, headers, payload: { ...payload, gpio: 19 } })).statusCode).toBe(503);
     const started = await app.inject({ method: 'POST', url, headers, payload }); expect(started.statusCode).toBe(200); expect(started.json().state).toBe('running');
+    const traceUrl=`/api/v1/devices/${device}/runtime?trace=true`;
+    expect((await app.inject({method:'GET',url:traceUrl})).statusCode).toBe(401);
+    expect((await app.inject({method:'GET',url:`/api/v1/devices/${device}/runtime`,headers})).json().transport).toBeUndefined();
+    const traced=(await app.inject({method:'GET',url:traceUrl,headers})).json();
+    expect(traced.transport.events.length).toBeGreaterThan(0);
+    expect(JSON.stringify(traced)).not.toContain(config.password);
     const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'foreign','fixture')", [foreign]);
     await pool.query('UPDATE apcs_sessions SET user_id=$1', [foreign]);
+    expect((await app.inject({method:'GET',url:traceUrl,headers})).statusCode).toBe(404);
     expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'stop', reason: 'Foreign stop' } })).statusCode).toBe(404);
     await pool.query('UPDATE apcs_sessions SET user_id=$1', [actor]);
     expect((await app.inject({ method: 'POST', url, headers, payload: { action: 'stop', reason: 'End bench' } })).json().state).toBe('stopped');
@@ -66,6 +73,7 @@ describe('physical-profile runtime verified with a TLS simulator', () => {
     await writeFile(path, JSON.stringify(config), { mode: 0o600 }); expect(await loadPhysicalConfig(path)).toEqual(config);
     processRuntime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL!, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath: path });
     await simulator.start(); expect((await processRuntime.startPhysical(device, actor, 18)).state).toBe('running');
+    expect((await processRuntime.status(device,true)).transport!.events.length).toBeGreaterThan(0);
     process.kill(processRuntime.pid!, 'SIGKILL');
     await expect.poll(async () => { try { return (await processRuntime!.context(request())).quality; } catch { return null; } }, { timeout: 4000 }).toBe('Disconnected');
     expect((await processRuntime.status(device)).state).toBe('stopped');

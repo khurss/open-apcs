@@ -1,0 +1,29 @@
+# Explicit disarmed bench diagnostic. Mount only the selected private connection file.
+name: open-apcs-trace
+services:
+  probe:
+    extends:
+      file: compose.load.yml
+      service: l0
+    networks: [bench]
+    environment:
+      APCS_TRACE_SECONDS: ${APCS_TRACE_SECONDS:-300}
+    volumes:
+      - ${APCS_PHYSICAL_FILE:?Set the private physical configuration file}:/run/physical/config.json:ro
+    command: [node, --import, /workspace/apps/api/node_modules/tsx/dist/loader.mjs, tests/hil/transport-probe.ts]
+  session:
+    extends:
+      file: compose.load.yml
+      service: l0
+    environment:
+      APCS_HIL_MODE: transport-session
+      APCS_TRACE_SECONDS: ${APCS_TRACE_SECONDS:-600}
+    command: [node, --import, /workspace/apps/api/node_modules/tsx/dist/loader.mjs, tests/hil/supervisor.ts]
+networks:
+  bench:
+    external: true
+    name: ${APCS_BENCH_NETWORK:-open-apcs-dev_frontend}
+volumes:
+  test_node_modules:
+    external: true
+    name: open-apcs-test_node_modules

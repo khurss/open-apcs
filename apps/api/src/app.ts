@@ -205,9 +205,9 @@ export async function createApi(options: ApiOptions) {
     try { return await journal.get(request.params.id); }
     catch (error) { if (error instanceof Error && error.message.startsWith('Unknown command:')) throw new HttpError(404, 'NOT_FOUND', 'Command not found'); throw error; }
   });
-  app.get<{ Params: { id: string } }>('/api/v1/devices/:id/runtime', { schema: { params: idParams } }, async (request) => {
+  app.get<{ Params: { id: string }; Querystring: {trace?: string} }>('/api/v1/devices/:id/runtime', { schema: { params: idParams, querystring: object({trace:{type:'string',enum:['true','false']}},[]) } }, async (request) => {
     if (!(await pool.query('SELECT d.id FROM apcs_devices d JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND p.owner_id=$2', [request.params.id, request.sessionUser!.id])).rowCount) throw new HttpError(404, 'NOT_FOUND', 'Device not found');
-    return options.runtime?.status(request.params.id) ?? { deviceId: request.params.id, environment: 'Simulation', state: 'stopped', error: 'Runtime service is not configured' };
+    return options.runtime?.status(request.params.id,request.query.trace === 'true') ?? { deviceId: request.params.id, environment: 'Simulation', state: 'stopped', error: 'Runtime service is not configured' };
   });
   app.post<{ Params: { id: string }; Body: { action: 'start' | 'stop'; reason: string } }>('/api/v1/devices/:id/runtime', {
     schema: { params: idParams, body: object({ action: { type: 'string', enum: ['start', 'stop'] }, reason: { type: 'string', minLength: 1, maxLength: 256, pattern: '\\S' } }) },

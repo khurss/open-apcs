@@ -22,6 +22,10 @@ The scheduling and MQTT receive-path corrections, bounded diagnostics, server-cr
 
 Final Docker regression passed: 601 unit/integration tests, 13 Chromium scenarios, 435 native C checks, nine orchestration checks, ESP32 cross-build, renderer recovery, TypeScript/language checks, offline build and backup/restore. The LAN virtual demo is running again; the physical bench remains stopped. The full regression result does not override the failed hardware endurance gate.
 
+## Transport investigation
+
+A subsequent [transport diagnostics increment](transport-diagnostics.md) adds owner-scoped bounded gateway traces, an opt-in firmware trace and a disarmed probe fixture. The previous Unknown command and failed extended-hour result remain unchanged.
+
 ## Remaining release boundaries
 
 - USB reset is not a power cut or brownout. Broker pause is not a Wi-Fi radio interruption. Those physical cases need a reviewed means of injecting the actual fault.

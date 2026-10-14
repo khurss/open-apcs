@@ -16,7 +16,7 @@ import { canonicalJson } from '../../../packages/domain/src/screen.js';
 import { LedRuntime } from '../../../packages/gateway/src/runtime.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
-export interface RuntimeStatus { telemetry?: import('../../../packages/gateway/src/latency.js').LatencySummary | null; deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
+export interface RuntimeStatus { transport?: import('../../../packages/gateway/src/transport-trace.js').TraceSnapshot | null; telemetry?: import('../../../packages/gateway/src/latency.js').LatencySummary | null; deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
 export interface GraphRuntimeStatus { timing: GraphTiming | null; graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; pending: string[]; evaluation: GraphEvaluation | null; }
 export interface RuntimeControl {
   alarmStatus(): Promise<AlarmServiceStatus>;
@@ -28,7 +28,7 @@ export interface RuntimeControl {
   start(deviceId: string, actorId: string): Promise<RuntimeStatus>;
   startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus>;
   stop(deviceId: string): Promise<RuntimeStatus>;
-  status(deviceId: string): Promise<RuntimeStatus>;
+  status(deviceId: string, trace?: boolean): Promise<RuntimeStatus>;
   readSignal(signalId: string): Promise<SignalSnapshot>;
   readSignals?(signalIds: string[]): Promise<Record<string, SignalSnapshot>>;
   context(request: CommandRequest): Promise<CommandContext>;
@@ -106,10 +106,10 @@ export class SimulationRuntime implements RuntimeControl {
     return this.status(deviceId);
   }); }
   stop(deviceId: string): Promise<RuntimeStatus> { return this.serial(async () => { const entry = this.entries.get(deviceId); if (entry) await this.stopEntry(entry); return this.status(deviceId); }); }
-  async status(deviceId: string): Promise<RuntimeStatus> {
+  async status(deviceId: string, trace = false): Promise<RuntimeStatus> {
     const entry = this.entries.get(deviceId); const state = entry?.runtime.status ?? { state: 'stopped' as const, error: null };
     const kind = entry?.catalog.kind ?? (await this.pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [deviceId])).rows[0]?.kind;
-    return { ...(entry ? {telemetry: entry.gateway.diagnostics.telemetry} : {}), deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(entry?.processError ? { state: 'faulted' as const, error: entry.processError } : {}), ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
+    return { ...(trace ? {transport: entry?.gateway.transport ?? null} : {}), ...(entry ? {telemetry: entry.gateway.diagnostics.telemetry} : {}), deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(entry?.processError ? { state: 'faulted' as const, error: entry.processError } : {}), ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
   }
   async readSignal(signalId: string): Promise<SignalSnapshot> {
     if (!this.registered.has(signalId)) return disconnected();

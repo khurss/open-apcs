@@ -1,0 +1,9 @@
+menu "Open APCS bench diagnostics"
+config APCS_DIAGNOSTIC_TRACE
+    bool "Enable bounded USB transport timing trace"
+    default n
+    help
+        Records packet fingerprints and monotonic timing only. A separate task
+        drains a bounded nonblocking queue; dropped evidence is counted.
+        Use only for reviewed bench diagnostics, not release qualification.
+endmenu

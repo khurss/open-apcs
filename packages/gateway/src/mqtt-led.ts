@@ -1,3 +1,4 @@
+import {TransportTrace} from './transport-trace.js';
 import {LatencyHistogram, type LatencySummary} from './latency.js';
 import { randomUUID } from 'node:crypto';
 import { connectAsync, type IClientOptions, type MqttClient } from 'mqtt';
@@ -79,6 +80,7 @@ export class MqttLedGateway {
   private rejectedFrames = 0;
   private lastError: string | null = null;
   private readonly telemetryTiming = new LatencyHistogram();
+  private readonly trace: TransportTrace;
   private dispatching = false;
   private synchronizing = false;
   private establishedBoot: string | null = null;
@@ -86,6 +88,7 @@ export class MqttLedGateway {
   constructor(private readonly options: LedConnection, private readonly signals: SignalStore,
     private readonly journal: PgCommandJournal, private readonly clock: Clock,
     private readonly policy: () => Pick<CommandContext, 'projectRevision' | 'interlockReason' | 'ownerId' | 'maxTtlMs'>) {
+    this.trace = new TransportTrace(() => clock.monotonicNow(), () => clock.wallNow());
     this.session = new GatewaySession(() => clock.monotonicNow(), randomUUID());
     deviceTopic(options.siteId, options.protocolDeviceId ?? options.deviceId, 'in');
   }
@@ -102,6 +105,7 @@ export class MqttLedGateway {
     client.on('message', (topic, payload, packet) => {
       if (topic !== deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'out')) return;
       const arrivedAt = this.clock.monotonicNow();
+      this.trace.record('receive',payload);
       const rejected = (error: unknown) => {
         this.rejectedFrames++; this.lastError = error instanceof Error ? error.message : 'Frame processing failed';
       };
@@ -180,13 +184,20 @@ export class MqttLedGateway {
         await this.journal.connectionLost(this.options.signalId); return false;
       }
       const frame = this.session.command(intent.command.id, intent.command.value, intent.deadlineMonotonicMs);
-      await publish(this.client, deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in'), frame);
+      await this.send(frame);
       return true;
     } catch (error) {
       this.invalidate(); throw error;
     } finally { this.dispatching = false; }
   }
 
+  get transport() { return this.trace.snapshot(); }
+  private async send(frame:Frame) {
+    const bytes=Buffer.from(JSON.stringify(frame));
+    this.trace.record('send',bytes);
+    await publish(this.client,deviceTopic(this.options.siteId,this.options.protocolDeviceId ?? this.options.deviceId,'in'),frame);
+    this.trace.record('puback',bytes);
+  }
   get diagnostics(): { rejectedFrames: number; lastError: string | null; telemetry: LatencySummary | null } {
     return { rejectedFrames: this.rejectedFrames, lastError: this.lastError, telemetry: this.telemetryTiming.summary() };
   }
@@ -197,6 +208,7 @@ export class MqttLedGateway {
   }
 
   private invalidate(): void {
+    this.trace.record('disconnect');
     this.session.disconnect(); this.signals.disconnect(this.options.deviceId);
     this.waiter?.reject(new Error('Device session disconnected'));
     this.loss = this.loss.then(() => this.journal.connectionLost(this.options.signalId))
@@ -207,10 +219,10 @@ export class MqttLedGateway {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const reply = new Promise<Frame>((resolve, reject) => {
       this.waiter = { nonce, kind, resolve, reject };
-      timer = setTimeout(() => reject(new Error('Device handshake timed out')), 500);
+      timer = setTimeout(() => { this.trace.record('timeout',Buffer.from(JSON.stringify(frame))); reject(new Error('Device handshake timed out')); }, 500);
     });
     try {
-      const [, response] = await Promise.all([publish(this.client, deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in'), frame), reply]);
+      const [, response] = await Promise.all([this.send(frame), reply]);
       return response;
     } finally { clearTimeout(timer); this.waiter = null; }
   }

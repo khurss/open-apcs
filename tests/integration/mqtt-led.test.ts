@@ -56,6 +56,19 @@ async function waitFor(check: () => Promise<boolean> | boolean) {
 }
 
 describe('LED gateway with real PostgreSQL and Mosquitto', () => {
+  it('retains bounded correlated send, broker acknowledgement and receive evidence after a handshake timeout', async () => {
+    await start();
+    expect(gateway.transport.events.map(e=>e.event)).toEqual(expect.arrayContaining(['send','puback','receive']));
+    const sent=gateway.transport.events.find(e=>e.event==='send')!;
+    expect(gateway.transport.events).toEqual(expect.arrayContaining([expect.objectContaining({event:'puback',hash:sent.hash,bytes:sent.bytes})]));
+    await simulator.stop();
+    await expect(gateway.synchronize()).rejects.toThrow('Device handshake timed out');
+    expect(gateway.transport.events).toEqual(expect.arrayContaining([expect.objectContaining({event:'timeout'})]));
+    expect(signals.get('led').quality).toBe('Disconnected');
+    await gateway.stop();
+    expect(gateway.transport.events.some(e=>e.event==='timeout')).toBe(true);
+  });
+
   it('records accepted telemetry arrival-to-state delay without counting duplicates', async () => {
     let monotonic = 0;
     gateway = new MqttLedGateway(options, signals, journal, {...clock, monotonicNow: () => monotonic}, () => ({projectRevision: 1, interlockReason: null, ownerId: 'operator', maxTtlMs: 3000}));

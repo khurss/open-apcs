@@ -1,5 +1,6 @@
 #include "led_codec.h"
 #include "led_pins.h"
+#include "led_trace.h"
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,6 +30,20 @@ static char topic_in[300], topic_out[300], client_id[300];
 static struct { char ssid[33], password[65], broker[257], username[129], secret[257], site[129], device[129], ca[4096], ntp[256]; int32_t gpio; } config;
 typedef struct { size_t size; bool retained; char data[4096]; } packet;
 static double now_ms(void) { return (double)esp_timer_get_time() / 1000.0; }
+#if CONFIG_APCS_DIAGNOSTIC_TRACE
+static QueueHandle_t trace_queue;
+static atomic_uint trace_sequence, trace_dropped;
+static void trace(apcs_trace_kind kind,const char *data,size_t size,int message_id) {
+  apcs_trace_event e={.sequence=atomic_fetch_add(&trace_sequence,1)+1,.at_us=(uint64_t)esp_timer_get_time(),.event=kind,.hash=apcs_trace_hash(data,size),.size=(uint32_t)size,.message_id=message_id,.dropped=atomic_load(&trace_dropped)};
+  if(!trace_queue || xQueueSend(trace_queue,&e,0)!=pdTRUE) atomic_fetch_add(&trace_dropped,1);
+}
+static void trace_drain(void *arg) {
+  (void)arg; apcs_trace_event e; char line[256];
+  for(;;) if(xQueueReceive(trace_queue,&e,portMAX_DELAY)==pdTRUE && apcs_trace_format(&e,line,sizeof(line))) puts(line);
+}
+#else
+static void trace(apcs_trace_kind kind,const char *data,size_t size,int message_id) { (void)kind;(void)data;(void)size;(void)message_id; }
+#endif
 static bool string_key(nvs_handle_t handle, const char *key, char *dest, size_t size) { return nvs_get_str(handle, key, dest, &size) == ESP_OK && dest[0]; }
 static bool load_config(void) {
   nvs_handle_t handle; if (nvs_open("apcs", NVS_READONLY, &handle) != ESP_OK) return false;
@@ -48,9 +63,11 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     esp_mqtt5_subscribe_property_config_t property = { .retain_as_published_flag = true, .retain_handle = 2 };
     if (esp_mqtt5_client_set_subscribe_property(client, &property) != ESP_OK || esp_mqtt_client_subscribe(client, topic_in, 1) < 0) atomic_store(&transport_fault, true);
   } else if (id == MQTT_EVENT_SUBSCRIBED) atomic_store(&connected, true);
-  else if (id == MQTT_EVENT_DISCONNECTED || id == MQTT_EVENT_ERROR) { atomic_store(&connected, false); atomic_store(&disconnected, true); }
+  else if (id == MQTT_EVENT_PUBLISHED) trace(APCS_TRACE_ACK,NULL,0,event->msg_id);
+  else if (id == MQTT_EVENT_DISCONNECTED || id == MQTT_EVENT_ERROR) { trace(APCS_TRACE_DISCONNECT,NULL,0,0); atomic_store(&connected, false); atomic_store(&disconnected, true); }
   else if (id == MQTT_EVENT_DATA) {
     if (event->total_data_len < 1 || event->total_data_len > 4096 || event->current_data_offset != 0 || event->data_len != event->total_data_len || event->topic_len != (int)strlen(topic_in) || memcmp(event->topic, topic_in, (size_t)event->topic_len)) { atomic_store(&transport_fault, true); return; }
+    trace(APCS_TRACE_RX,event->data,(size_t)event->data_len,event->msg_id);
     packet message = { .size = (size_t)event->data_len, .retained = event->retain != 0 }; memcpy(message.data, event->data, message.size);
     if (xQueueSend(incoming, &message, 0) != pdTRUE) atomic_store(&transport_fault, true);
   }
@@ -58,7 +75,10 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 static void apply_output(void) { ESP_ERROR_CHECK(gpio_set_level((gpio_num_t)config.gpio, led.output ? 1 : 0)); }
 static bool publish(const char *payload) {
   esp_mqtt5_publish_property_config_t property = { .message_expiry_interval = 1 };
-  return esp_mqtt5_client_set_publish_property(client, &property) == ESP_OK && esp_mqtt_client_enqueue(client, topic_out, payload, 0, 1, 0, true) >= 0;
+  trace(APCS_TRACE_TX_ENTER,payload,strlen(payload),0);
+  int id=esp_mqtt5_client_set_publish_property(client,&property)==ESP_OK ? esp_mqtt_client_enqueue(client,topic_out,payload,0,1,0,true) : -1;
+  trace(APCS_TRACE_TX_EXIT,payload,strlen(payload),id);
+  return id>=0;
 }
 static void control(void *arg) {
   (void)arg; ESP_ERROR_CHECK(esp_task_wdt_add(NULL)); double last_report = 0; bool reported_output = false; packet message; char reply[4096];
@@ -69,6 +89,7 @@ static void control(void *arg) {
     if (atomic_load(&connected) && !atomic_load(&transport_fault)) {
       /* One packet per cycle bounds work; a flood faults the bounded ingress queue. */
       if (xQueueReceive(incoming, &message, 0) == pdTRUE) {
+        trace(APCS_TRACE_PROCESS,message.data,message.size,0);
         bool response = apcs_frame(&led, message.data, message.size, message.retained, now, reply, sizeof(reply));
         apply_output(); if (response && !publish(reply)) atomic_store(&transport_fault, true);
       }
@@ -101,6 +122,10 @@ void app_main(void) {
   unsigned char random[16]; esp_fill_random(random, sizeof(random)); char boot[33]; for (size_t i = 0; i < sizeof(random); i++) snprintf(boot + 2 * i, 3, "%02x", random[i]);
   if (!apcs_init(&led, boot)) return;
   snprintf(topic_in, sizeof(topic_in), "openapcs/led/v1/%s/%s/in", config.site, config.device); snprintf(topic_out, sizeof(topic_out), "openapcs/led/v1/%s/%s/out", config.site, config.device); snprintf(client_id, sizeof(client_id), "apcs-%s-%s", config.site, config.device);
+#if CONFIG_APCS_DIAGNOSTIC_TRACE
+  trace_queue=xQueueCreate(64,sizeof(apcs_trace_event));
+  if(!trace_queue || xTaskCreate(trace_drain,"apcs-trace",4096,NULL,1,NULL)!=pdPASS) { ESP_LOGE(TAG,"Diagnostic allocation failed; output remains OFF"); return; }
+#endif
   incoming = xQueueCreate(4, sizeof(packet)); if (!incoming) { ESP_LOGE(TAG, "Ingress allocation failed; output remains OFF"); return; }
   esp_mqtt_client_config_t mqtt = { .broker.address.uri = config.broker, .broker.verification.certificate = config.ca, .credentials.client_id = client_id, .credentials.username = config.username, .credentials.authentication.password = config.secret, .session.protocol_ver = MQTT_PROTOCOL_V_5, .session.disable_clean_session = false, .network.disable_auto_reconnect = true, .buffer.size = 8192, .outbox.limit = 16384, .task.stack_size = 8192 };
   client = esp_mqtt_client_init(&mqtt); if (!client) return;

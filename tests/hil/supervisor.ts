@@ -4,11 +4,12 @@ import { readFileSync, unlinkSync } from 'node:fs';
 import { request } from '@playwright/test';
 import { supervise } from '../../packages/bench/src/supervise.js';
 const mode = process.env.APCS_HIL_MODE ?? 'led-pulse';
-const seconds = Number(process.env.APCS_L0_SECONDS ?? 3600);
+const seconds = Number(mode === 'transport-session' ? process.env.APCS_TRACE_SECONDS ?? 600 : process.env.APCS_L0_SECONDS ?? 3600);
+if(mode === 'transport-session' && (!Number.isInteger(seconds)||seconds<10||seconds>3600))throw new Error('Session duration must be 10–3600 seconds');
 if (mode === 'l0' && (!Number.isInteger(seconds) || seconds < 60 || seconds > 3600)) throw new Error('L0 duration must be 60–3600 seconds');
 const virtualDevices = new Set<string>();
 const graphs = new Set<string>();
-const child = fork(new URL(mode === 'l0' ? '../load/l0.ts' : './rigol-led.ts', import.meta.url), [mode], { execArgv: ['--import', '/workspace/apps/api/node_modules/tsx/dist/loader.mjs'], stdio: ['ignore','inherit','inherit','ipc'] });
+const child = fork(new URL(mode === 'l0' ? '../load/l0.ts' : mode === 'transport-session' ? './transport-session.ts' : './rigol-led.ts', import.meta.url), [mode], { execArgv: ['--import', '/workspace/apps/api/node_modules/tsx/dist/loader.mjs'], stdio: ['ignore','inherit','inherit','ipc'] });
 child.on('message', message => {
   if (mode === 'l0' && message && typeof message === 'object' && 'graphId' in message && typeof message.graphId === 'string' && /^[0-9a-f-]{36}$/.test(message.graphId)) graphs.add(message.graphId);
   if (mode === 'l0' && message && typeof message === 'object' && 'virtualDevice' in message && typeof message.virtualDevice === 'string' && /^[0-9a-f-]{36}$/.test(message.virtualDevice)) virtualDevices.add(message.virtualDevice);
@@ -39,4 +40,4 @@ await supervise(child, async (armed, locked) => {
   } finally {
     if (locked) try { unlinkSync('/artifacts/rigol.lock'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
-}, mode === 'l0' ? (seconds + 600) * 1000 : 90000);
+}, mode === 'l0' ? (seconds + 600) * 1000 : mode === 'transport-session' ? (seconds + 60) * 1000 : 90000);

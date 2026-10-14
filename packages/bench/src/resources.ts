@@ -4,7 +4,9 @@ export function memoryBytes(text: string) {
   return Number(m[1]) * 1024 ** ['B','KiB','MiB','GiB','TiB'].indexOf(m[2]!);
 }
 export interface ResourceSample {at:number;containers:{Name:string;MemUsage:string;CPUPerc:string}[];}
-export function assessResources(rows: ResourceSample[]) {
+export function assessResources(rows: ResourceSample[], profile: 'led-16' | 'mixed-200' = 'led-16') {
+  if (!['led-16','mixed-200'].includes(profile)) throw new Error('Unknown resource profile');
+  const growthLimitPercent = profile === 'mixed-200' ? 10 : 5;
   if (rows.length < 2 || rows.at(-1)!.at - rows[0]!.at < 3600) throw new Error('One hour of resource samples required');
   const names = rows[0]!.containers.map(c=>c.Name).sort();
   const totals = rows.map((r,i) => {
@@ -20,5 +22,5 @@ export function assessResources(rows: ResourceSample[]) {
   const final = mean(totals.filter(s=>s.at >= end-300));
   const growthPercent = 100*(final/baseline-1);
   const peakBytes = Math.max(...totals.map(s=>s.bytes));
-  return {passed:peakBytes <= 12*1024**3 && growthPercent <= 5,peakBytes,growthPercent,peakCpuPercent:Math.max(...totals.map(s=>s.cpu)),samples:rows.length,containerNames:names};
+  return {passed:peakBytes <= 12*1024**3 && growthPercent <= growthLimitPercent,profile,growthLimitPercent,policyVersion:2,peakBytes,growthPercent,peakCpuPercent:Math.max(...totals.map(s=>s.cpu)),samples:rows.length,containerNames:names};
 }

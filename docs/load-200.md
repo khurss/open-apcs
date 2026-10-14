@@ -47,7 +47,8 @@ per-channel counts and percentiles; the result records aggregate counts and the
 worst channel p95/p99.
 
 A one-hour workload pass also requires the separate host resource evaluator:
-peak aggregate memory <= 12 GiB and <= 5% late-window memory growth, with complete
+peak aggregate memory <= 12 GiB and <= 10% late-window memory growth
+(owner-approved policy v2; the original v1 limit was 5%), with complete
 container samples. The live application, database, gateways, browser and their
 containers share the existing development server. Ordinary regression tests must
 not run during the timed acceptance measurement.
@@ -60,7 +61,7 @@ ticks. Worst-channel UI p95/p99 were 414/588 ms and command acceptance p95 was
 190.90 ms. The earlier hour attempt aborted at the minute-sized evidence drain;
 five-second drains and reserved simulator sample slots address the observed
 failures. The subsequent hour passed workload checks but failed the resource growth gate,
-as detailed below. Full qualification remains pending. A short functional or
+as detailed below. The owner subsequently accepted this run under policy v2 (see below). A short functional or
 smoke pass does not establish one-hour performance. This profile does not qualify
 10,000 devices, 100,000 signals, radio interference, power loss or continuous
 electrical waveform correctness.
@@ -111,10 +112,11 @@ The load generator retains all numeric UI events in `bankEvents` while also
 writing them to disk. This is a concrete unbounded retention path and a candidate
 for the largest increase; the container measurements alone do not attribute all
 of its growth to that array or prove an application leak. API and database growth
-also require investigation. Do not remove the generator from resource accounting
-or loosen the 5% threshold to turn this run into a pass.
+also require investigation. At the time of this rejection no change to resource accounting or thresholds
+was authorized. The subsequent owner decision below supersedes the growth limit
+only; all measured containers remain included.
 
-Next increment:
+Deferred performance follow-up (no longer blocks this accepted increment):
 
 1. Add a failing test for bounded numeric evidence storage and preserve exact
    ordering, malformed-record detection and every-event verification.
@@ -128,3 +130,24 @@ Next increment:
 After this run, the virtual Climate demo and its PID graph were restored and
 verified running; API readiness was confirmed and the physical GPIO18 runtime
 was stopped. No firmware or electrical-waveform qualification is implied.
+
+
+## Owner acceptance and policy v2 (2026-10-14)
+
+After reviewing the failure above, the owner explicitly accepted the run and
+requested lower requirements and progression to the next development increment.
+The mixed-200 growth limit is now **10%**; peak memory remains **12 GiB**. All
+command, numeric sequence, UI, archive, timing, duration and resource-completeness
+criteria remain unchanged. The default led-16 profile retains its **5%** limit.
+
+Docker re-evaluation of the same 124 resource samples passes policy v2:
+8.3258% growth and 3.794 GiB peak. This is a **policy re-evaluation of the existing
+hour**, not a new endurance run or a memory fix. Original `resource-result.json`
+and the nonzero original host exit remain intact. `resource-result-v2.json`
+records profile, policy version, threshold and the new assessment separately.
+
+This mixed-200 increment is accepted under the revised requirements. Memory
+retention investigation remains a nonblocking backlog item. It does not establish
+unlimited runtime, resolve the observed retention, or complete remaining M1
+hardware scenarios, M2 or the larger capacity profiles. Development proceeds to
+[signal presentation settings](signal-presentation.md).

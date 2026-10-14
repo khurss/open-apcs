@@ -14,3 +14,9 @@ it('checks one hour of samples, memory headroom and final-half growth', () => {
   expect(()=>assessResources(rows.filter((_,i)=>i<40||i>45))).toThrow();
   expect(()=>assessResources(rows.map((r,i)=>({...r,containers:i===60?[]:r.containers})))).toThrow();
 });
+it('uses the owner-approved ten-percent gate only for mixed-200', () => {
+  const rows = Array.from({length:123},(_,i)=>({at:i*30,containers:[{Name:'api',MemUsage:i>=113?'1.09GiB / 16GiB':'1GiB / 16GiB',CPUPerc:'50%'}]}));
+  expect(assessResources(rows,'mixed-200')).toMatchObject({passed:true,profile:'mixed-200',growthLimitPercent:10});
+  expect(assessResources(rows).passed).toBe(false);
+  expect(assessResources(rows.map(r=>({...r,containers:r.containers.map(c=>({...c,MemUsage:c.MemUsage.replace('1.09','1.12')}))})), 'mixed-200').passed).toBe(false);
+});

@@ -20,11 +20,11 @@ See [TDD record](tdd-log.md), [physical evidence and wiring](rigol-hil.md), and 
 
 The scheduling and MQTT receive-path corrections, bounded diagnostics, server-crash fixture and supplemental qualification tooling are implemented. Four physical fault modes passed the explicitly recorded 20 MHz logic-level measurement profile. The extended short diagnostic passed; **the extended one-hour release gate failed** on a physical session-handshake timeout after 2588.876 seconds and remains open. The earlier base-workload hour is not evidence for this extended profile. See [load evidence](load-l0.md#extended-qualification-outcome-2026-10-13) for the exact failure and required follow-up.
 
-Final Docker regression passed: 601 unit/integration tests, 13 Chromium scenarios, 435 native C checks, nine orchestration checks, ESP32 cross-build, renderer recovery, TypeScript/language checks, offline build and backup/restore. The LAN virtual demo is running again; the physical bench remains stopped. The full regression result does not override the failed hardware endurance gate.
+The latest transport correction passed the Docker gate: 611 unit/integration tests, 13 Chromium scenarios, 448 native C checks, nine orchestration checks, ESP32 cross-build, renderer recovery, TypeScript/language checks, offline build and backup/restore. A further established-session regression and corrected firmware lifecycle cross-builds also passed. The 15-minute loaded OFF renewal diagnostic completed without a handshake timeout; p95 exchange time decreased from 117.64 to 50.25 ms. See [the investigation record](transport-latency-fix.md) for scope, evidence and remaining risks. The LAN virtual demo is running again; the physical bench remains stopped. These results do not override the failed hardware endurance gate.
 
 ## Transport investigation
 
-A subsequent [transport diagnostics increment](transport-diagnostics.md) adds owner-scoped bounded gateway traces, an opt-in firmware trace and a disarmed probe fixture. The previous Unknown command and failed extended-hour result remain unchanged.
+A subsequent [transport diagnostics increment](transport-diagnostics.md) adds owner-scoped bounded gateway traces, an opt-in firmware trace and a disarmed probe fixture. The previous Unknown command and failed extended-hour result remain unchanged. A [loaded latency investigation](transport-latency-fix.md) subsequently identified avoidable TCP buffering and a separate handshake deadline defect; its evidence must not be substituted for the failed extended-hour gate.
 
 ## Remaining release boundaries
 

@@ -1,6 +1,7 @@
 import {TransportTrace} from './transport-trace.js';
 import {LatencyHistogram, type LatencySummary} from './latency.js';
 import { randomUUID } from 'node:crypto';
+import { Socket } from 'node:net';
 import { connectAsync, type IClientOptions, type MqttClient } from 'mqtt';
 import type { Clock, SignalStore } from '../../domain/src/signals.js';
 import type { CommandContext, CommandRequest } from '../../domain/src/commands.js';
@@ -15,6 +16,13 @@ const clientOptions = (options: LedConnection): IClientOptions => ({
   ...options.credentials, protocolVersion: 5, clean: true, reconnectPeriod: 0,
   queueQoSZero: false, connectTimeout: 3000, properties: { maximumPacketSize: 8192 },
 });
+
+/** Small control frames must not wait behind Nagle and the peer's delayed TCP ACK. */
+async function connectLed(options: LedConnection): Promise<MqttClient> {
+  const client = await connectAsync(options.url, clientOptions(options));
+  if (client.stream instanceof Socket) client.stream.setNoDelay(true);
+  return client;
+}
 
 async function publish(client: MqttClient | null, topic: string, frame: Frame): Promise<void> {
   if (!client?.connected) throw new Error('MQTT connection unavailable');
@@ -38,7 +46,7 @@ export class MqttLedSimulator {
 
   async start(): Promise<void> {
     if (this.client) throw new Error('Simulator already started');
-    const client = await connectAsync(this.options.url, clientOptions(this.options));
+    const client = await connectLed(this.options);
     this.client = client;
     client.on('message', (topic, payload, packet) => {
       if (topic !== deviceTopic(this.options.siteId, this.options.protocolDeviceId ?? this.options.deviceId, 'in')) return;
@@ -98,7 +106,7 @@ export class MqttLedGateway {
     await this.loss;
     this.establishedBoot = null;
     this.session = new GatewaySession(() => this.clock.monotonicNow(), randomUUID());
-    const client = await connectAsync(this.options.url, clientOptions(this.options));
+    const client = await connectLed(this.options);
     this.client = client;
     client.on('close', () => this.invalidate());
     client.on('error', () => { this.lastError = 'MQTT connection error'; this.invalidate(); });
@@ -141,12 +149,13 @@ export class MqttLedGateway {
       // Durable-journal availability is a prerequisite for renewing control authority.
       await this.journal.recoverExpired();
       const nonce = randomUUID();
-      const snapshot = await this.exchange(this.session.probe(nonce), 'snapshot', nonce);
+      const deadline = this.clock.monotonicNow() + 500;
+      const snapshot = await this.exchange(this.session.probe(nonce), 'snapshot', nonce, deadline);
       if (snapshot.kind !== 'snapshot') throw new Error('Invalid snapshot');
       if (this.establishedBoot !== null && snapshot.bootId !== this.establishedBoot) {
         throw new Error('Device boot changed; explicit gateway restart required');
       }
-      const ready = await this.exchange(this.session.snapshot(snapshot), 'ready', nonce);
+      const ready = await this.exchange(this.session.snapshot(snapshot), 'ready', nonce, deadline);
       this.session.ready(ready);
       if (ready.kind !== 'ready') throw new Error('Invalid session reply');
       this.establishedBoot = ready.bootId;
@@ -215,14 +224,21 @@ export class MqttLedGateway {
       .catch(() => { this.lastError = 'Could not persist connection loss'; });
   }
 
-  private async exchange(frame: Frame, kind: 'snapshot' | 'ready', nonce: string): Promise<Frame> {
+  private async exchange(frame: Frame, kind: 'snapshot' | 'ready', nonce: string, deadline: number): Promise<Frame> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const reply = new Promise<Frame>((resolve, reject) => {
       this.waiter = { nonce, kind, resolve, reject };
-      timer = setTimeout(() => { this.trace.record('timeout',Buffer.from(JSON.stringify(frame))); reject(new Error('Device handshake timed out')); }, 500);
+    });
+    // Bound publication and the device reply together. Rejecting an already
+    // resolved reply cannot interrupt a stalled broker acknowledgement.
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        this.trace.record('timeout', Buffer.from(JSON.stringify(frame)));
+        reject(new Error('Device handshake timed out'));
+      }, Math.max(0, deadline - this.clock.monotonicNow()));
     });
     try {
-      const [, response] = await Promise.all([this.send(frame), reply]);
+      const [, response] = await Promise.race([Promise.all([this.send(frame), reply]), timeout]);
       return response;
     } finally { clearTimeout(timer); this.waiter = null; }
   }

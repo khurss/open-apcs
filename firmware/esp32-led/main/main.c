@@ -1,6 +1,7 @@
 #include "led_codec.h"
 #include "led_pins.h"
 #include "led_trace.h"
+#include "led_transport.h"
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 #include "esp_random.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
+#include "esp_transport.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -24,6 +26,7 @@ _Static_assert(CONFIG_MQTT_POLL_READ_TIMEOUT_MS <= 20, "LED bench requires a sho
 static const char *TAG = "open-apcs";
 static apcs_led led;
 static esp_mqtt_client_handle_t client;
+static esp_transport_handle_t mqtt_transport;
 static QueueHandle_t incoming;
 static atomic_bool connected, disconnected, transport_fault, wifi_ready;
 static char topic_in[300], topic_out[300], client_id[300];
@@ -59,7 +62,15 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 }
 static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
   (void)arg; (void)base; esp_mqtt_event_handle_t event = data;
-  if (id == MQTT_EVENT_CONNECTED) {
+  if (id == MQTT_EVENT_BEFORE_CONNECT) {
+    /* Acquire the standard TLS transport at its documented lifecycle event. */
+    mqtt_transport = esp_mqtt_client_get_transport(client, MQTT_OVER_SSL_SCHEME);
+    if (!mqtt_transport) atomic_store(&transport_fault, true);
+  } else if (id == MQTT_EVENT_CONNECTED) {
+    /* The socket exists only after connection; the transport remains client-owned. */
+    if (!mqtt_transport || !apcs_tcp_no_delay(esp_transport_get_socket(mqtt_transport))) {
+      atomic_store(&transport_fault, true); return;
+    }
     esp_mqtt5_subscribe_property_config_t property = { .retain_as_published_flag = true, .retain_handle = 2 };
     if (esp_mqtt5_client_set_subscribe_property(client, &property) != ESP_OK || esp_mqtt_client_subscribe(client, topic_in, 1) < 0) atomic_store(&transport_fault, true);
   } else if (id == MQTT_EVENT_SUBSCRIBED) atomic_store(&connected, true);

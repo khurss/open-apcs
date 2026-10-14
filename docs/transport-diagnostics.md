@@ -82,3 +82,7 @@ After investigation, the normal application was rebuilt with `CONFIG_APCS_DIAGNO
 
 
 The complete Docker regression passed 607 unit/integration tests, 13 browser scenarios, 442 native firmware checks and nine orchestration checks, plus cross-build, renderer recovery, TypeScript/language checks, offline build and backup/restore. Final authenticated inspection confirmed the old physical command remains Unknown and unreconciled. Physical control and all L0 targets are stopped; the prepared virtual Climate PID demo and source/test watchers are restored.
+
+## Follow-up investigation
+
+See [the loaded latency investigation and deadline correction](transport-latency-fix.md) for the packet evidence, confirmed defects, comparison and remaining release limits.

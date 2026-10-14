@@ -5,39 +5,55 @@ import { Pool } from 'pg';
 import { expect, test } from '@playwright/test';
 import { PgCommandJournal } from '../../packages/storage/src/command-journal.js';
 
-test('recovers an uncertain virtual output without rewriting its original outcome', async ({ page }) => {
+for (const physical of [false, true]) test(`recovers an uncertain ${physical ? 'physical-profile' : 'virtual'} output without rewriting its original outcome`, async ({ page }) => {
   test.setTimeout(40000);
   if (process.env.NODE_ENV !== 'test' || !process.env.APCS_TEST_POSTGRES_URL) throw new Error('Isolated Docker fixture required');
+  const name = physical ? 'Physical recovery LED' : 'Recovery LED';
   await signIn(page);
   await page.getByRole('button', { name: 'Projects', exact: true }).click();
-  await page.getByLabel('Project name', { exact: true }).fill('Recovery bench');
+  await page.getByLabel('Project name', { exact: true }).fill(`${name} project`);
   await page.getByRole('button', { name: 'Create project', exact: true }).click();
-  await expect(page.getByText('Recovery bench', { exact: true })).toBeVisible();
+  await expect(page.getByText(`${name} project`, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Devices', exact: true }).click();
-  await page.getByLabel('Device name', { exact: true }).fill('Recovery LED');
-  await page.getByLabel('Site ID', { exact: true }).fill('recovery');
-  await page.getByLabel('Device address', { exact: true }).fill('led');
+  await page.getByLabel('Device name', { exact: true }).fill(name);
+  if (physical) await page.getByRole('combobox', { name: 'Device profile', exact: true }).selectOption('esp32-led');
+  await page.getByLabel('Site ID', { exact: true }).fill(physical ? 'tls-e2e' : 'recovery');
+  await page.getByLabel('Device address', { exact: true }).fill(physical ? 'recovery' : 'led');
   await page.getByRole('button', { name: 'Add device', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Recovery LED', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   const { schema } = JSON.parse(await readFile(new URL('../../.cache/e2e/schema.json', import.meta.url), 'utf8')) as { schema: string };
   if (!/^e2e_[a-f0-9]{32}$/.test(schema)) throw new Error('Invalid isolated fixture schema');
   const pool = new Pool({ connectionString: process.env.APCS_TEST_POSTGRES_URL, options: `-c search_path=${schema}` });
   let commandId: string;
   try {
-    const row = (await pool.query("SELECT s.id,p.owner_id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE d.name='Recovery LED'")).rows[0];
+    const row = (await pool.query("SELECT s.id,p.owner_id FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE d.name=$1", [name])).rows[0];
     commandId = randomUUID(); const journal = new PgCommandJournal(pool);
     const context = { bootId: 'retired-browser-fixture-boot', projectRevision: 1, ownerId: row.owner_id as string, quality: 'Good' as const, interlockReason: null, maxTtlMs: 3000 };
     await journal.request({ id: commandId, idempotencyKey: commandId, actorId: row.owner_id, targetSignalId: row.id, value: true, expectedProjectRevision: 1, ttlMs: 3000, reason: 'Injected loss after durable dispatch claim' }, context);
     await journal.claimNext(async () => context, row.id); await journal.connectionLost(row.id);
   } finally { await pool.end(); }
-  await page.getByRole('article').filter({ hasText: 'Recovery LED' }).getByRole('button', { name: 'Start simulator', exact: true }).click();
+  const card = page.getByRole('article').filter({ hasText: name });
+  if (physical) {
+    await card.getByLabel('Reviewed GPIO', { exact: true }).selectOption('18');
+    await card.getByLabel('Commissioning reason', { exact: true }).fill('TLS recovery fixture review');
+    await card.getByLabel('Only an isolated LED is connected', { exact: true }).check();
+    await card.getByRole('button', { name: 'Arm LED bench', exact: true }).click();
+    await expect(card).toContainText('Hardware bench running');
+  } else await card.getByRole('button', { name: 'Start simulator', exact: true }).click();
   await page.getByRole('button', { name: 'Signals', exact: true }).click();
-  const row = page.getByRole('row').filter({ hasText: 'Recovery LED.led' });
+  const row = page.getByRole('row').filter({ hasText: `${name}.led` });
   await expect(row).toContainText('Good'); await row.getByRole('button', { name: 'Control', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Unknown');
   await expect(page.getByRole('button', { name: 'Send ON', exact: true })).toBeDisabled();
   await page.getByLabel('Recovery reason', { exact: true }).fill('Inspected the restarted simulator in its OFF state');
   await page.getByLabel('I accept that the original command outcome remains unknown', { exact: true }).check();
+  if (physical) {
+    await expect(page.getByRole('heading', { name: 'Recover an ESP32 LED output', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reconcile Unknown', exact: true })).toBeDisabled();
+    await page.getByLabel('Recovery GPIO', { exact: true }).selectOption('18');
+    await expect(page.getByRole('button', { name: 'Reconcile Unknown', exact: true })).toBeDisabled();
+    await page.getByLabel('I reviewed the GPIO and only an isolated LED is connected', { exact: true }).check();
+  }
   await page.getByRole('button', { name: 'Reconcile Unknown', exact: true }).click();
   await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Reconciled');
   await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Unknown');
@@ -48,4 +64,10 @@ test('recovers an uncertain virtual output without rewriting its original outcom
   expect((await page.request.get(`/api/v1/commands/${commandId!}`)).status()).toBe(200);
   const preserved = await (await page.request.get(`/api/v1/commands/${commandId!}`)).json();
   expect(preserved.state).toBe('Unknown'); expect(preserved.reconciliation).toBeDefined();
+  await page.getByRole('button', { name: 'Send OFF', exact: true }).click();
+  await expect(page.getByRole('status', { name: 'Command status' })).toContainText('Verified');
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  if (physical) await card.getByLabel('Commissioning reason', { exact: true }).fill('End physical-profile recovery fixture');
+  await card.getByRole('button', { name: physical ? 'Disarm LED bench' : 'Stop simulator', exact: true }).click();
+  await expect(card).toContainText(physical ? 'Hardware bench stopped' : 'Simulation stopped');
 });

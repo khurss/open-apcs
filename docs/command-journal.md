@@ -1,6 +1,6 @@
 # PostgreSQL command journal: the first implemented contract
 
-`@open-apcs/storage/command-journal` provides `PgCommandJournal`. This storage and dispatch-intent library handles boolean outputs for the LED milestone. The authenticated HTTP API exposes commands, paged history, and explicit virtual-output recovery. The separate [LED gateway/runtime](led-network.md) now connects this library to MQTT delivery and periodic recovery. PostgreSQL in `compose.test.yml` uses tmpfs for tests only; a production installation requires a separate persistent volume and backups.
+`@open-apcs/storage/command-journal` provides `PgCommandJournal`. This storage and dispatch-intent library handles boolean outputs for the LED milestone. The authenticated HTTP API exposes commands, paged history, and explicit virtual and isolated ESP32 LED recovery. The separate [LED gateway/runtime](led-network.md) now connects this library to MQTT delivery and periodic recovery. PostgreSQL in `compose.test.yml` uses tmpfs for tests only; a production installation requires a separate persistent volume and backups.
 
 ## Stored data
 
@@ -38,7 +38,7 @@ A resolver or transaction failure returns no intent. The resolver receives an Ab
 
 One `claimNext` call considers at most one record. `null` may mean no available record, rejection, or expiration. The future dispatcher must keep polling rather than treating `null` as permanent queue completion. Periodic `recoverExpired` calls are also the runtime's responsibility.
 
-An unresolved Unknown outcome blocks its output. A late ACK does not erase the original uncertainty or release the output. Explicit reconciliation is available for the virtual LED profile under the conditions below. Editing database tables manually is not a supported recovery procedure.
+An unresolved Unknown outcome blocks its output. A late ACK does not erase the original uncertainty or release the output. Explicit reconciliation is available for virtual profiles and the isolated ESP32 LED bench under the conditions below. Editing database tables manually is not a supported recovery procedure.
 
 ## Time and current implementation boundary
 
@@ -46,7 +46,7 @@ PostgreSQL stores an absolute `expires_at`; retries and object restoration do no
 
 Between operations, command age depends on the PostgreSQL system clock. A partial clock rollback that does not cross the last stored observation is not detected by this comparison. Before controlling physical outputs, the protocol/firmware must independently validate command age and control sessions, monitor clock skew, and implement a local watchdog. A database deadline does not replace these controls. An intent can also expire after COMMIT; the dispatcher must verify the deadline and current authority immediately before I/O. The LED adapter uses the same-process `deadlineMonotonicMs` field; COMMIT time consumes its budget.
 
-Automatic publication retries, runtime-wide HA/fencing, physical-profile reconciliation, annual history retention, and a complete database privilege model are not implemented. Snapshots hold a short command transition history, also stored as individual event rows. Storage currently grows with request count; retention/archiving is required before a long-running production deployment.
+Automatic publication retries, runtime-wide HA/fencing, general actuator reconciliation, annual history retention, and a complete database privilege model are not implemented. Snapshots hold a short command transition history, also stored as individual event rows. Storage currently grows with request count; retention/archiving is required before a long-running production deployment.
 
 ## Docker verification
 
@@ -60,7 +60,7 @@ Each journal test creates a separate random PostgreSQL schema and removes it aft
 
 Tests use the existing container environment without rebuilding images. TypeScript and SQL migration changes trigger reruns; SQL loaded through `fs` is covered by [forceRerunTriggers](https://vitest.dev/config/forcereruntriggers).
 
-## Explicit virtual LED reconciliation
+## Explicit LED reconciliation
 
 Migration `002-reconciliation.sql` adds a separate reconciliation receipt and changes the unfinished-output index. It never rewrites migration 001, the original command outcome, command transition history, or evidence. A reconciled command remains Unknown; the receipt means an operator deliberately released the output for future commands, not that the old command was verified or failed.
 
@@ -68,8 +68,8 @@ Migration `002-reconciliation.sql` adds a separate reconciliation receipt and ch
 
 The authenticated API supports:
 
-- `GET /signals/:id/commands?before=<command-id>`: ten newest snapshots per page and an independently selected `blocking` command, so rejected requests cannot hide an older blocker.
-- `POST /commands/:id/reconcile`: `{reason, acceptUnknownOutcome: true}`. The server derives actor and observed state; supplied actors, values, boot IDs, and other fields are rejected. Only virtual LED profiles are supported.
+- `GET /signals/:id/commands?before=<command-id>`: the catalog profile, ten newest snapshots per page and an independently selected `blocking` command, so rejected requests cannot hide an older blocker.
+- `POST /commands/:id/reconcile`: `{reason, acceptUnknownOutcome: true}`. The server derives actor and observed state; supplied actors, values, boot IDs, and other fields are rejected. Physical ESP32 LED requests additionally require `gpio` and `acknowledgeLedOnly: true`, with an active matching commissioned GPIO. See [physical recovery](physical-recovery.md).
 
 In the command panel, inspect the unknown outcome, stop and restart the virtual device, reopen control, and provide a recovery reason plus acknowledgement that the original outcome remains unknown. The server checks the new session and OFF observation. Reconciliation does not restart equipment, restore graph ownership, replay a request, or automatically send the next command. The operator may issue a separate new intent afterward. Receipts remain attached to snapshots across API/database reconnection and are included in ordinary database backups.
 

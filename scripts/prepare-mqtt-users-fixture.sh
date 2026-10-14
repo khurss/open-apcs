@@ -17,9 +17,13 @@ topic write openapcs/led/v1/tls/led/out
 user e2e-gateway
 topic write openapcs/led/v1/tls-e2e/led/in
 topic read openapcs/led/v1/tls-e2e/led/out
+topic write openapcs/led/v1/tls-e2e/recovery/in
+topic read openapcs/led/v1/tls-e2e/recovery/out
 user e2e-device
 topic read openapcs/led/v1/tls-e2e/led/in
 topic write openapcs/led/v1/tls-e2e/led/out
+topic read openapcs/led/v1/tls-e2e/recovery/in
+topic write openapcs/led/v1/tls-e2e/recovery/out
 user health
 topic write fixture/health
 CONFIG

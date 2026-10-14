@@ -154,3 +154,18 @@ All four modes passed with the transport change and the explicit bandwidth readb
 | `2026-10-13T19-51-08.454Z` | Complete API container crash | 3.24 s | 1.941–2.750 s | 11.99 s / -0.28–0.24 V |
 
 Both cleanup layers confirmed stopped device control after every run; the broker and API were restored. No automatic ON was observed in the recorded recovery windows.
+
+
+## Physical recovery regression, 2026-10-14
+
+After the new audited recovery API preserved and reconciled the existing Unknown LED command, the same GPIO18/DS1054Z bench passed a new ON/OFF pulse and all four fault modes. These runs used the normal diagnostic-disabled TCP_NODELAY firmware and the unchanged 20 MHz logic-level profile. The Docker regression suite ran concurrently; this is not an isolated resource benchmark.
+
+| Artifact directory (UTC) | Mode | Pulse | Conservative fault-to-LOW interval |
+| --- | --- | --- | --- |
+| `2026-10-14T10-15-59.851Z` | Commanded ON/OFF | 1.23 s | Not applicable |
+| `2026-10-14T10-17-19.987Z` | Lease expiry | 3.46 s | 2.720–2.969 s |
+| `2026-10-14T10-18-04.176Z` | Broker pause/restoration | 3.36 s | 2.330–2.869 s |
+| `2026-10-14T10-18-52.001Z` | USB reset | 0.66 s | Not inferred |
+| `2026-10-14T10-19-35.947Z` | API container crash/restoration | 3.20 s | 1.640–2.709 s |
+
+Mean HIGH levels were approximately 3.279–3.288 V. All four subsequent LOW windows passed the existing voltage/duration bounds, and both cleanup layers confirmed stopped runtimes. The dedicated physical broker and the original API container were restored. This does not close radio interruption, actual power-loss, edge-integrity or continuous-glitch-observation limitations described above.

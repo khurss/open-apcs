@@ -16,7 +16,7 @@ import { canonicalJson } from '../../../packages/domain/src/screen.js';
 import { LedRuntime } from '../../../packages/gateway/src/runtime.js';
 import type { CommandContext, CommandRequest } from '../../../packages/domain/src/commands.js';
 import type { SignalSnapshot } from '../../../packages/domain/src/signals.js';
-export interface RuntimeStatus { transport?: import('../../../packages/gateway/src/transport-trace.js').TraceSnapshot | null; telemetry?: import('../../../packages/gateway/src/latency.js').LatencySummary | null; deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
+export interface RuntimeStatus { commissionedGpio?: number; transport?: import('../../../packages/gateway/src/transport-trace.js').TraceSnapshot | null; telemetry?: import('../../../packages/gateway/src/latency.js').LatencySummary | null; deviceId: string; environment: 'Simulation' | 'Hardware bench'; state: 'stopped' | 'running' | 'faulted'; error: string | null; }
 export interface GraphRuntimeStatus { timing: GraphTiming | null; graphId: string; revision: number | null; activationId: string | null; state: 'stopped' | 'running' | 'paused' | 'faulted'; error: string | null; cycles: number; pending: string[]; evaluation: GraphEvaluation | null; }
 export interface RuntimeControl {
   alarmStatus(): Promise<AlarmServiceStatus>;
@@ -35,7 +35,7 @@ export interface RuntimeControl {
   close(): Promise<void>;
 }
 interface Catalog { siteId: string; deviceId: string; signalId: string; projectId: string; kind: string; revision: number; ownerId: string; protocolDeviceId: string; }
-interface Entry { temperatureSignalId: string | null; process: MqttThermalProcess | null; processError: string | null; catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator | null; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
+interface Entry { physicalGpio: number | null; temperatureSignalId: string | null; process: MqttThermalProcess | null; processError: string | null; catalog: Catalog; runtime: LedRuntime; gateway: MqttLedGateway; simulator: MqttLedSimulator | null; stopping: boolean; stopPromise: Promise<void> | null; policy: Pick<CommandContext, 'ownerId' | 'projectRevision' | 'maxTtlMs' | 'interlockReason'>; }
 interface GraphEntry { blocks: GraphEvaluation['blocks']; revision: number; activationId: string; ownerId: string; task: GraphTask; }
 const disconnected = (): SignalSnapshot => ({ value: null, quality: 'Disconnected', bootId: null, sourceTime: null, receivedTime: null, sequence: null });
 const lockKey = "hashtextextended(current_schema() || ':open-apcs-simulation-runtime', 0)";
@@ -90,7 +90,7 @@ export class SimulationRuntime implements RuntimeControl {
     const startAt = performance.now(); const bootId = randomUUID(); const simulator = physical ? null : new MqttLedSimulator(connection, new LedPeer(() => performance.now() - startAt, bootId));
     const policy: Entry['policy'] = { ownerId: actorId, projectRevision: catalog.revision, maxTtlMs: 3000, interlockReason: null };
     const gateway = new MqttLedGateway(connection, this.signals, this.journal, this.clock, () => ({ ...policy, interlockReason: this.lockLost || this.closed ? 'Runtime ownership unavailable' : policy.interlockReason }));
-    const entry = { catalog, simulator, gateway, policy, temperatureSignalId, process: null, processError: null, stopping: false, stopPromise: null } as Entry;
+    const entry = { physicalGpio: physical?.gpio ?? null, catalog, simulator, gateway, policy, temperatureSignalId, process: null, processError: null, stopping: false, stopPromise: null } as Entry;
     entry.runtime = new LedRuntime({ start: () => gateway.start(), stop: () => gateway.stop(),
       synchronize: async () => { await this.refresh(entry); await gateway.synchronize(); },
       dispatchNext: async () => { await this.refresh(entry); return gateway.dispatchNext(); },
@@ -109,7 +109,7 @@ export class SimulationRuntime implements RuntimeControl {
   async status(deviceId: string, trace = false): Promise<RuntimeStatus> {
     const entry = this.entries.get(deviceId); const state = entry?.runtime.status ?? { state: 'stopped' as const, error: null };
     const kind = entry?.catalog.kind ?? (await this.pool.query<{ kind: string }>('SELECT kind FROM apcs_devices WHERE id=$1', [deviceId])).rows[0]?.kind;
-    return { ...(trace ? {transport: entry?.gateway.transport ?? null} : {}), ...(entry ? {telemetry: entry.gateway.diagnostics.telemetry} : {}), deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(entry?.processError ? { state: 'faulted' as const, error: entry.processError } : {}), ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
+    return { ...(entry?.physicalGpio !== null && entry?.physicalGpio !== undefined ? { commissionedGpio: entry.physicalGpio } : {}), ...(trace ? {transport: entry?.gateway.transport ?? null} : {}), ...(entry ? {telemetry: entry.gateway.diagnostics.telemetry} : {}), deviceId, environment: kind === 'esp32-led' ? 'Hardware bench' : 'Simulation', ...state, ...(entry?.processError ? { state: 'faulted' as const, error: entry.processError } : {}), ...(this.lockLost ? { state: 'faulted' as const, error: 'Runtime ownership lost; restart the service before rearming' } : {}) };
   }
   async readSignal(signalId: string): Promise<SignalSnapshot> {
     if (!this.registered.has(signalId)) return disconnected();

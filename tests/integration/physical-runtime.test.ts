@@ -101,3 +101,68 @@ describe('physical-profile runtime verified with a TLS simulator', () => {
     await runtime.startPhysical(device, actor, 18); expect((await runtime.readSignal(signal)).value).toBe(false);
   });
 });
+
+async function recoveryFixture(bootId = 'retired-physical-boot') {
+  const input = request();
+  const context = { bootId, ownerId: actor, quality: 'Good' as const, projectRevision: 1, maxTtlMs: 3000, interlockReason: null };
+  await journal.request(input, context); await journal.claimNext(async () => context, signal); await journal.connectionLost(signal);
+  app = await createApi({ pool, origin: 'http://localhost:5173', secureCookies: false, runtime });
+  const token = randomBytes(32).toString('base64url'); const csrf = randomBytes(32).toString('hex');
+  await pool.query("INSERT INTO apcs_sessions(token_hash,user_id,csrf_token,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')", [createHash('sha256').update(token).digest('hex'), actor, csrf]);
+  return { input, headers: { origin: 'http://localhost:5173', cookie: `apcs_session=${token}`, 'x-csrf-token': csrf },
+    url: `/api/v1/commands/${input.id}/reconcile`, payload: { reason: 'Reviewed new isolated LED boot and OFF feedback', acceptUnknownOutcome: true, gpio: 18, acknowledgeLedOnly: true } };
+}
+describe('explicit physical LED recovery over TLS', () => {
+  it('preserves Unknown and consumed intent, audits reviewed GPIO, and only permits a separate new command', async () => {
+    const f = await recoveryFixture(); const original = await journal.get(f.input.id);
+    await simulator.start(); await runtime.startPhysical(device, actor, 18);
+    expect(await runtime.status(device)).toMatchObject({ commissionedGpio: 18 });
+    expect((await app!.inject({ method: 'GET', url: `/api/v1/signals/${signal}/commands`, headers: f.headers })).json().profile).toBe('esp32-led');
+    const result = await app!.inject({ method: 'POST', url: f.url, headers: f.headers, payload: f.payload });
+    expect(result.statusCode).toBe(200);
+    expect(result.json()).toMatchObject({ state: 'Unknown', history: original.history, evidence: null, reconciliation: { bootId: 'physical-fixture', observedValue: false } });
+    expect(simulator.peer.read()).toBe(false);
+    expect((await pool.query('SELECT state FROM apcs_command_outbox WHERE command_id=$1', [f.input.id])).rows[0].state).toBe('consumed');
+    const audit = (await pool.query("SELECT data FROM apcs_audit WHERE action='command.reconciled' AND resource_id=$1", [f.input.id])).rows;
+    expect(audit).toHaveLength(1); expect(audit[0].data).toMatchObject({ profile: 'esp32-led', gpio: 18, acknowledgeLedOnly: true });
+    expect(JSON.stringify(audit)).not.toContain(config.password);
+    expect((await app!.inject({ method: 'POST', url: f.url, headers: f.headers, payload: f.payload })).statusCode).toBe(200);
+    expect((await pool.query("SELECT id FROM apcs_audit WHERE action='command.reconciled'")).rowCount).toBe(1);
+    const fresh = request(); await journal.request(fresh, await runtime.context(fresh));
+    await expect.poll(async () => (await journal.get(fresh.id)).state, { timeout: 3000 }).toBe('Verified');
+    expect((await journal.get(f.input.id)).state).toBe('Unknown');
+  });
+  it('requires owner, CSRF, LED acknowledgement, correct commissioned pin and an active session', async () => {
+    const f = await recoveryFixture();
+    const post = (payload: unknown, headers = f.headers) => app!.inject({ method: 'POST', url: f.url, headers, payload: payload as object });
+    expect((await post(f.payload, { ...f.headers, cookie: '' })).statusCode).toBe(401);
+    expect((await post(f.payload, { ...f.headers, 'x-csrf-token': '' })).statusCode).toBe(403);
+    expect((await post({ ...f.payload, acknowledgeLedOnly: false })).statusCode).toBe(400);
+    expect((await post({ ...f.payload, bootId: 'forged' })).statusCode).toBe(400);
+    expect((await post({ reason: f.payload.reason, acceptUnknownOutcome: true })).statusCode).toBe(422);
+    expect((await post(f.payload)).statusCode).toBe(409);
+    await simulator.start(); await runtime.startPhysical(device, actor, 18);
+    expect((await post({ ...f.payload, gpio: 19 })).statusCode).toBe(409);
+    const foreign = randomUUID(); await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'recovery-foreign','fixture')", [foreign]);
+    await pool.query('UPDATE apcs_sessions SET user_id=$1', [foreign]);
+    expect((await post(f.payload)).statusCode).toBe(403);
+    await pool.query('UPDATE apcs_sessions SET user_id=$1', [actor]);
+    await runtime.stop(device); expect((await post(f.payload)).statusCode).toBe(409);
+    expect((await journal.get(f.input.id)).reconciliation).toBeUndefined();
+  });
+  it('refuses a reused device boot and rolls back on audit failure', async () => {
+    const f = await recoveryFixture('physical-fixture'); await simulator.start(); await runtime.startPhysical(device, actor, 18);
+    const post = () => app!.inject({ method: 'POST', url: f.url, headers: f.headers, payload: f.payload });
+    expect((await post()).statusCode).toBe(409);
+    expect((await journal.get(f.input.id)).reconciliation).toBeUndefined();
+    await runtime.stop(device); await simulator.stop();
+    simulator = new MqttLedSimulator({ url: config.url, siteId: 'tls', deviceId: 'led', signalId: signal, credentials: { ca: config.ca, username: 'device', password: 'fixture-device-password' } }, new LedPeer(() => performance.now(), 'new-physical-fixture'));
+    await simulator.start(); await runtime.startPhysical(device, actor, 18);
+    await pool.query("CREATE FUNCTION deny_recovery_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='command.reconciled' THEN RAISE EXCEPTION 'Fixture audit failure'; END IF; RETURN NEW; END $$");
+    await pool.query('CREATE TRIGGER deny_recovery_audit BEFORE INSERT ON apcs_audit FOR EACH ROW EXECUTE FUNCTION deny_recovery_audit()');
+    expect((await post()).statusCode).toBe(500);
+    expect((await journal.get(f.input.id)).reconciliation).toBeUndefined();
+    expect((await journal.request(request(), await runtime.context(request()))).state).toBe('Rejected');
+    expect(simulator.peer.read()).toBe(false);
+  });
+});

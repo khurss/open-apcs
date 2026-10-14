@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Signal } from './api.js';
 interface Status { state: 'running' | 'stopped' | 'faulted'; error: string | null; }
 interface Command { id: string; state: string; reason: string | null; reconciliation?: { reason: string; at: string }; }
-interface History { items: Command[]; blocking: Command | null; nextCursor: string | null; }
+interface History { profile?: string; items: Command[]; blocking: Command | null; nextCursor: string | null; }
 const pendingStates = new Set(['Requested', 'Accepted', 'Dispatched', 'DeviceAccepted']);
 export function VirtualDeviceControl({ deviceId }: { deviceId: string }) { return <DeviceControl deviceId={deviceId} physical={false} />; }
 export function PhysicalDeviceControl({ deviceId }: { deviceId: string }) { return <DeviceControl deviceId={deviceId} physical />; }
@@ -47,6 +47,9 @@ export function ManualControl({ signal, revision, quality, close }: { signal: Si
   const [uncertain, setUncertain] = useState(false); const [historyReady, setHistoryReady] = useState(false);
   const [history, setHistory] = useState<History>({ items: [], blocking: null, nextCursor: null });
   const [recoveryReason, setRecoveryReason] = useState(''); const [accepted, setAccepted] = useState(false);
+  const [recoveryGpio, setRecoveryGpio] = useState(''); const [ledReviewed, setLedReviewed] = useState(false);
+  const physicalRecovery = history.profile === 'esp32-led';
+  const supportedRecovery = physicalRecovery || ['virtual-led', 'virtual-thermal'].includes(history.profile ?? '');
   const mounted = useRef(true);
   const unresolved = (value: Command) => pendingStates.has(value.state) || (value.state === 'Unknown' && !value.reconciliation);
   async function loadHistory() {
@@ -77,7 +80,7 @@ export function ManualControl({ signal, revision, quality, close }: { signal: Si
     if (!command || !accepted) return;
     setBusy(true); setError('');
     try {
-      const result = await api<Command>(`/commands/${command.id}/reconcile`, { method: 'POST', body: { reason: recoveryReason, acceptUnknownOutcome: true } });
+      const result = await api<Command>(`/commands/${command.id}/reconcile`, { method: 'POST', body: { reason: recoveryReason, acceptUnknownOutcome: true, ...(physicalRecovery ? { gpio: Number(recoveryGpio), acknowledgeLedOnly: ledReviewed } : {}) } });
       if (mounted.current) { setCommand(result); setUncertain(unresolved(result)); setHistory((before) => ({ ...before, items: before.items.map((item) => item.id === result.id ? result : item) })); }
     } catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : 'Reconciliation unavailable'); }
     finally { if (mounted.current) setBusy(false); }
@@ -89,7 +92,9 @@ export function ManualControl({ signal, revision, quality, close }: { signal: Si
     {command && <div role="status" aria-label="Command status" className="command-status"><span className={`badge ${command.state === 'Verified' ? 'good' : 'warning'}`}>{command.state}</span><code>{command.id}</code>{command.reason && <p>{command.reason}</p>}{command.reconciliation && <p>Reconciled · original outcome remains Unknown. {command.reconciliation.reason}</p>}</div>}
     {error && <div className="alert" role="alert">{error}</div>}
     {uncertain && <div className="command-status"><p>Outcome is not confirmed. Check the command journal before issuing another command.</p>{command && <button className="secondary" disabled={busy} onClick={() => { void check(command.id).catch(() => setError('Command status unavailable')); }}>Check status</button>}</div>}
-    {command?.state === 'Unknown' && !command.reconciliation && <div className="recovery-panel"><h3>Recover a virtual output</h3><p>Stop and restart its simulator in Devices, then reopen this control. Recovery requires Good data, a new boot session, and an observed OFF output. It never retries or verifies the original command.</p><label className="field"><span>Recovery reason</span><input maxLength={256} value={recoveryReason} onChange={(event) => setRecoveryReason(event.target.value)} /></label><label className="checkbox-field"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />I accept that the original command outcome remains unknown</label><button className="secondary" disabled={busy || quality !== 'Good' || !recoveryReason.trim() || !accepted} onClick={() => { void reconcile(); }}>Reconcile Unknown</button></div>}
+    {command?.state === 'Unknown' && !command.reconciliation && supportedRecovery && <div className="recovery-panel"><h3>{physicalRecovery ? 'Recover an ESP32 LED output' : 'Recover a virtual output'}</h3>
+      <p>{physicalRecovery ? 'Disarm the LED bench in Devices, restart the physical controller, then explicitly arm the reviewed GPIO. A server restart is not a new controller boot. Reopen this control after Good OFF feedback is available.' : 'Stop and restart its simulator in Devices, then reopen this control.'} Recovery requires Good data, a new boot session, and an observed OFF output. It never retries or verifies the original command.</p>
+      {physicalRecovery && <><p className="muted">OFF feedback comes from the firmware; it is not an independent electrical measurement. This recovery applies only to an isolated LED.</p><label className="field"><span>Recovery GPIO</span><select aria-label="Recovery GPIO" value={recoveryGpio} onChange={event => { setRecoveryGpio(event.target.value); setLedReviewed(false); }}><option value="">Select reviewed pin</option>{[5, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33].map(pin => <option key={pin} value={pin}>{pin}</option>)}</select></label><label className="checkbox-field"><input type="checkbox" checked={ledReviewed} onChange={event => setLedReviewed(event.target.checked)} />I reviewed the GPIO and only an isolated LED is connected</label></>}<label className="field"><span>Recovery reason</span><input maxLength={256} value={recoveryReason} onChange={(event) => setRecoveryReason(event.target.value)} /></label><label className="checkbox-field"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />I accept that the original command outcome remains unknown</label><button className="secondary" disabled={busy || quality !== 'Good' || !recoveryReason.trim() || !accepted || (physicalRecovery && (!recoveryGpio || !ledReviewed))} onClick={() => { void reconcile(); }}>Reconcile Unknown</button></div>}
     <details className="command-history"><summary>Recent commands</summary><button className="text-button" disabled={busy} onClick={() => { void loadHistory(); }}>Reload history</button>{history.items.map((item) => <div key={item.id}><span>{item.state}{item.reconciliation ? ' · Reconciled' : ''}</span><code>{item.id}</code></div>)}{history.nextCursor && <button className="secondary" disabled={busy} onClick={() => { setBusy(true); void api<History>(`/signals/${signal.id}/commands?before=${history.nextCursor}`).then((next) => { if (mounted.current) setHistory((before) => ({ ...next, items: [...before.items, ...next.items] })); }).catch(() => setError('Command history unavailable')).finally(() => { if (mounted.current) setBusy(false); }); }}>Older commands</button>}</details>
   </section>;
 }

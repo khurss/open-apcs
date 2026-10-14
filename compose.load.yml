@@ -20,6 +20,7 @@ services:
       NODE_EXTRA_CA_CERTS: /run/bench/server-ca.crt
       HOME: /tmp
       APCS_HIL_MODE: l0
+      APCS_L0_PROFILE: ${APCS_L0_PROFILE:-led-16}
       APCS_L0_SECONDS: ${APCS_L0_SECONDS:-3600}
       APCS_L0_RUN_ID: ${APCS_L0_RUN_ID:-manual}
     stop_grace_period: 40s

@@ -67,7 +67,7 @@ UI latency under load, memory growth or physical-device performance.
 
 The existing limit of 16 active devices is unchanged. A future mixed 200-signal
 L0 fixture can use 12 full banks, one six-input bank and the physical LED:
-186 numeric inputs plus 14 boolean outputs across 14 devices. Its expected
-telemetry sequences, archive-change count, page-wide UI observations and fault
-cleanup need a dedicated load runner before the one-hour gate can be claimed.
+186 numeric inputs plus 14 boolean outputs across 14 devices. The [mixed load runner](load-200.md) checks exact telemetry sequences,
+archive changes, page-wide UI observations and supervised cleanup. A successful
+one-hour qualification is still required.
 The existing 16-output L0 fixture and historical evidence remain unchanged.

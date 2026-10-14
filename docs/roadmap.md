@@ -110,3 +110,7 @@ provide 1–15 numeric inputs plus a virtual LED, with web registration, real
 MQTT telemetry, history, graph bindings and disconnect handling. The short
 functional 200-signal test is distinct from pending mixed/one-hour capacity
 qualification; the 16-active-device limit is unchanged.
+
+The mixed 200-signal endurance runner and per-channel archive/UI criteria are
+specified in [Mixed 200-signal qualification](load-200.md). Its qualification
+status is recorded separately from the earlier 16-output hour pass.

@@ -1,10 +1,11 @@
+import {readSignalBatches} from './signal-batches.js';
 import { startPolling } from './polling.js';
 import { views, readRoute, routeHash, type View } from './features/projects/navigation.js';
 import { ProjectWorkspace } from './features/projects/workspace.js';
 import { Rename } from './features/catalog/rename.js';
-import { formatSignalValue } from './signal-format.js';
+import {SignalRow} from './features/catalog/signal-row.js';
 import { AlarmWorkspace } from './alarms.js';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { api, ApiError, setSession, type User, type Project, type Device, type Signal, type Sample, type Audit, type Page } from './api.js';
 import './style.css';
@@ -74,7 +75,7 @@ function App() {
   function catalogParams(cursor?: string | null) {
     return new URLSearchParams({ ...(projectContext ? { projectId: projectContext } : {}), ...(catalogQuery && ['Devices','Signals'].includes(view) ? {q:catalogQuery} : {}), ...(cursor ? {cursor} : {}) });
   }
-  async function refresh() {
+  const refresh=useCallback(async()=> {
     const epoch = ++refreshEpoch.current;
     try {
       const [p, d, s, a] = await Promise.all([api<Page<Project>>('/projects'), api<Page<Device>>(`/devices?${catalogParams()}`), api<Page<Signal>>(`/signals?${catalogParams()}`), api<Page<Audit>>('/audit')]);
@@ -86,7 +87,7 @@ function App() {
       // A response from a previous route must not overwrite the current connection state.
       if (epoch === refreshEpoch.current) throw reason;
     }
-  }
+  },[projectContext,catalogQuery,view]);
   useEffect(() => {
     refreshEpoch.current++; setDevices(empty()); setSignals(empty()); setValues({}); setConnected(false);
     if (user) void refresh().catch((reason: unknown) => { setConnected(false); failure(reason); });
@@ -112,16 +113,13 @@ function App() {
       const controller = new AbortController(); pending = controller;
       const deadline = setTimeout(() => controller.abort(), 3000);
       try {
-        const updates: Record<string, Sample> = {};
-        for (let offset = 0; offset < signals.items.length; offset += 100) {
-          const ids = signals.items.slice(offset, offset + 100).map(signal => signal.id).join(',');
-          Object.assign(updates, await api<Record<string, Sample>>(`/signals/values?ids=${ids}`, { signal: controller.signal }));
-        }
+        const updates=await readSignalBatches(signals.items.map(signal=>signal.id),
+          ids=>api<Record<string,Sample>>(`/signals/values?ids=${ids.join(',')}`,{signal:controller.signal}));
         if (!cancelled) { setValues(updates); setConnected(true); }
       } catch (reason) { if (!cancelled) { setConnected(false); failure(reason); } }
       finally { clearTimeout(deadline); }
     };
-    const stop = startPolling(poll, 250);
+    const stop = startPolling(poll, 125);
     return () => { cancelled = true; stop(); pending?.abort(); };
   }, [user, view, signals]);
   function navigate(next: View, context = ['Projects','Overview'].includes(next) ? '' : projectContext) {
@@ -197,7 +195,7 @@ function App() {
         <Field label="Device address"><input required pattern="[A-Za-z0-9_-]+" maxLength={128} value={deviceAddress} placeholder="e.g. esp32-1" onChange={(e) => setDeviceAddress(e.target.value)} /></Field>
         <div className="form-action"><button className="primary" disabled={busy || !selectedProject}><Icon name="plus" />Add device</button></div>
       </form>{!projects.items.length && <p className="muted">Create a project before adding a device.</p>}<p className="form-note">Registration adds a catalog entry. Start a virtual simulator to test control. ESP32 LED benches require a private server configuration and explicit GPIO review.</p></section><section className="panel"><div className="panel-heading"><h2>Device catalog</h2><span className="count">{devices.items.length}</span></div>{devices.items.length ? <div className="device-grid">{devices.items.map((device) => <article className="device-card" key={device.id}><div className="device-top"><span className="list-icon"><Icon name="Devices" /></span><Badge tone="warning">{device.kind !== 'esp32-led' ? 'Virtual device' : 'ESP32 bench'}</Badge></div><h3>{device.name}</h3><Rename key={device.revision} kind="devices" id={device.id} name={device.name} revision={device.revision ?? 1} changed={refresh}/><p className="muted">{device.kind === 'virtual-thermal' ? 'Thermal process · 20 C ambient · boolean heater' : device.kind === 'virtual-led' ? 'Virtual LED' : device.kind === 'virtual-input-bank' ? 'Numeric input bank · synthetic 1 Hz samples · virtual LED' : 'ESP32 LED'}</p><dl><div><dt>Site</dt><dd>{device.siteId}</dd></div><div><dt>Address</dt><dd>{device.deviceId}</dd></div></dl>{device.kind !== 'esp32-led' ? <VirtualDeviceControl deviceId={device.id} /> : <PhysicalDeviceControl deviceId={device.id} />}</article>)}</div> : <Empty title="No devices registered">Add a device to create its first output signal.</Empty>}{devices.nextCursor && <button className="secondary load-more" onClick={() => { void perform(() => more('devices')); }}>Load more devices</button>}</section></>}
-      {view === 'Signals' && <section className="panel"><div className="panel-heading"><h2>Signal monitor</h2><Badge>Live values</Badge></div>{signals.items.length ? <div className="table-scroll"><table><thead><tr><th>Signal</th><th>Value</th><th>Quality</th><th>Type</th><th>Direction</th><th>Actions</th></tr></thead><tbody>{signals.items.map((signal) => { const sample = values[signal.id]; const quality = !connected ? 'Disconnected' : sample?.quality ?? 'Loading'; return <tr key={signal.id}><td><strong>{signal.name}</strong><Rename key={signal.revision} kind="signals" id={signal.id} name={signal.name} revision={signal.revision ?? 1} changed={refresh}/></td><td className="signal-value">{formatSignalValue(sample?.value)}</td><td><Badge tone={quality === 'Good' ? 'good' : 'warning'}>{quality}</Badge></td><td>{signal.dataType}</td><td>{signal.direction}</td><td><button className="secondary signal-control-button" disabled={quality !== 'Good' || signal.direction !== 'output'} onClick={() => setControlTarget(signal)}>Control</button><button className="secondary signal-control-button" onClick={() => setHistoryTarget(signal)}>History</button></td></tr>; })}</tbody></table></div> : <Empty title="No signals configured">Register a device to inspect its signals here.</Empty>}{signals.nextCursor && <button className="secondary load-more" onClick={() => { void perform(() => more('signals')); }}>Load more signals</button>}</section>}
+      {view === 'Signals' && <section className="panel"><div className="panel-heading"><h2>Signal monitor</h2><Badge>Live values</Badge></div>{signals.items.length ? <div className="table-scroll"><table className="signal-table"><colgroup><col/><col style={{width:110}}/><col style={{width:110}}/><col style={{width:90}}/><col style={{width:100}}/><col style={{width:190}}/></colgroup><thead><tr><th>Signal</th><th>Value</th><th>Quality</th><th>Type</th><th>Direction</th><th>Actions</th></tr></thead><tbody>{signals.items.map((signal) => { const sample = values[signal.id]; const quality = !connected ? 'Disconnected' : sample?.quality ?? 'Loading'; return <SignalRow key={signal.id} signal={signal} value={sample?.value} quality={quality} changed={refresh} control={setControlTarget} history={setHistoryTarget}/>; })}</tbody></table></div> : <Empty title="No signals configured">Register a device to inspect its signals here.</Empty>}{signals.nextCursor && <button className="secondary load-more" onClick={() => { void perform(() => more('signals')); }}>Load more signals</button>}</section>}
       {view === 'Signals' && controlTarget && <ManualControl key={controlTarget.id} signal={controlTarget} revision={projects.items.find((p) => p.id === devices.items.find((d) => d.id === controlTarget.deviceId)?.projectId)?.revision ?? 0} quality={connected ? values[controlTarget.id]?.quality ?? 'Disconnected' : 'Disconnected'} close={() => setControlTarget(null)} />}
       {view === 'Signals' && historyTarget && <SignalHistory key={historyTarget.id} signal={historyTarget} close={() => setHistoryTarget(null)} />}
       {(view === 'Logic' || view === 'Screens') && <EditorWorkspace key={`${view}-${projectContext}`} kind={view === 'Logic' ? 'graph' : 'screen'} projects={projectContext ? projects.items.filter(project=>project.id===projectContext) : projects.items} devices={devices.items} signals={signals.items} initialProject={selectedProject} onDirty={setEditorDirty} />}

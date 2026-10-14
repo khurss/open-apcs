@@ -623,3 +623,55 @@ frontend build, offline dependencies and backup/restore. Existing Docker images
 and source mounts were used. The LAN deployment is healthy, the virtual Climate
 demo and its PID graph are running, and physical control remains stopped.
 The 200-signal hour/resource qualification remains pending.
+
+## 2026-10-14: Mixed 200-signal load runner
+
+Docker RED: the initial numeric evidence verifier stub failed the valid
+wraparound/archive/UI case. GREEN: exact sequence and per-channel UI evaluation
+pass three tests covering valid data, missing/repeated/foreign/malformed evidence,
+excess UI latency and inadequate duration. Docker TypeScript caught an optional
+property mismatch in catalog restoration; conditional spreading fixed it.
+
+The first real smoke failed before measurement because tsx's function-name
+helper was unavailable inside the serialized browser observer. An inline observer
+removed that dependency. Independent supervisor cleanup confirmed all targets
+stopped. Results of the repeated smoke and full regression are recorded below.
+
+A second smoke exposed asynchronous catalog pagination in the harness; explicit
+row-count waits now ensure the entire signal page is loaded. The third completed
+840/840 output commands and archive transitions, but numeric UI verification
+failed. Inspection showed both a verifier formatting mismatch (the UI renders
+two decimal places) and excessive numeric display latency. New RED tests use the
+actual numeric format and require three bounded concurrent batch reads instead
+of serial requests. GREEN verifies the formatter, concurrency bound, complete
+snapshot publication, and settlement of outstanding reads on failure. The monitor
+now reads at most three 100-signal batches concurrently; its existing deadline,
+serial refresh loop and fail-closed controls remain in effect.
+
+Further smoke diagnostics identified layout cost and endpoint skew. Signal rows
+and rename forms now retain stable props, columns use a fixed layout, and the
+serial monitor refresh period is 125 ms. Numeric boundaries are read outside the
+command interval: their exact sequence ranges must be contiguous and have
+matching one-Hz receive-time coverage. Archive queries pad event timestamps by
+one second then select the exact sequence range, because observation time can
+follow receive time by a millisecond. Every channel is now assessed even if a
+previous channel fails; raw boundaries and per-channel errors are preserved.
+
+A typecheck overlapped one warmup, which missed a generator tick; this attempt
+was rejected and repeated without concurrent tests. Native HTTP health probes
+replace cold `fetch` initialization in development Compose, without changing
+intervals/timeouts or rebuilding images (five-call local mean: 134 vs 62 ms).
+
+Latest 60-second smoke (`l0-host-be0a495eb9b14194bc6caeb47e9ce342`) completed all
+840 output commands and archive transitions with no missed ticks or archive
+loss. All numeric archive checks passed, but 15 UI channels exceeded p99 by 8–9
+ms and command acceptance p95 was 207.23 ms. This is **not an acceptance pass**.
+A full regression precedes an unchanged-threshold hour diagnostic; no successful
+200-signal hour is claimed from these short runs.
+
+Pre-hour full `make test` exited 0: **634 unit/integration tests in 79 files,
+15 Chromium scenarios**, firmware tests/cross-build, orchestration, renderer
+recovery, TypeScript, English content, frontend build, offline dependencies and
+backup/restore. The expanded 201-row browser scenario preserves an unsaved name
+through live changes and disables controls on a failed refresh. These functional
+checks do not convert the rejected smoke into a performance pass.

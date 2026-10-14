@@ -17,6 +17,9 @@ def read(*args):
 def main():
     root = Path(__file__).resolve().parent.parent
     os.chdir(root)
+    profile = os.environ.get("APCS_L0_PROFILE", "led-16")
+    if profile not in ("led-16", "mixed-200"):
+        raise ValueError("Unknown L0 profile")
     seconds = int(os.environ.get("APCS_L0_SECONDS", "3600"))
     if not 60 <= seconds <= 3600:
         raise ValueError("L0 duration must be 60–3600 seconds")
@@ -36,7 +39,7 @@ def main():
     inspected = json.loads(read("docker", "inspect", *ids))
     placement = [{"name": c["Name"], "image": c["Image"], "memoryLimit": c["HostConfig"]["Memory"], "nanoCpus": c["HostConfig"]["NanoCpus"], "pidsLimit": c["HostConfig"].get("PidsLimit")} for c in inspected]
     disk = os.statvfs(root)
-    metadata = {"runId": run_id, "requestedSeconds": seconds, "revision": read("git", "rev-parse", "HEAD"), "dirty": bool(read("git", "status", "--porcelain")), "sourceSha256": source.hexdigest(), "cpu": json.loads(read("lscpu", "--json")), "kernel": read("uname", "-r"), "docker": json.loads(read("docker", "version", "--format", "{{json .Server}}")), "placement": placement, "freeBytesBefore": disk.f_bavail * disk.f_frsize}
+    metadata = {"runId": run_id, "profile": profile, "requestedSeconds": seconds, "revision": read("git", "rev-parse", "HEAD"), "dirty": bool(read("git", "status", "--porcelain")), "sourceSha256": source.hexdigest(), "cpu": json.loads(read("lscpu", "--json")), "kernel": read("uname", "-r"), "docker": json.loads(read("docker", "version", "--format", "{{json .Server}}")), "placement": placement, "freeBytesBefore": disk.f_bavail * disk.f_frsize}
     if metadata["freeBytesBefore"] < 2 * 1024 ** 3:
         raise RuntimeError("At least 2 GiB of free space is required for this bounded workload")
     (directory / "metadata.json").write_text(json.dumps(metadata, indent=2))

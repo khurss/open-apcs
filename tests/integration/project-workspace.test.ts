@@ -116,3 +116,20 @@ it('uses bounded bank defaults, enforces ownership and rolls back channels when 
   expect((await pool.query('SELECT count(*)::int AS n FROM apcs_devices')).rows[0].n).toBe(2);
   expect((await pool.query('SELECT count(*)::int AS n FROM apcs_signals')).rows[0].n).toBe(18);
 });
+
+it('persists numeric presentation without changing control metadata and rejects invalid or conflicting edits',async()=>{
+  await setup();const projectId=(await project()).json().id;
+  const device=(await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:{projectId,name:'Temperature',siteId:'units',deviceId:'units',kind:'virtual-thermal'}})).json();
+  const id=device.temperatureSignalId;
+  const edit=(payload:Record<string,unknown>,revision=1,signalId=id)=>app!.inject({method:'PATCH',url:`/api/v1/signals/${signalId}`,headers:{...headers(),'if-match':`"${revision}"`},payload});
+  const changed=await edit({name:'Room temperature',unit:'°C',displayDecimals:1});
+  expect(changed.statusCode).toBe(200);expect(changed.json()).toMatchObject({unit:'°C',displayDecimals:1,revision:2,dataType:'float64',direction:'input'});
+  expect((await edit({name:'Conflicting',unit:'K',displayDecimals:0})).statusCode).toBe(412);
+  for(const payload of [{name:'Invalid',unit:'x'.repeat(25)},{name:'Invalid',displayDecimals:7},{name:'Invalid',displayDecimals:-1},{name:'Invalid',unit:'line\nbreak'}]) expect((await edit(payload,2)).statusCode).toBe(400);
+  expect((await edit({name:'Boolean',unit:'V',displayDecimals:1},1,device.signalId)).statusCode).toBe(422);
+  expect((await edit({name:'Renamed'},2)).json()).toMatchObject({unit:'°C',displayDecimals:1,revision:3});
+  const signals=(await app!.inject({url:`/api/v1/signals?projectId=${projectId}`,headers:headers()})).json().items;
+  expect(signals.find((s:{id:string})=>s.id===id)).toMatchObject({unit:'°C',displayDecimals:1});
+  const other=randomUUID();await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'units-other','fixture')",[other]);await pool.query('UPDATE apcs_sessions SET user_id=$1',[other]);
+  expect((await edit({name:'Foreign',unit:'K'},3)).statusCode).toBe(404);
+});

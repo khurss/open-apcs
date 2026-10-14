@@ -110,10 +110,18 @@ provide 1–15 numeric inputs plus a virtual LED, with web registration, real
 MQTT telemetry, history, graph bindings and disconnect handling. The short
 functional 200-signal test is distinct from full capacity qualification; the
 16-active-device limit is unchanged. The mixed hour now passes command, history
-and per-channel UI checks, but its resource gate fails at 8.326% late-window
-memory growth (limit 5%). Bounded evidence retention and investigation of API
-growth precede another full hour; this milestone remains partial.
+and per-channel UI checks, and the owner accepted its 8.326% late-window memory growth under revised
+policy v2 (10% growth, unchanged 12 GiB peak). The same samples pass the revised
+evaluator; the historical 5% rejection is preserved. Retention investigation is
+nonblocking backlog. This specific increment is accepted, without completing
+remaining M1 hardware cases or larger capacity profiles.
 
 The mixed 200-signal endurance runner and per-channel archive/UI criteria are
 specified in [Mixed 200-signal qualification](load-200.md). Its qualification
 status is recorded separately from the earlier 16-output hour pass.
+
+
+Delivered M2 increment: numeric signal display settings in the catalog and live
+monitor, with persisted units and decimal places, optimistic concurrency and
+unchanged control values. See [signal presentation](signal-presentation.md).
+Application to HMI widgets, charts and report snapshots is a subsequent delivery.

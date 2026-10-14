@@ -18,6 +18,16 @@ test('opens projects by keyboard, preserves context and runs the prepared virtua
   const thermal = page.getByRole('article').filter({hasText:'Climate chamber'});
   await thermal.getByRole('button', {name:'Start simulator',exact:true}).click();
   await expect(thermal.getByText('Simulation running',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Signals',exact:true}).click();
+  const numericRow=page.getByRole('row').filter({hasText:'Chamber temperature (C)'});
+  await numericRow.getByText('Display settings',{exact:true}).click();
+  await numericRow.getByLabel('Unit for Chamber temperature (C)',{exact:true}).fill('°C');
+  await numericRow.getByLabel('Decimal places for Chamber temperature (C)',{exact:true}).fill('1');
+  await numericRow.getByRole('button',{name:'Save display settings',exact:true}).click();
+  await expect(numericRow.locator('.signal-value')).toHaveText(/^-?\d+\.\d °C$/);
+  await page.reload();
+  await expect(numericRow.locator('.signal-value')).toHaveText(/^-?\d+\.\d °C$/);
+
   await page.getByRole('button', {name:'Logic',exact:true}).click();
   await page.getByRole('button', {name:'Open Climate PID',exact:true}).click();
   await expect(page.getByText('Prepared revisions',{exact:true})).toBeVisible();

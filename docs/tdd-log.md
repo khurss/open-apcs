@@ -734,3 +734,38 @@ tests and 15 Chromium scenarios, with the additional firmware/build, offline,
 backup, renderer, type and language gates documented above. This follow-up changes
 only documentation. Demo restoration verified the virtual process and PID graph
 running, physical runtime stopped, and API ready.
+
+
+### Owner-approved mixed-200 policy and numeric presentation
+
+The owner accepted the measured mixed-200 run and requested relaxed requirements
+and progression. Policy v2 sets mixed-200 late-window growth to 10%, preserving
+12 GiB peak, all evidence coverage and workload gates; led-16 remains at 5%.
+RED reproduced the old evaluator rejecting the newly accepted profile. GREEN
+adds explicit profile and policy metadata; tests also reject excessive growth.
+Docker re-evaluation of the original 124 samples passes at 8.3258%, without a new
+hour or changes to historical `resource-result.json`. The v2 report is separate.
+
+For signal presentation, RED showed the API rejecting the new settings (400)
+and the formatter omitting configured units/precision. GREEN persists bounded
+numeric metadata under ownership and optimistic concurrency, with transactional
+audit and database constraints. Tests cover invalid units/precision, boolean
+rejection, rename preservation, stale revisions and another owner's access.
+The browser demo acceptance edits the live temperature presentation and verifies
+it after reloading. No hardware action is part of this increment.
+
+The first full gate stopped at a test-helper TypeScript annotation (`unknown`
+was not an injectable payload); it now uses `Record<string, unknown>`. The next
+run found the explicit migration-version assertion still ending at 13; it now
+includes 14. That run also observed a 422 instead of 200 on the unchanged sandbox
+recovery test after a heavy native operation. Its isolated Docker repeat passed
+all seven cases without changing sandbox code, deadlines or assertions. This
+intermittent observation is preserved; no root-cause fix is claimed from a retry.
+
+Final Docker `make test` passed: **639 unit/integration tests in 81 files and
+15 Chromium scenarios**, plus TypeScript, English content, firmware tests/build,
+orchestration, renderer recovery, frontend build, offline installation and
+backup/restore. The unchanged sandbox recovery case passed in the full repeat.
+No image rebuild was needed. The acceptance uses the original hour's recorded
+revision for performance; the display-settings change has functional/browser
+coverage, not a newly claimed hour benchmark.

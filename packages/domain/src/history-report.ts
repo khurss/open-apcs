@@ -8,7 +8,23 @@ export interface ReportSummary {
   trueMs: number; falseMs: number; transitions: number; mean: number | null; min: number | null; max: number | null;
 }
 export interface ReportData { templateVersion: 1; timezone: 'UTC'; period: ReportPeriod; date: string; profile: ReportProfile; summary: ReportSummary; rows: ReportSummary[]; }
-export interface SignalReport extends ReportData { id: string; generatedAt: string; signal: { id: string; name: string; dataType: string }; }
+interface ReportSignal { id:string;name:string;dataType:string; }
+export type SignalReport = Omit<ReportData,'templateVersion'> & {id:string;generatedAt:string} & (
+  {templateVersion:1;signal:ReportSignal} |
+  {templateVersion:2;signal:ReportSignal & {unit:string;displayDecimals:number;revision:number}}
+);
+/** Validate the versioned display snapshot at every artifact boundary. */
+export function reportPresentation(report:SignalReport) {
+  if(report.templateVersion===1)return null;
+  if(report.templateVersion!==2)throw new Error('Unsupported report template version');
+  const s=report.signal;
+  if(!s || typeof s.unit!=='string' || [...s.unit].length>24 || /[\u0000-\u001f\u007f]/.test(s.unit) || !Number.isInteger(s.displayDecimals) || s.displayDecimals<0 || s.displayDecimals>6 || !Number.isInteger(s.revision) || s.revision<1 || s.revision>999999999 || (s.dataType==='boolean'&&(s.unit!==''||s.displayDecimals!==2)))throw new Error('Invalid report presentation');
+  return {unit:s.unit,displayDecimals:s.displayDecimals,revision:s.revision};
+}
+export function reportMeasurement(value:number|null,report:SignalReport):string {
+  const presentation=reportPresentation(report);
+  return value===null?'Not available':presentation?value.toFixed(presentation.displayDecimals):value.toLocaleString('en-US',{maximumFractionDigits:3});
+}
 const HOUR = 3600000; const DAY = 24 * HOUR;
 const qualities = ['Good', 'Bad', 'Stale', 'Disconnected', 'Unknown'] as const;
 export function reportRange(period: string, date: string): { from: string; to: string } {
@@ -62,8 +78,9 @@ export function summarizeReport(period: string, date: string, profile: ReportPro
 }
 function cell(value: unknown): string { const text = value === null ? '' : String(value); const safe = typeof value === 'string' && /^(?:\s*[=+@-]|[\t\r\n])/.test(text) ? `'${text}` : text; return `"${safe.replaceAll('"', '""')}"`; }
 export function reportCsv(report: SignalReport): string {
-  const header = 'report_id,generated_at_utc,template_version,signal_id,signal_name,data_type,timezone,row_type,from_utc,to_utc,expected_hours,used_hours,pending_hours,missing_hours,samples,invalid_samples,good_seconds,bad_seconds,stale_seconds,disconnected_seconds,unknown_seconds,on_seconds,off_seconds,transitions,mean,min,max';
+  const presentation=reportPresentation(report);
+  const header = 'report_id,generated_at_utc,template_version,signal_id,signal_name,data_type,timezone,row_type,from_utc,to_utc,expected_hours,used_hours,pending_hours,missing_hours,samples,invalid_samples,good_seconds,bad_seconds,stale_seconds,disconnected_seconds,unknown_seconds,on_seconds,off_seconds,transitions,mean,min,max'+(presentation?',unit,display_decimals,signal_revision':'');
   const lines = [header];
-  for (const [index, row] of [report.summary, ...report.rows].entries()) lines.push([report.id, report.generatedAt, report.templateVersion, report.signal.id, report.signal.name, report.signal.dataType, report.timezone, index === 0 ? 'total' : report.period === 'day' ? 'hour' : 'day', row.from, row.to, row.expectedHours, row.usedHours, row.pendingHours, row.missingHours, row.sampleCount, row.invalidSamples, ...qualities.map((q) => row.qualityMs[q] / 1000), report.profile === 'digital' ? row.trueMs / 1000 : null, report.profile === 'digital' ? row.falseMs / 1000 : null, report.profile === 'digital' ? row.transitions : null, row.mean, row.min, row.max].map(cell).join(','));
+  for (const [index, row] of [report.summary, ...report.rows].entries()) lines.push([report.id, report.generatedAt, report.templateVersion, report.signal.id, report.signal.name, report.signal.dataType, report.timezone, index === 0 ? 'total' : report.period === 'day' ? 'hour' : 'day', row.from, row.to, row.expectedHours, row.usedHours, row.pendingHours, row.missingHours, row.sampleCount, row.invalidSamples, ...qualities.map((q) => row.qualityMs[q] / 1000), report.profile === 'digital' ? row.trueMs / 1000 : null, report.profile === 'digital' ? row.falseMs / 1000 : null, report.profile === 'digital' ? row.transitions : null, row.mean, row.min, row.max,...(presentation?[presentation.unit,presentation.displayDecimals,presentation.revision]:[])].map(cell).join(','));
   return `${lines.join('\r\n')}\r\n`;
 }

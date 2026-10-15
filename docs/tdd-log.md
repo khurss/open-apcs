@@ -800,3 +800,29 @@ and database backup/restore. The final phone screenshot was inspected: the unit
 caption is visible outside the plot. No images were rebuilt or physical commands
 issued for this increment. This is functional display acceptance, not a new
 endurance measurement or completion of all M2 features.
+
+
+### Versioned units in report and raw-history exports (2026-10-15)
+
+RED: v2 report/raw CSV lacked metadata columns, the renderer rejected template 2,
+and the real PostgreSQL report worker produced a template-1 snapshot without
+presentation. GREEN captures units, precision and revision in the existing
+repeatable-read snapshot; typed v1/v2 contracts retain old rendering/export.
+PDF/web measurements use frozen precision, while CSV and JSON stay unrounded.
+Text-unit escaping, bounded presentation validation and legacy headers are tested.
+
+The integration test changes Celsius to Kelvin during render: the old report and
+CSV remain Celsius/revision 2, and a new report captures Kelvin/revision 3. Docker
+targeted tests passed. The renderer integration exercises both v1 and v2 PDFs.
+Chromium acceptance now also downloads raw CSV v2, generates a numeric report,
+checks its frozen metadata/preview/CSV/PDF bytes and captures its print layout.
+Full regression and visual evidence follow below.
+
+Full Docker `make test` passed: **645 unit/integration tests in 81 files and
+15 Chromium scenarios**, plus TypeScript, English content, firmware tests/build,
+orchestration, renderer recovery, frontend build, offline dependencies and
+backup/restore. Real-renderer integration accepts both template versions. The
+numeric browser journey verified saved v2 metadata, preview, raw/report CSV and
+real PDF bytes. The print-template screenshot was inspected: units and revision
+are legible, with missing historical measurements correctly shown as unavailable.
+No image rebuild, firmware flash or physical output command was needed.

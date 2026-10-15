@@ -34,3 +34,11 @@ describe('bounded typed history CSV', () => {
     expect(() => historyCsv({ id: 's', name: 's', dataType: 'boolean' }, Array.from({ length: 1001 }, (_, i) => row(String(i + 1), i, false)))).toThrow(/1000/);
   });
 });
+it('opts into versioned raw CSV metadata without rounding values or altering legacy headers',()=>{
+  const signal={id:'s',name:'Temperature',dataType:'float64',unit:'=UNIT()',displayDecimals:1,revision:7};
+  const rows=[row('1',0,21.456)];
+  expect(historyCsv(signal,rows).split('\r\n')[0]).not.toContain('export_version');
+  const csv=historyCsv(signal,rows,{version:2});
+  expect(csv.split('\r\n')[0]).toContain('export_version,unit,display_decimals,signal_revision');
+  expect(csv).toContain('"21.456"');expect(csv).toContain('"2","\'=UNIT()","1","7"');
+});

@@ -24,11 +24,11 @@ function cell(value: string, protect = true): string {
   return `"${text.replaceAll('"', '""')}"`;
 }
 /** Metadata is spreadsheet-safe; value_json preserves string/int64/null types. */
-export function historyCsv(signal: { id: string; name: string; dataType: string }, rows: ArchivedSample[]): string {
-  const lines = ['signal_id,signal_name,data_type,archive_id,observed_at_utc,value_json,quality,boot_id,sequence,source_time_utc,received_time_utc'];
+export function historyCsv(signal: { id: string; name: string; dataType: string;unit?:string;displayDecimals?:number;revision?:number }, rows: ArchivedSample[], options: {version:1|2}={version:1}): string {
+  const lines = ['signal_id,signal_name,data_type,archive_id,observed_at_utc,value_json,quality,boot_id,sequence,source_time_utc,received_time_utc'+(options.version===2?',export_version,unit,display_decimals,signal_revision':'')];
   for (const row of ordered(rows)) {
     const sample = row.snapshot;
-    const fields = [signal.id, signal.name, signal.dataType, row.id, new Date(row.observedAt).toISOString(), JSON.stringify(sample.value), sample.quality, sample.bootId ?? '', sample.sequence?.toString() ?? '', sample.sourceTime ?? '', sample.receivedTime ?? ''];
+    const fields = [signal.id, signal.name, signal.dataType, row.id, new Date(row.observedAt).toISOString(), JSON.stringify(sample.value), sample.quality, sample.bootId ?? '', sample.sequence?.toString() ?? '', sample.sourceTime ?? '', sample.receivedTime ?? '',...(options.version===2?['2',signal.unit??'',signal.displayDecimals?.toString()??'',signal.revision?.toString()??'']:[])];
     lines.push(fields.map((value, index) => cell(value, index !== 5)).join(','));
   }
   return `${lines.join('\r\n')}\r\n`;

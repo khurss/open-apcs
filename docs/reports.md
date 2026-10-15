@@ -1,6 +1,6 @@
 # Daily and monthly signal reports
 
-Status: M2 engineering increment. A bounded background job generates a fixed JSON summary and downloadable PDF/CSV for one boolean or float64 signal. Reports are read-only and never start devices or request outputs. Alarm/command reports, multi-signal templates, configured engineering units, local-calendar reporting, scheduled delivery and a free-form designer are not implemented.
+Status: M2 engineering increment. A bounded background job generates a fixed JSON summary and downloadable PDF/CSV for one boolean or float64 signal. Reports are read-only and never start devices or request outputs. Alarm/command reports, multi-signal templates, unit conversion, local-calendar reporting, scheduled delivery and a free-form designer are not implemented.
 
 ## User workflow
 
@@ -15,7 +15,7 @@ The worker reads signal metadata, completed hourly aggregates and pending recalc
 - Digital summaries show verified Good ON/OFF duration and sum the already-computed transition counts. No transition is invented between disconnected or missing hours.
 - Analog means are weighted by Good duration, not number of samples or buckets. Extrema preserve the aggregate's valid observations. No usable duration yields a null mean; it does not yield zero.
 - All five quality durations, missing/pending hour counts and invalid Good sample counts are retained. Malformed or overlapping aggregates fail the job instead of producing misleading totals.
-- The current catalog does not expose configurable engineering units. Analog reports explicitly say units are not configured. Boolean durations are seconds. Do not infer units from a signal's name.
+- Template 2 captures configured unit labels, decimal places and the signal revision at generation. Empty units remain explicitly unconfigured; no units are inferred from names. Boolean durations remain seconds.
 - Exact integer/counter report profiles are not supported by this first template and are rejected; no integer string is coerced into float64.
 
 Each saved result includes report/signal IDs, signal name/type, UTC range, template version and generation time. Subsequent changes or recalculation of the archive do not alter that result. Regeneration makes a new job. This is an application-level snapshot, not a signed or certified record.
@@ -48,3 +48,49 @@ The renderer's image and existing package versions are included in offline Compo
 Docker tests cover calendar boundaries and leap months, missing/pending coverage, weighted numeric means, digital duration, malformed aggregates, spreadsheet-safe CSV, queue capacity/idempotency, owner/CSRF enforcement, generation failure, lease fencing, retention and snapshot stability. A real private Chromium request generates PDF bytes and rejects excessive input. The browser creates and downloads a persisted report through the complete API/worker/renderer path; desktop, phone and print-template layouts are inspected. Backup/restore covers the new table and binary artifact bytes.
 
 References: [MDN printing guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Media_queries/Printing) explains print styles and page layout; the renderer uses the [Playwright PDF API](https://playwright.dev/docs/api/class-page#page-pdf). Report quality and retention rules above are Open APCS contracts.
+
+
+## Presentation snapshot version 2 (2026-10-15)
+
+New jobs generate `templateVersion: 2`. The same repeatable-read transaction that
+reads hourly aggregates captures `signal.unit`, `signal.displayDecimals` and
+`signal.revision`, together with the existing signal identity/name/type. Capture
+occurs when the worker snapshots the job, **not at queue submission** and not at
+the historical observation time. Renaming or changing units while rendering does
+not modify that report. A later generation captures the later revision.
+
+Unit labels are display metadata, not calibrated unit conversion. All statistics
+and stored JSON values remain unrounded. Template 2 PDF and web previews apply
+0–6 decimal places only to analog mean/minimum/maximum and identify the frozen
+unit and revision. Missing measurements remain `Not available`. Quality seconds,
+coverage, digital durations and counts retain their existing formatting.
+
+Version 2 report CSV appends `unit,display_decimals,signal_revision` after the
+existing `max` column, retaining `template_version=2` on every row. Statistics
+remain numeric and unrounded; text metadata, including formula-like unit labels,
+is escaped for spreadsheets. Existing version 1 CSV columns and rendering are
+unchanged. Existing Ready PDF/CSV blobs are downloaded verbatim and are never
+rewritten or silently upgraded by this increment.
+
+The artifact boundary rejects malformed presentation: missing/nonstring units,
+more than 24 Unicode code points, control characters, precision outside integer
+0–6 or a revision outside 1–999999999. Boolean snapshots require empty units and
+the default precision. HTML escapes unit labels just like signal names. A schema
+migration is unnecessary because the versioned snapshot is stored in the existing
+JSON column. Old offline bundles do not acquire template 2 without an update.
+
+The browser's **Export loaded CSV** is a separate raw-history format. It now
+explicitly uses export version 2, appending
+`export_version,unit,display_decimals,signal_revision` after `received_time_utc`.
+The `value_json` column keeps exact typed, unrounded samples. These metadata
+columns describe the loaded catalog snapshot; they do not assert historical units
+at each sample. Unavailable metadata produces empty fields, not fabricated units
+or revisions. The internal CSV helper retains a version 1 default for existing
+callers; consumers of browser exports should select columns by header.
+
+Acceptance covers v1 compatibility, v2 unit validation/escaping and rounding,
+raw numeric preservation, a catalog edit during rendering with immutable old
+artifacts and a new report using the new unit, real Chromium PDF generation, and
+browser checks of the numeric report preview, raw/report CSV and print layout.
+This completes display-unit export support, not multi-signal reporting, unit
+conversion, historical unit calibration or a signed-record system.

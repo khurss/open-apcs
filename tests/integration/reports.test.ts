@@ -72,3 +72,19 @@ it('rejects invalid renderer output, preserves pending coverage and prunes expir
   const pending = (await request()).json().id; await new ReportService(pool, async () => pdf).processNext();
   expect((await get(pending)).json().report.summary).toMatchObject({ pendingHours: 1, missingHours: 23, usedHours: 0 });
 });
+it('freezes presentation at generation and preserves ready artifacts after catalog edits',async()=>{
+  const projectId=(await pool.query('SELECT project_id FROM apcs_devices LIMIT 1')).rows[0].project_id;
+  const device=(await app.inject({method:'POST',url:'/api/v1/devices',headers,payload:{projectId,name:'Temperature',kind:'virtual-thermal',siteId:'units',deviceId:'units'}})).json();signalId=device.temperatureSignalId;
+  const edit=(revision:number,unit:string)=>app.inject({method:'PATCH',url:`/api/v1/signals/${signalId}`,headers:{...headers,'if-match':`"${revision}"`},payload:{name:'Temperature',unit,displayDecimals:1}});
+  expect((await edit(1,'°C')).statusCode).toBe(200);
+  const id=(await request()).json().id;
+  let captured:unknown;
+  await new ReportService(pool,async data=>{captured=structuredClone(data);await edit(2,'K');return pdf;}).processNext();
+  const ready=(await get(id)).json();expect(ready.state).toBe('Ready');
+  expect(captured).toMatchObject({templateVersion:2,signal:{unit:'°C',displayDecimals:1,revision:2}});
+  expect(ready.report).toEqual(captured);
+  const csv=await app.inject({url:`/api/v1/reports/${id}/csv`,headers});expect(csv.body).toContain('"°C","1","2"');
+  const newer=(await request()).json().id;await new ReportService(pool,async()=>pdf).processNext();
+  expect((await get(newer)).json().report.signal).toMatchObject({unit:'K',revision:3});
+  expect((await app.inject({url:`/api/v1/reports/${id}/csv`,headers})).body).toBe(csv.body);
+});

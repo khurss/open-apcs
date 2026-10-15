@@ -53,3 +53,9 @@ it('exports negative measurements as numeric CSV cells while protecting only tex
   const csv = reportCsv({ ...report, id: 'fixture', generatedAt: '2026-10-13T01:00:00.000Z', signal: { id: 'signal', name: 'Temperature', dataType: 'float64' } });
   expect(csv).toContain('"-10"'); expect(csv).not.toContain('"\'-10"');
 });
+it('exports v2 presentation separately from unrounded statistics and protects unit formulas',()=>{
+  const report={...summarizeReport('day','2026-10-12','analog',[bucket(0,-12.3456)]),templateVersion:2 as const,id:'v2',generatedAt:'2026-10-13T00:00:00.000Z',signal:{id:'s',name:'Temperature',dataType:'float64',unit:'=UNIT()',displayDecimals:1,revision:4}};
+  const csv=reportCsv(report);
+  expect(csv.split('\r\n')[0]).toContain(',unit,display_decimals,signal_revision');
+  expect(csv).toContain('"-12.3456"');expect(csv).toContain('"\'=UNIT()","1","4"');
+});

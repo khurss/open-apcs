@@ -1,3 +1,4 @@
+import {reportHtml} from '../../packages/report-renderer/src/template.js';
 import { signIn } from './auth.js';
 import { expect, test } from '@playwright/test';
 test.use({actionTimeout: 5000});
@@ -43,6 +44,26 @@ test('opens projects by keyboard, preserves context and runs the prepared virtua
   await expect(temperatureTrend.getByText('Unit: °C',{exact:true})).toBeVisible();
   await temperatureTrend.getByRole('button',{name:'Inspect history',exact:true}).click();
   await expect(page.getByRole('table',{name:'Signal history',exact:true})).toContainText('°C');
+  const rawDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export loaded CSV',exact:true}).click();
+  const rawChunks:Buffer[]=[];for await(const chunk of await (await rawDownload).createReadStream())rawChunks.push(Buffer.from(chunk));
+  const rawCsv=Buffer.concat(rawChunks).toString();expect(rawCsv).toContain('export_version,unit,display_decimals,signal_revision');expect(rawCsv).toContain('"2","°C","1"');
+  await page.getByRole('button',{name:'Show reports',exact:true}).click();
+  await page.getByLabel('Report date (UTC)',{exact:true}).fill('2026-10-12');
+  await page.getByRole('button',{name:'Generate report',exact:true}).click();
+  const job=page.getByRole('table',{name:'Report jobs',exact:true}).getByRole('row').filter({hasText:'2026-10-12'});
+  await expect(job).toContainText('Ready',{timeout:15000});
+  await job.getByRole('button',{name:'View report',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Report preview',exact:true})).toContainText('Unit: °C · 1 decimal places');
+  const href=await job.getByRole('link',{name:'Download PDF',exact:true}).getAttribute('href');
+  const saved=await (await page.request.get(href!.replace(/\/pdf$/,''))).json();
+  expect(saved.report).toMatchObject({templateVersion:2,signal:{unit:'°C',displayDecimals:1}});
+  expect((await (await page.request.get(href!)).body()).subarray(0,5).toString()).toBe('%PDF-');
+  const csv=await (await page.request.get(href!.replace(/\/pdf$/,'/csv'))).text();
+  expect(csv).toContain('unit,display_decimals,signal_revision');expect(csv).toContain('"°C","1"');
+  const print=await page.context().newPage();await print.setViewportSize({width:1123,height:794});await print.emulateMedia({media:'print'});
+  await print.setContent(reportHtml(saved.report));await expect(print.getByText(/Units: °C/)).toBeVisible();
+  await print.screenshot({path:'test-results/report-units-print.png',fullPage:true});await print.close();
+
   await page.getByRole('button',{name:'Close history',exact:true}).click();
   await page.getByRole('button',{name:'Back to editor',exact:true}).click();
   const metadataPath=/\/api\/v1\/signals\/[0-9a-f-]{36}$/;

@@ -10,9 +10,8 @@ change graph inputs or affect commands. The unit is an operator-supplied label;
 the system cannot verify that it describes the source measurement correctly.
 No-data and boolean displays stay unchanged. The follow-up display increment
 applies numeric presentation to prepared HMI readings, HMI trends, raw-history
-tables and aggregate value columns. CSV/PDF snapshots retain their existing raw
-contracts; adding unit metadata to exports and immutable report snapshots remains
-a separate delivery.
+tables and aggregate value columns. Version 2 CSV/PDF reports now capture unit metadata and precision; raw numeric
+CSV fields remain unrounded. See [report version contracts](reports.md#presentation-snapshot-version-2-2026-10-15).
 
 `GET /api/v1/signals` includes `unit` and `displayDecimals`.
 `PATCH /api/v1/signals/:id` accepts these optional fields alongside required
@@ -54,7 +53,7 @@ label-only signal. History cells show the configured display value; their toolti
 retains the raw value. Aggregates format last value, mean and extrema while
 keeping counts, durations, percentages and missing coverage unchanged. Integer
 strings are not coerced into floating point. CSV export still contains original
-unrounded values and does not acquire unit metadata implicitly.
+unrounded values; the explicit version 2 format adds separate display metadata.
 
 Trend geometry uses raw finite observations, with existing gaps and quality
 rules. Axis labels use configured precision, falling back to scientific notation
@@ -67,5 +66,5 @@ Acceptance includes API ownership/absence/authentication tests, numeric axis
 format tests, and a real Chromium journey: configure the demo temperature, open
 the prepared HMI, inspect its trend/history, inject metadata-service failure,
 verify an explicit warning and unitless fallback, retry successfully, and inspect
-the phone layout. Export/report snapshot changes and live cross-tab metadata
-synchronization are not claimed.
+the phone layout. The subsequent report increment adds versioned export snapshots as documented
+above. Live cross-tab metadata synchronization is not claimed.

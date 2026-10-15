@@ -32,7 +32,7 @@ export class ReportService {
   private async snapshot(job: Job): Promise<SignalReport> {
     return transaction(this.pool, async (client) => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
-      const signal = (await client.query<{ id: string; name: string; dataType: string }>('SELECT s.id,s.name,s.data_type AS "dataType" FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE s.id=$1 AND p.owner_id=$2', [job.signal_id, job.actor_id])).rows[0];
+      const signal = (await client.query<{ id: string; name: string; dataType: string;unit:string;displayDecimals:number;revision:number }>('SELECT s.id,s.name,s.data_type AS "dataType",s.unit,s.display_decimals AS "displayDecimals",s.revision FROM apcs_signals s JOIN apcs_devices d ON d.id=s.device_id JOIN apcs_projects p ON p.id=d.project_id WHERE s.id=$1 AND p.owner_id=$2', [job.signal_id, job.actor_id])).rows[0];
       if (!signal || !['boolean', 'float64'].includes(signal.dataType)) throw new Error('Report signal unavailable');
       const range = reportRange(job.period, job.date);
       const rows = (await client.query(`WITH buckets AS (
@@ -42,7 +42,7 @@ export class ReportService {
         AND NOT EXISTS(SELECT 1 FROM apcs_history_aggregates a WHERE a.signal_id=j.signal_id AND a.resolution=j.resolution AND a.bucket_start=j.bucket_start))
         SELECT * FROM buckets ORDER BY bucket_start LIMIT 745`, [job.signal_id, range.from, range.to])).rows;
       const buckets: ReportBucket[] = rows.map((row) => ({ bucketStart: row.bucket_start.toISOString(), calculatedAt: row.calculated_at?.toISOString() ?? null, aggregate: row.aggregate, stale: row.stale }));
-      return { ...summarizeReport(job.period, job.date, signal.dataType === 'boolean' ? 'digital' : 'analog', buckets), id: job.id, generatedAt: new Date().toISOString(), signal };
+      return { ...summarizeReport(job.period, job.date, signal.dataType === 'boolean' ? 'digital' : 'analog', buckets), templateVersion:2, id: job.id, generatedAt: new Date().toISOString(), signal };
     });
   }
 }

@@ -901,3 +901,44 @@ then passively cool to 21 C. Its live-server simulation completed with four dura
 events and heater OFF. The original virtual PID demo is running and the physical
 LED bench remains stopped. Device binding, general branching/SFC and physical
 recipe execution remain outside this increment.
+
+## Virtual MQTT recipe binding
+
+RED: measured-temperature tests showed the old engine warming from its own model
+instead of retaining a measured 20 C; both cases failed. The first bound API test
+returned 400 for `deviceId` instead of accepting a resolved virtual binding. A
+watchdog regression reproduced a blocked read retaining authority. GREEN:
+measured execution, a private gateway recipe task, frozen device bindings and an
+independent watchdog now cover those cases.
+
+Targeted Docker checks passed for measured execution, command verification,
+timeouts, bad quality, cancellation and persistence failure. Real PostgreSQL/MQTT
+integration verifies ON/OFF journal evidence, graph/manual ownership exclusion,
+foreign/physical rejection and a latched abort after cutting actual MQTT sockets.
+The browser journey installs the dedicated demo, watches its Heat/Hold/Cool run
+in the prepared HMI, completes with Verified OFF, then interrupts the fixture
+transport during another run and checks that refresh does not resume it.
+The API's generic conflict message initially hid the ownership cause; activation
+now returns a sanitized, actionable conflict. Browser label lookup failures were
+corrected with an explicit accessible target name and a role-based editor selector.
+
+The demo installs content only; device startup and recipe activation are explicit.
+The panel identifies recorded project-level recipe state, while HMI values retain
+live quality. Requested OFF on abort is never presented as verified OFF.
+Full regression results and LAN validation follow after the repository gate.
+
+LAN validation: the existing Compose deployment was updated without rebuilding
+images. Automation demo now includes the dedicated Recipe chamber, MQTT thermal
+demo v1 and prepared Recipe chamber overview. A live-server run completed all
+three steps with four durable events and a Verified final OFF command. The
+separate Climate PID demo is running again; the physical LED bench remains
+stopped. Desktop HMI and phone journal screenshots were inspected; the recipe
+panel has readable spacing and phone content has no horizontal overflow.
+
+Final Docker `make test` passed: **681 unit/integration tests in 87 files and
+18 Chromium scenarios**, plus TypeScript, English content, firmware tests/build,
+orchestration, renderer recovery, frontend build, offline dependencies and
+backup/restore including binding/control evidence and the demo manifest.
+The worker-kill regression verifies orphan detection and no automatic rearming.
+No image rebuild, physical recipe commissioning or capacity claim is part of this
+increment. General device profiles, physical numeric drivers and SFC remain open.

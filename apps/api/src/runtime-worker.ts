@@ -23,6 +23,8 @@ process.on('message', (message: unknown) => {
       let result: unknown;
       if (method === 'startMonitoring' && args.length === 0) result = await runtime.startMonitoring();
       else if (method === 'start' && args.length === 2 && args.every((v) => typeof v === 'string')) result = await runtime.start(args[0] as string, args[1] as string);
+      else if (method === 'activateRecipe' && args.length===2 && typeof args[0]==='string' && typeof args[1]==='string') result=await runtime.activateRecipe(args[0],args[1]);
+      else if (method === 'stopRecipe' && args.length===2 && typeof args[0]==='string' && typeof args[1]==='string') result=await runtime.stopRecipe(args[0],args[1]);
       else if (method === 'startPhysical' && args.length === 3 && typeof args[0] === 'string' && typeof args[1] === 'string' && Number.isSafeInteger(args[2])) result = await runtime.startPhysical(args[0], args[1], args[2] as number);
       else if (method === 'activateGraph' && args.length === 4 && typeof args[0] === 'string' && Number.isSafeInteger(args[1]) && typeof args[2] === 'string' && typeof args[3] === 'string') result = await runtime.activateGraph(args[0], args[1] as number, args[2], args[3]);
       else if (method === 'stopGraph' && typeof args[0] === 'string') result = await runtime.stopGraph(args[0], typeof args[1] === 'string' ? args[1] : undefined);
@@ -39,7 +41,7 @@ process.on('message', (message: unknown) => {
       else throw new Error('Invalid runtime operation');
       if (process.connected) process.send!({ id, result });
     } catch (error) {
-      const message = error instanceof Error && /^(Numeric input drivers are not available|Physical |Alarm |Device not found|Project owner required|Only virtual|Another runtime|Initial runtime limit|Runtime is closed|Prepared graph|All graph|Output belongs|Previous graph)/.test(error.message) ? error.message : 'Runtime operation failed';
+      const message = error instanceof Error && /^(Recipe |Numeric input drivers are not available|Physical |Alarm |Device not found|Project owner required|Only virtual|Another runtime|Initial runtime limit|Runtime is closed|Prepared graph|All graph|Output belongs|Previous graph)/.test(error.message) ? error.message : 'Runtime operation failed';
       if (process.connected) process.send!({ id, error: message });
     } finally { queued--; }
   });

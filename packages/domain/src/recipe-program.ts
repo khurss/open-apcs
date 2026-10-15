@@ -46,15 +46,16 @@ export function beginRecipeRun(input:unknown,now:number):RecipeRunSnapshot {
 export function abortRecipeRun(state:RecipeRunSnapshot,reason:string):RecipeRunSnapshot {
  return state.status==='Running'?{...state,status:'Aborted',heater:false,reason}:state;
 }
-export function advanceRecipeRun(state:RecipeRunSnapshot,now:number,input:{permit:boolean;quality:string}):RecipeRunSnapshot {
+export function advanceRecipeRun(state:RecipeRunSnapshot,now:number,input:{permit:boolean;quality:string;temperatureC?:number}):RecipeRunSnapshot {
  if(!('stageIndex' in state))return advanceRecipe(state,now,input);
  if(state.status!=='Running')return state;
  if(!Number.isFinite(now)||now<state.lastAt)return abortRecipeRun(state,'Invalid simulation clock');
  if(now-state.lastAt>2500)return abortRecipeRun(state,'Simulation sampling overdue');
  if(input.permit!==true)return abortRecipeRun(state,'Simulation permit lost');
  if(input.quality!=='Good')return abortRecipeRun(state,'Simulation signal quality is not Good');
+ if(input.temperatureC!==undefined&&!Number.isFinite(input.temperatureC))return abortRecipeRun(state,'Invalid measured temperature');
  const equilibrium=state.heater?40:20;
- const next:ProgramSnapshot={...state,lastAt:now,temperatureC:equilibrium+(state.temperatureC-equilibrium)*Math.exp(-(now-state.lastAt)/20000)};
+ const next:ProgramSnapshot={...state,lastAt:now,temperatureC:input.temperatureC??(equilibrium+(state.temperatureC-equilibrium)*Math.exp(-(now-state.lastAt)/20000))};
  const current=next.parameters.steps[next.stageIndex]!;
  const elapsed=now-next.stepAt;
  const complete=current.kind==='hold'?elapsed>=current.durationSeconds*1000:current.kind==='heat'?next.temperatureC>=current.targetC:next.temperatureC<=current.targetC;

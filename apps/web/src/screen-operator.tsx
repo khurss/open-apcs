@@ -1,3 +1,4 @@
+import {RecipeOperatorMonitor} from './features/recipes/operator-monitor.js';
 import {useSignalMetadata} from './features/editors/use-signal-metadata.js';
 import {useTrends} from './features/editors/use-trends.js';
 import {TrendPanel} from './features/editors/trend-panel.js';
@@ -8,7 +9,7 @@ import type { Screen, ScreenItem } from '../../../packages/domain/src/screen.js'
 import { api, type Sample, type Signal } from './api.js';
 import { ManualControl } from './runtime-controls.js';
 const unavailable: Sample = { value: null, quality: 'Disconnected', receivedTime: null };
-export function ScreenOperator({ screen, revision, projectRevision, close }: { screen: Screen; revision: number; projectRevision: number; close: () => void }) {
+export function ScreenOperator({ screen, revision, projectRevision, projectId, close }: { projectId?:string; screen: Screen; revision: number; projectRevision: number; close: () => void }) {
   const trendItems=useMemo(()=>screen.items.filter(item=>item.kind==='trend'),[screen]);
   const trends=useTrends(trendItems);
   const metadata=useSignalMetadata(screen.items.flatMap(item=>item.signalId?[item.signalId]:[]));
@@ -47,6 +48,7 @@ export function ScreenOperator({ screen, revision, projectRevision, close }: { s
   function trend(item:ScreenItem) {const current=sample(item);return <TrendPanel item={item} {...(trends[item.id]?{state:trends[item.id]}:{})} sample={current} presentation={metadata.signals[item.signalId!]??{}} inspect={()=>setHistoryTarget(metadata.signals[item.signalId!]??{id:item.signalId!,name:item.label,deviceId:'',dataType:typeof current.value==='boolean'||trends[item.id]?.items.some(row=>typeof row.snapshot.value==='boolean')?'boolean':'float64',direction:'input'})}/>;}
   const controls = screen.items.filter((item) => item.kind === 'button');
   return <div className="engineering"><section className="panel operator-heading"><div><span className="eyebrow">OPERATOR VIEW</span><h2>Prepared screen · r{revision}</h2><p className="muted">Values include data quality. Controls request an audited command.</p></div><button className="secondary" onClick={close}>Back to editor</button></section>
+    {projectId&&<RecipeOperatorMonitor projectId={projectId}/>}
     {metadata.loading&&<p role="status">Loading signal display settings…</p>}
     {metadata.error&&<p role="alert" className="alert">Some signal display settings are unavailable. Affected values use default precision without units. <button className="secondary" onClick={metadata.retry}>Retry display settings</button></p>}
     <p className="muted">Display settings are loaded on opening this screen; reopen it to refresh units and precision.</p>

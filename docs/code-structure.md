@@ -38,3 +38,10 @@ while dispatching legacy snapshots unchanged.
 `recipe-service.ts` serializes persistence and schedules server simulation.
 `apps/web/src/features/recipes/workspace.tsx` provides version publication, run
 controls and journal inspection. This path has no physical command dependency.
+
+`packages/gateway/src/recipe-task.ts` runs measured thermal recipes with command
+verification and a watchdog. `runtime-service.ts` resolves exclusive output
+ownership and connects the task to MQTT, durable commands and conditional run
+persistence; `runtime-process.ts` exposes private IPC. `recipe-demo.ts` installs a
+dedicated virtual chamber and prepared HMI without activation. The operator
+monitor under `features/recipes` displays project-level MQTT run state.

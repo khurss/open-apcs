@@ -1,10 +1,10 @@
-# Thermal recipe simulation
+# Thermal recipes: isolated model and virtual MQTT
 
 This M2 increment provides versioned parameters and durable execution history for
-an isolated, server-side thermal chamber. It does not bind recipes to catalog
-signals, graph outputs, MQTT, or physical equipment. Ordered thermal steps are
-available; general device-bound recipes, branching, SFC, retentive execution and
-real-device recipe control remain pending.
+an isolated server-side model or a registered virtual thermal chamber over MQTT.
+The MQTT path uses measured telemetry and the existing durable command journal.
+Bindings to other device profiles, branching, SFC, retentive execution and
+physical recipe control remain pending.
 
 ## Operator workflow
 
@@ -19,11 +19,14 @@ a concurrent edit requires reloading and selecting the latest version.
 
 Each run copies the exact published parameters. Editing, publishing or navigating
 away cannot change them. One simulation may run per project. Cancellation, permit
-loss and bad quality terminate a run with the virtual heater OFF and an event.
+loss and bad quality terminate a run and record an event. In isolated mode the
+model heater becomes OFF; in MQTT mode control authority is revoked, without
+claiming a verified OFF acknowledgement.
 Fault injection buttons affect this simulation only. A stopped run never resumes;
-starting another run always creates a new chamber initially at 20 C.
+isolated runs start at 20 C. MQTT runs require an explicitly started simulator
+with Good telemetry and an OFF heater; they use its measured temperature.
 
-## Execution contract
+## Isolated model execution contract
 
 - Legacy parameters: target 21–35 C; integer hold 1–3600 seconds; integer heating timeout
   1–600 seconds. Unknown properties and nonfinite values are rejected.
@@ -77,9 +80,46 @@ permit or clock faults always turn the virtual heater OFF.
 
 Publishing and starting clone the entire ordered program. The editor and run
 journal show the frozen steps; later versions cannot reorder a running program.
-Startup continues to abort both legacy and version-2 active snapshots. No new
-SQL migration is required: the existing JSON parameters and snapshots preserve
-both formats, with the same immutable-version and backup protections.
+Startup continues to abort both legacy and version-2 active snapshots. Ordered
+programs use the existing JSON parameters and snapshots with immutable-version
+and backup protections. Migration 17 adds frozen MQTT bindings and control
+evidence; migration 18 adds the idempotent demo installation manifest.
+
+## Virtual MQTT execution contract
+
+In **Recipes**, use **Install MQTT recipe demo**. This idempotently installs a
+separate **Recipe chamber**, **MQTT thermal demo** version 1 (Heat 22 C, Hold 5 s,
+Cool 21 C), and prepared **Recipe chamber overview** with readings and a trend.
+Select the chamber as **Recipe execution target**, start its simulator, then
+start the published version. Open the prepared screen to watch project recipe
+status and the current step. Installation never starts a device or recipe.
+
+- The API resolves and freezes device, temperature signal, output signal and
+  project revision. Cross-project and non-thermal/physical bindings are rejected.
+- Execution runs in the private runtime worker every 250 ms after the preceding
+  cycle. Temperature is published by the independent virtual process at 1 Hz.
+  The recipe does not integrate a second thermal model. A 2.5 s scheduling gap
+  or independent execution watchdog revokes control; this is not hard real time.
+- The output owner becomes `recipe:<runId>`. Manual commands and graph activation
+  cannot take it. A graph-owned output or unresolved command prevents activation.
+  Failed activation does not stop an unrelated graph.
+- Each changed heater intent goes through the existing journal/outbox with a
+  2 s TTL. Only Verified commands advance command progress. Failure, unknown
+  outcome or verification deadline aborts; commands are never blindly retried.
+- Completion requires an explicit final OFF command and Verified journal evidence.
+  Until then the run remains Running with control phase Finishing. Successful
+  completion stops the device runtime; another run requires an explicit restart.
+- Bad/stale/disconnected telemetry, boot changes, project revision changes on a
+  command, cancellation, persistence failure or worker shutdown abort the run and
+  revoke the output owner/session. **Revocation is not verified OFF**. The UI
+  distinguishes requested heater state from command evidence and live telemetry.
+- A run heartbeat older than 5 s is marked Aborted by the server. Worker/API
+  restarts do not rearm devices or resume recipes. Conditional, row-locked writes
+  cannot revive a terminal run. Stored state during an outage is historical.
+- The operator screen displays the latest/active **project-level** MQTT run in a
+  status panel; this is not yet a freely placed per-equipment recipe widget.
+- Existing runtime limits (16 active devices), one active recipe per project and
+  100 versions/runs per project apply. No physical equipment is exercised.
 
 ## API
 
@@ -90,7 +130,8 @@ All routes require the existing session, owner authorization and mutation CSRF.
 | GET `/recipes` | Published versions, newest first |
 | POST `/recipes` | `{name, parameters}` creates v1; add `recipeId` and `expectedRevision` to publish the next version |
 | GET `/recipe-runs` | Newest runs with frozen parameters, latest state and events |
-| POST `/recipe-runs` | `{recipeId, revision}` starts that exact version; 409 if a run is active |
+| POST `/recipe-runs` | `{recipeId, revision, deviceId?}` starts that version; omitted device means isolated mode; 409 if active or activation conflicts |
+| POST `/recipe-demo` | `{}` installs or returns a dedicated chamber, published recipe and prepared HMI in this project; never arms control |
 | POST `/recipe-runs/:runId/cancel` | `{}` cancels; `{cause:"permit"}` or `{cause:"quality"}` injects a terminal simulation fault |
 
 A stale publication returns 412. Wrong-project versions and foreign-owner data
@@ -106,4 +147,8 @@ PostgreSQL integration covers version protection, concurrent starts, stale edits
 ownership, exact version binding, journals, headless ticks, restart and exclusive
 simulator ownership. Chromium covers publishing, frozen runs, leaving the page,
 completion, cancellation and fault injection, plus phone overflow checks.
+Additional tests cover measured execution, verified final OFF, command failures,
+watchdog/cancellation races, graph/manual exclusion, actual MQTT socket loss and
+private worker death. Chromium installs and runs the MQTT demo, observes it in
+the HMI, and cuts the fixture MQTT transport to check a latched abort.
 The complete repository Docker gate and evidence are recorded in `tdd-log.md`.

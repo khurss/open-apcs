@@ -103,11 +103,13 @@ This is ordinary automation and supervision software. Emergency stops and critic
 
 ### Thermal recipe preview
 
-Open **Recipes**, select a project, publish the prefilled thermal-chamber recipe,
-and start its simulation. Choose **New multi-step demo** to build ordered heating,
-holding and passive cooling steps. Versioned parameters, headless execution, cancellation,
-fault injection and a durable run journal are available. This isolated model does
-not control real equipment. See [recipe scope and limits](docs/recipes.md).
+Open **Recipes**, select a project and choose **Install MQTT recipe demo** for a
+configured virtual chamber, Heat → Hold → Cool recipe and operator screen with a
+temperature chart. Start its simulator, then run the published recipe. Watch its
+current step in **Screens → Recipe chamber overview → Operate revision 1**.
+Commands are journaled; completion requires verified OFF. Connection failures
+abort without automatic restart. An isolated thermal model is also available.
+Physical recipe control remains unavailable. See [recipe scope and limits](docs/recipes.md).
 
 ## Documentation
 

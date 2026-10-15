@@ -243,7 +243,7 @@ export async function createApi(options: ApiOptions) {
   registerAggregates(app, pool);
   registerReports(app, pool, options.reportsEnabled ?? false);
   const stopRecipes=options.recipesEnabled ? await startRecipeSimulator(pool,error=>app.log.error(error, 'Recipe simulation tick failed')) : undefined;
-  registerRecipes(app, pool,stopRecipes?.isAvailable);
+  registerRecipes(app, pool,stopRecipes?.isAvailable,options.runtime);
   if(stopRecipes) app.addHook('onClose',stopRecipes);
   registerEditors(app, pool, options.scripts);
   registerGraphRuntime(app, pool, options.runtime);

@@ -2,20 +2,25 @@ import type {Pool,PoolClient} from 'pg';
 import {abortRecipeRun as abortRecipe,advanceRecipeRun as advanceRecipe,recipeStepDescription,type RecipeRunSnapshot as RecipeSnapshot} from '../../../packages/domain/src/recipe-program.js';
 import {audit,transaction} from './store.js';
 export interface RecipeEvent {at:number;message:string;}
-export interface RecipeRun {id:string;project_id:string;recipe_id:string;revision:number;actor_id:string;snapshot:RecipeSnapshot;events:RecipeEvent[];}
+export interface RecipeBinding {deviceId:string;temperatureSignalId:string;outputSignalId:string;projectRevision:number;}
+export interface RecipeRun {binding:RecipeBinding|null;control:import('../../../packages/gateway/src/recipe-task.js').RecipeControl|null;id:string;project_id:string;recipe_id:string;revision:number;actor_id:string;snapshot:RecipeSnapshot;events:RecipeEvent[];}
 export async function saveRecipeRun(client:PoolClient,run:RecipeRun,next:RecipeSnapshot,at:number,message?:string) {
  const transition=message??(next.status!==run.snapshot.status?next.reason??`Run ${next.status.toLowerCase()}`:recipeStepDescription(next)!==recipeStepDescription(run.snapshot)?('stageIndex' in next?`Step ${recipeStepDescription(next)}`:`Step: ${next.step}`):null);
  const events=transition?[...run.events,{at,message:transition}]:run.events;
- await client.query('UPDATE apcs_recipe_runs SET snapshot=$2,events=$3 WHERE id=$1',[run.id,next,JSON.stringify(events)]);
+ const control=run.binding&&next.status==='Aborted'?{phase:'Revoked',commandId:run.control?.commandId??null,commandState:run.control?.commandState??null,observedOutput:run.control?.observedOutput??null}:run.control;
+ await client.query('UPDATE apcs_recipe_runs SET snapshot=$2,events=$3,control=$4 WHERE id=$1',[run.id,next,JSON.stringify(events),control]);
  if(transition) await audit(client,run.actor_id,'recipe.run.event',run.id,{message:transition,status:next.status});
- return {...run,snapshot:next,events};
+ return {...run,snapshot:next,events,control};
 }
-/** Row locks serialize workers and operator actions. No physical runtime dependencies. */
+/** Bound runs are advanced only by their gateway task; this worker detects orphaned runs. */
 export async function tickRecipes(pool:Pool,now?:number) {
  await transaction(pool,async client=>{
   const runs=await client.query<RecipeRun>("SELECT * FROM apcs_recipe_runs WHERE snapshot->>'status'='Running' ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED");
   const observedAt=now??Date.now();
-  for(const run of runs.rows) await saveRecipeRun(client,run,advanceRecipe(run.snapshot,observedAt,{permit:true,quality:'Good'}),observedAt);
+  for(const run of runs.rows) {
+   if(!run.binding)await saveRecipeRun(client,run,advanceRecipe(run.snapshot,observedAt,{permit:true,quality:'Good'}),observedAt);
+   else if(observedAt-run.snapshot.lastAt>5000)await saveRecipeRun(client,run,abortRecipe(run.snapshot,'Recipe runtime heartbeat lost; authority is not restored'),observedAt);
+  }
  });
 }
 export async function abortRunningRecipes(pool:Pool,reason:string) {

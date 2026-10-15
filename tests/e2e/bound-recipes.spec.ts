@@ -1,0 +1,26 @@
+import {expect,test} from '@playwright/test';
+import {signIn} from './auth.js';
+test('operates the MQTT recipe demo in HMI and latches a broker transport failure',async({page,request})=>{
+ test.setTimeout(90000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await signIn(page);await page.getByRole('button',{name:'Projects',exact:true}).click();
+ await page.getByLabel('Project name',{exact:true}).fill('MQTT recipe acceptance');await page.getByRole('button',{name:'Create project',exact:true}).click();
+ await page.getByRole('button',{name:'Recipes',exact:true}).click();await page.getByLabel('Recipe project',{exact:true}).selectOption({label:'MQTT recipe acceptance'});
+ await page.getByRole('button',{name:'Install MQTT recipe demo',exact:true}).click();
+ await expect(page.getByLabel('Recipe execution target',{exact:true})).not.toHaveValue('');
+ await page.getByRole('button',{name:'Start simulator',exact:true}).click();await expect(page.getByText('Simulation running',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Start simulation v1',exact:true}).click();await expect(page.getByTestId('recipe-status').first()).toHaveText('Running');
+ await page.getByRole('button',{name:'Screens',exact:true}).click();await page.getByRole('combobox',{name:'Editor project',exact:true}).selectOption({label:'MQTT recipe acceptance'});
+ await page.getByRole('button',{name:'Open Recipe chamber overview',exact:true}).click();await page.getByRole('button',{name:'Operate revision 1',exact:true}).click();
+ const monitor=page.getByRole('region',{name:'Project recipe status'});
+ await expect(monitor).toContainText('Running');await expect(monitor).toContainText('Warm chamber');
+ await page.screenshot({path:'test-results/mqtt-recipe-hmi.png',fullPage:true,animations:'disabled'});
+ await expect(monitor).toContainText('Completed',{timeout:45000});await expect(monitor).toContainText('Verified OFF');
+ await page.getByRole('button',{name:'Recipes',exact:true}).click();await page.getByLabel('Recipe execution target',{exact:true}).selectOption({label:'Recipe chamber · MQTT'});
+ await page.getByRole('button',{name:'Start simulator',exact:true}).click();await expect(page.getByText('Simulation running',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Start simulation v1',exact:true}).click();await expect(page.getByTestId('recipe-status').first()).toHaveText('Running');
+ expect((await request.post('http://e2e-api:3001/mqtt/disconnect')).status()).toBe(204);
+ await expect(page.getByTestId('recipe-status').first()).toHaveText('Aborted');await expect(page.locator('.recipe-run').first()).toContainText('OFF is not verified');
+ await page.reload();await expect(page.getByTestId('recipe-status').first()).toHaveText('Aborted');
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'test-results/mqtt-recipe-mobile.png',fullPage:true,animations:'disabled'});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);expect(errors).toEqual([]);
+});

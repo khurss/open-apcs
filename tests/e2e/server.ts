@@ -1,3 +1,4 @@
+import {mqttProxy} from '../helpers/mqtt-proxy.js';
 import type {AiProvider} from '../../apps/api/src/ai-provider.js';
 import { ReportProcess } from '../../apps/api/src/report-process.js';
 import { AggregateProcess } from '../../apps/api/src/aggregate-process.js';
@@ -26,7 +27,10 @@ const physicalConfigPath = '/tmp/apcs-e2e/physical.json';
 await writeFile(physicalConfigPath, JSON.stringify({ url: 'mqtts://mqtt-tls:8883', username: 'e2e-gateway', password: 'fixture-e2e-gateway-password', ca, devices: ['led', 'recovery'].map(deviceId => ({ siteId: 'tls-e2e', deviceId, gpio: 18 })) }), { mode: 0o600 });
 const simulators = ['led', 'recovery'].map(deviceId => new MqttLedSimulator({ url: 'mqtts://mqtt-tls:8883', siteId: 'tls-e2e', deviceId, signalId: 'fixture', credentials: { ca, username: 'e2e-device', password: 'fixture-e2e-device-password' } }, new LedPeer(() => performance.now(), randomUUID())));
 for (const simulator of simulators) await simulator.start();
-const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: process.env.APCS_TEST_MQTT_URL!, databaseOptions: `-c search_path=${schema}`, physicalConfigPath, scriptUrl: process.env.APCS_SCRIPT_URL! });
+const proxy=await mqttProxy(process.env.APCS_TEST_MQTT_URL!);
+const faults=createServer((request,response)=>{if(request.method==='POST'&&request.url==='/mqtt/disconnect'){proxy.disconnect();response.writeHead(204).end();}else response.writeHead(404).end();});
+await new Promise<void>(resolve=>faults.listen(3001,'0.0.0.0',resolve));
+const runtime = new RuntimeProcess({ connectionString: process.env.APCS_TEST_POSTGRES_URL, mqttUrl: proxy.url, databaseOptions: `-c search_path=${schema}`, physicalConfigPath, scriptUrl: process.env.APCS_SCRIPT_URL! });
 // No external model calls or credentials in browser acceptance.
 const ai:AiProvider={model:'fixture-model',async generate(context){return {name:'Fixture proposal',summary:'Review this local deterministic fixture before saving.',document:JSON.stringify(context.kind==='graph'?{schemaVersion:1,nodes:[{id:'ai-constant',kind:'constant',label:'AI constant',value:false,x:80,y:80}],edges:[]}:{schemaVersion:1,width:1000,height:600,items:[{id:'ai-title',kind:'label',label:'AI overview',x:40,y:40,width:700,height:100}]})};}};
 const app = await createApi({ pool, recipesEnabled: true, ai, reportsEnabled: true, origin: 'http://localhost:5173', secureCookies: false, runtime, scripts: new ScriptClient(process.env.APCS_SCRIPT_URL!) });
@@ -61,7 +65,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => 
   stopped = true;
   void (async () => {
     await reports.close(); await aggregates.close(); await notifications.close(); recipient.closeAllConnections(); await new Promise<void>((resolve) => recipient.close(() => resolve()));
-    await app.close(); await Promise.all(simulators.map(simulator => simulator.stop())); await pool.end();
+    await app.close();faults.closeAllConnections();await new Promise<void>(resolve=>faults.close(()=>resolve()));await proxy.close(); await Promise.all(simulators.map(simulator => simulator.stop())); await pool.end();
     await admin.query(`DROP SCHEMA ${schema} CASCADE`); await admin.end();
   })();
 });

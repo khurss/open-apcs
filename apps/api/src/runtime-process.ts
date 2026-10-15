@@ -34,6 +34,8 @@ export class RuntimeProcess implements RuntimeControl {
   activateGraph(graphId: string, revision: number, actorId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('activateGraph', [graphId, revision, actorId, activationId ?? randomUUID()]); }
   stopGraph(graphId: string, activationId?: string): Promise<GraphRuntimeStatus> { return this.call('stopGraph', [graphId, activationId]); }
   graphStatus(graphId: string): Promise<GraphRuntimeStatus> { return this.call('graphStatus', [graphId]); }
+  activateRecipe(runId:string,actorId:string):Promise<void>{return this.call('activateRecipe',[runId,actorId]);}
+  stopRecipe(runId:string,reason:string):Promise<void>{return this.call('stopRecipe',[runId,reason]);}
   start(deviceId: string, actorId: string): Promise<RuntimeStatus> { return this.call('start', [deviceId, actorId]); }
   startPhysical(deviceId: string, actorId: string, gpio: number): Promise<RuntimeStatus> { return this.call('startPhysical', [deviceId, actorId, gpio]); }
   stop(deviceId: string): Promise<RuntimeStatus> { return this.call('stop', [deviceId]); }

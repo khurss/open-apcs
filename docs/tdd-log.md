@@ -769,3 +769,34 @@ backup/restore. The unchanged sandbox recovery case passed in the full repeat.
 No image rebuild was needed. The acceptance uses the original hour's recorded
 revision for performance; the display-settings change has functional/browser
 coverage, not a newly claimed hour benchmark.
+
+
+### HMI, history and trend presentation (2026-10-15)
+
+RED: an owned-signal metadata lookup returned 404; the axis formatter was absent.
+Chromium reproduced a prepared HMI displaying `22.53` without units after the
+same live signal was configured for one decimal and degrees Celsius. These are
+behavior failures, not an assertion-only implementation check.
+
+GREEN: added authenticated, owner-scoped metadata lookup by ID and bounded
+screen-entry loading independent of catalog pagination. The operator readings,
+SVG labels, trend captions/tooltips, history cells and aggregate measurements now
+share presentation settings. Plot geometry and exports retain raw values. API
+and formatter Docker tests and TypeScript passed. The browser scenario covers
+metadata failure, visible unitless fallback, explicit retry, history inspection
+and mobile overflow. Full regression results follow after the final gate.
+
+Screenshot inspection caught a hidden unit caption: compact-trend CSS hides
+paragraphs. A strengthened Chromium visibility assertion failed with `hidden`
+before the correction. Compact units now live in the visible wrapping caption
+outside the plot; full history keeps its own unit paragraph. This preserves the
+plot height and avoids relying on hidden DOM text as acceptance evidence.
+
+Final Docker `make test` passed: **641 unit/integration tests in 81 files and
+15 Chromium scenarios**, including the strengthened visible-caption check on
+both desktop and phone, plus TypeScript, language, firmware tests/build,
+orchestration, renderer recovery, frontend build, offline dependency installation
+and database backup/restore. The final phone screenshot was inspected: the unit
+caption is visible outside the plot. No images were rebuilt or physical commands
+issued for this increment. This is functional display acceptance, not a new
+endurance measurement or completion of all M2 features.

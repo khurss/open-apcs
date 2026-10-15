@@ -133,3 +133,16 @@ it('persists numeric presentation without changing control metadata and rejects 
   const other=randomUUID();await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'units-other','fixture')",[other]);await pool.query('UPDATE apcs_sessions SET user_id=$1',[other]);
   expect((await edit({name:'Foreign',unit:'K'},3)).statusCode).toBe(404);
 });
+
+it('reads owned signal presentation by identity without relying on catalog pagination',async()=>{
+  await setup();const projectId=(await project()).json().id;
+  const device=(await app!.inject({method:'POST',url:'/api/v1/devices',headers:headers(),payload:{projectId,name:'Sensor',siteId:'presentation',deviceId:'sensor',kind:'virtual-thermal'}})).json();
+  const id=device.temperatureSignalId;
+  await app!.inject({method:'PATCH',url:`/api/v1/signals/${id}`,headers:{...headers(),'if-match':'"1"'},payload:{name:'Temperature',unit:'°C',displayDecimals:1}});
+  const read=()=>app!.inject({url:`/api/v1/signals/${id}`,headers:headers()});
+  const response=await read();expect(response.statusCode).toBe(200);expect(response.json()).toMatchObject({id,name:'Temperature',unit:'°C',displayDecimals:1,revision:2});
+  expect((await app!.inject({url:`/api/v1/signals/${randomUUID()}`,headers:headers()})).statusCode).toBe(404);
+  expect((await app!.inject({url:`/api/v1/signals/${id}`})).statusCode).toBe(401);
+  const other=randomUUID();await pool.query("INSERT INTO apcs_users(id,username,password_hash) VALUES($1,'presentation-other','fixture')",[other]);await pool.query('UPDATE apcs_sessions SET user_id=$1',[other]);
+  expect((await read()).statusCode).toBe(404);
+});

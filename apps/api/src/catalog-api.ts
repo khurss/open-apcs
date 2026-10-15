@@ -22,6 +22,11 @@ export function registerCatalog(app: FastifyInstance, pool: Pool) {
         [request.sessionUser!.id,request.query.projectId??null,request.query.cursor??null,request.query.q??'',limit+1]);
       return {items:result.rows.slice(0,limit),nextCursor:result.rows.length>limit?result.rows[limit-1].id:null};
     });
+    if(kind==='signals') app.get<{Params:{id:string}}>('/api/v1/signals/:id',{schema:{params:object({id:uuid})}},async request=>{
+      const row=(await pool.query(`SELECT ${fields} FROM ${source} WHERE s.id=$1 AND p.owner_id=$2`,[request.params.id,request.sessionUser!.id])).rows[0];
+      if(!row) throw new CatalogError(404,'NOT_FOUND','Resource not found');
+      return row;
+    });
     app.patch<{Params:{id:string};Body:{name:string;unit?:string;displayDecimals?:number}}>(`/api/v1/${kind}/:id`, {
       schema:{params:object({id:uuid}),body:object({name:{type:'string',minLength:1,maxLength:128,pattern:'\\S'},...(kind==='signals'?{unit:{type:'string',maxLength:24,pattern:'^[^\\u0000-\\u001f\\u007f]*$'},displayDecimals:{type:'integer',minimum:0,maximum:6}}:{})},['name'])},
     }, async (request,reply) => {

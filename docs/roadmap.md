@@ -124,4 +124,7 @@ status is recorded separately from the earlier 16-output hour pass.
 Delivered M2 increment: numeric signal display settings in the catalog and live
 monitor, with persisted units and decimal places, optimistic concurrency and
 unchanged control values. See [signal presentation](signal-presentation.md).
-Application to HMI widgets, charts and report snapshots is a subsequent delivery.
+The following display increment now applies those settings to HMI readings,
+trends, history tables and aggregate values, including bounded metadata loading
+and explicit failure/retry behavior. CSV/PDF report snapshots remain a subsequent
+delivery; their raw-value contracts are unchanged.

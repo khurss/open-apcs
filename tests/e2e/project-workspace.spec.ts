@@ -38,6 +38,29 @@ test('opens projects by keyboard, preserves context and runs the prepared virtua
   await page.getByRole('button', {name:'Open Climate overview',exact:true}).click();
   await page.getByRole('button', {name:'Operate revision 1',exact:true}).click();
   await expect(page.getByRole('region', {name:'Live numeric values'})).toContainText('Good');
+  await expect(page.getByRole('region',{name:'Live numeric values'})).toContainText(/\d+\.\d °C/);
+  const temperatureTrend=page.getByRole('region',{name:'Trend Temperature history',exact:true});
+  await expect(temperatureTrend.getByText('Unit: °C',{exact:true})).toBeVisible();
+  await temperatureTrend.getByRole('button',{name:'Inspect history',exact:true}).click();
+  await expect(page.getByRole('table',{name:'Signal history',exact:true})).toContainText('°C');
+  await page.getByRole('button',{name:'Close history',exact:true}).click();
+  await page.getByRole('button',{name:'Back to editor',exact:true}).click();
+  const metadataPath=/\/api\/v1\/signals\/[0-9a-f-]{36}$/;
+  await page.route(metadataPath,route=>route.fulfill({status:503,json:{message:'Metadata fixture outage'}}));
+  await page.getByRole('button',{name:'Operate revision 1',exact:true}).click();
+  await expect(page.getByRole('alert')).toContainText('display settings are unavailable');
+  await expect(page.getByRole('region',{name:'Live numeric values'}).locator('strong')).not.toContainText('°C');
+  await page.unroute(metadataPath);
+  await page.getByRole('button',{name:'Retry display settings',exact:true}).click();
+  await expect(page.getByRole('region',{name:'Live numeric values'})).toContainText(/\d+\.\d °C/);
+  await expect(page.getByRole('button',{name:'Retry display settings',exact:true})).toHaveCount(0);
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.getByRole('region',{name:'Trend Temperature history',exact:true}).getByText('Unit: °C',{exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:'test-results/presentation-units-phone.png',fullPage:true});
+  await page.setViewportSize({width:1440,height:1000});
+
+
   await page.getByRole('button', {name:'Logic',exact:true}).click();
   await page.getByRole('button', {name:'Open Climate PID',exact:true}).click();
   await page.getByLabel('Activation reason',{exact:true}).fill('End demo acceptance');

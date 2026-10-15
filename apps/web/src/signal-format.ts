@@ -6,3 +6,9 @@ export const formatSignalValue = (value: boolean | number | string | null | unde
   const decimals=presentation.displayDecimals ?? 2;
   return value.toFixed(decimals) + (presentation.unit ? ` ${presentation.unit}` : '');
 };
+
+/** Axis labels stay bounded; point tooltips retain the configured display value. */
+export function formatAxisValue(value:number,presentation:{displayDecimals?:number}={}) {
+  const fixed=value.toFixed(presentation.displayDecimals??2);
+  return fixed.length>10 || (value!==0 && Number(fixed)===0) ? value.toExponential(2) : fixed;
+}

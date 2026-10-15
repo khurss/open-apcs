@@ -21,7 +21,7 @@ export async function audit(client: PoolClient, actorId: string | null, action: 
 }
 
 export async function migrateApplication(pool: Pool): Promise<void> {
-  const migrations = await Promise.all(['001-application.sql', '002-editors.sql', '003-signal-history.sql', '004-alarms.sql', '005-notifications.sql', '006-notification-service.sql', '007-history-aggregates.sql', '008-history-retention-boundary.sql', '009-numeric-inputs.sql', '010-virtual-thermal.sql', '011-report-jobs.sql', '012-project-workspace.sql', '013-input-bank.sql', '014-signal-presentation.sql'].map(async (name, index) => {
+  const migrations = await Promise.all(['001-application.sql', '002-editors.sql', '003-signal-history.sql', '004-alarms.sql', '005-notifications.sql', '006-notification-service.sql', '007-history-aggregates.sql', '008-history-retention-boundary.sql', '009-numeric-inputs.sql', '010-virtual-thermal.sql', '011-report-jobs.sql', '012-project-workspace.sql', '013-input-bank.sql', '014-signal-presentation.sql', '015-recipes.sql', '016-recipe-protection.sql'].map(async (name, index) => {
     const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8');
     return { version: index + 1, sql, checksum: createHash('sha256').update(sql).digest('hex') };
   }));

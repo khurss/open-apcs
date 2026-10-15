@@ -28,3 +28,11 @@ The repository separates browser interaction, authenticated application workflow
 Pure editor transforms are tested without React. Canvases render documents and report deliberate edits; they do not publish revisions or issue device commands. HTTP document validation is reusable by persistence and optional proposal generation. It does not substitute for runtime interlocks or equipment qualification.
 
 Feature extraction does not mean the application shell and editor orchestration are finished abstractions. Avoid moving files solely to reduce line counts; extract an independently understandable responsibility with preserved tests. Dependencies remain pinned, source remains bind-mounted for development, and secrets/generated artifacts remain outside tracked product code.
+
+## Thermal recipe preview
+
+`packages/domain/src/recipe.ts` defines the isolated thermal state machine.
+`apps/api/src/recipe-api.ts` owns authorization and immutable version/run routes;
+`recipe-service.ts` serializes persistence and schedules server simulation.
+`apps/web/src/features/recipes/workspace.tsx` provides version publication, run
+controls and journal inspection. This path has no physical command dependency.

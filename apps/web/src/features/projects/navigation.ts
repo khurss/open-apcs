@@ -1,4 +1,4 @@
-export const views = ['Overview','Projects','Devices','Signals','Alarms','Logic','Screens','Activity','System'] as const;
+export const views = ['Overview','Projects','Devices','Signals','Alarms','Logic','Screens','Recipes','Activity','System'] as const;
 export type View = typeof views[number] | 'Project';
 export interface WorkspaceRoute { view: View; project: string; }
 export function readRoute(hash = window.location.hash): WorkspaceRoute {

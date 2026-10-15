@@ -26,6 +26,9 @@ psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/010-virtual-thermal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/011-report-jobs.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/012-project-workspace.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/013-input-bank.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/014-signal-presentation.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/015-recipes.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/016-recipe-protection.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
@@ -44,6 +47,8 @@ INSERT INTO apcs_notification_attempts(delivery_id,attempt,outcome,completed_at)
 INSERT INTO apcs_report_jobs(id,actor_id,signal_id,request_key,period,date,state,completed_at,report,pdf,csv) VALUES('00000000-0000-4000-8000-000000000008','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000009','day','2026-10-12','Ready',clock_timestamp(),'{"templateVersion":1}',decode('255044462d312e370a00ff','hex'),'report_id,unknown_seconds');
 INSERT INTO apcs_documents (id,project_id,kind,name,document) VALUES ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000002','graph','Persisted graph','{"schemaVersion":1,"nodes":[],"edges":[]}');
 INSERT INTO apcs_document_revisions (document_id,revision,name,document,checksum,actor_id) VALUES ('00000000-0000-4000-8000-000000000003',1,'Immutable graph','{}',repeat('a',64),'00000000-0000-4000-8000-000000000001');
+INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000002',1,'Thermal backup','{"targetC":22,"holdSeconds":5,"maxHeatSeconds":60}');
+INSERT INTO apcs_recipe_runs(id,project_id,recipe_id,revision,actor_id,snapshot,events) VALUES('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000010',1,'00000000-0000-4000-8000-000000000001','{"status":"Aborted","heater":false,"parameters":{"targetC":22,"holdSeconds":5,"maxHeatSeconds":60}}','[{"at":0,"message":"Cancelled by operator"}]');
 SQL
 file=$(sh scripts/database-backup.sh "$backup_dir")
 [ -f "$file" ] || { echo 'FAIL: no backup archive was created' >&2; exit 1; }
@@ -65,6 +70,11 @@ sh scripts/database-restore.sh "$file" "$restored"
 [ "$(psql -X -Atq --dbname="$restored" -c 'SELECT count(*)>0 FROM apcs_history_aggregate_jobs')" = 't' ]
 if psql -X -q -v ON_ERROR_STOP=1 --dbname="$restored" -c "UPDATE apcs_document_revisions SET name='tampered'" > /dev/null 2>&1; then
   echo 'FAIL: restored revision protection was lost' >&2; exit 1
+fi
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT snapshot->>'status' FROM apcs_recipe_runs")" = 'Aborted' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT events->0->>'message' FROM apcs_recipe_runs")" = 'Cancelled by operator' ]
+if psql -X -q -v ON_ERROR_STOP=1 --dbname="$restored" -c "UPDATE apcs_recipes SET name='tampered'" > /dev/null 2>&1; then
+  echo 'FAIL: restored recipe protection was lost' >&2; exit 1
 fi
 if sh scripts/database-restore.sh "$file" "$restored" > /dev/null 2>&1; then
   echo 'FAIL: restore overwrote an existing database' >&2; exit 1

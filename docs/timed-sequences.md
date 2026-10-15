@@ -25,6 +25,9 @@ Every requested output goes through the existing single-writer, interlock, comma
 
 Durations refer to **requested values**, not measured actuator dwell or acknowledgement time. Network/dispatch delay and graph cadence can extend or shorten physical dwell relative to this software trace. Choose durations and maximum intervals appropriate for the graph period, including the one-second minimum for graphs containing scripts. This block is unsuitable for operations requiring precise physical pulse widths or confirmation-gated steps.
 
-The initial profile is a non-retentive, single-output sequence. Conditional transitions, explicit equipment-completion inputs, per-step fault recovery, branching, parallel steps, persistent execution journals, parameterized recipes, operator batch selection, multi-output partial-failure handling and full SFC remain pending. A timer pattern does not satisfy those future acceptance criteria.
+The initial profile is a non-retentive, single-output sequence. Conditional transitions, explicit equipment-completion inputs, per-step fault recovery, branching, parallel steps, persistent execution journals, general device-bound recipes, operator batch selection, multi-output partial-failure handling and full SFC remain pending. A timer pattern does not satisfy those future acceptance criteria.
 
 Docker checks cover startup/retrigger behavior, disabled/cancelled starts, ordered durations, delayed observations without catch-up, clock/deadline and quality faults, validation bounds, graph diagnostics, simulator isolation and the real MQTT/command journal. Browser checks create/edit/save/reload the block and simulate a delayed ON/OFF/ON pattern to completion. Physical timing and HIL are not claimed.
+
+A separate [thermal recipe simulator](recipes.md) now supports versioned parameters
+and a durable run journal without commanding graph or physical outputs.

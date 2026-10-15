@@ -95,11 +95,18 @@ The [code map](docs/code-structure.md) explains the application, domain and work
 | --- | --- |
 | Virtual LED/thermal process and ESP32 LED bench | General Arduino/AVR, STM32 and other board profiles |
 | MQTT integration and local HTTP API | Additional industrial protocols and driver SDK distribution |
-| Visual logic, bounded JS/TS blocks and timed sequences | Full SFC, Structured Text, advanced recipes |
+| Visual logic, bounded JS/TS blocks, timed sequences and thermal recipe simulation | Full SFC, Structured Text, advanced recipes |
 | Explicit revision switching, local restart and backup/restore | High availability, multi-user collaboration and complete production distribution |
 | Measured 16-device command/history workload | 10,000-device target qualification |
 
 This is ordinary automation and supervision software. Emergency stops and critical protective functions must remain independent; no SIL certification is claimed. See [safety boundaries](docs/specification.md) and [load qualification](docs/load-l0.md).
+
+### Thermal recipe preview
+
+Open **Recipes**, select a project, publish the prefilled thermal-chamber recipe,
+and start its simulation. Versioned parameters, headless execution, cancellation,
+fault injection and a durable run journal are available. This isolated model does
+not control real equipment. See [recipe scope and limits](docs/recipes.md).
 
 ## Documentation
 

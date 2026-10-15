@@ -42,3 +42,17 @@ a.project-link{color:var(--text);text-decoration:none;cursor:pointer;transition:
 
 /* Stable columns avoid whole-table layout when live numeric text changes. */
 .table-scroll .signal-table{table-layout:fixed;min-width:940px}.signal-table td:first-child{overflow-wrap:anywhere}
+
+.recipe-workspace { display: grid; gap: 20px; margin-top: 20px; }
+.recipe-version, .recipe-run { padding: 16px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.recipe-version { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.recipe-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.recipe-run details { margin-top: 16px; }
+.recipe-run summary { cursor: pointer; }
+
+.recipe-workspace > .panel { padding: 22px; min-width: 0; }
+.recipe-workspace .panel-heading { padding: 0 0 16px; flex-wrap: wrap; gap: 12px; }
+.recipe-workspace p { line-height: 1.6; margin: 10px 0; }
+.recipe-workspace h2 { margin-bottom: 12px; }
+.recipe-workspace .device-form { padding: 0; }
+.recipe-run li { margin: 8px 0; }

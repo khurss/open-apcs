@@ -167,7 +167,7 @@ describe('versioned editor documents with real PostgreSQL', () => {
       const id = randomUUID(); await old.query('INSERT INTO apcs_users (id, username, password_hash) VALUES ($1,$2,$3)', [id, 'existing', 'fixture-only']);
       await migrateApplication(old); await migrateApplication(old);
       expect((await old.query('SELECT username FROM apcs_users WHERE id=$1', [id])).rows[0].username).toBe('existing');
-      expect((await old.query('SELECT version FROM apcs_app_migrations ORDER BY version')).rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }, { version: 10 }, { version: 11 }, { version: 12 }, { version: 13 }, { version: 14 }]);
+      expect((await old.query('SELECT version FROM apcs_app_migrations ORDER BY version')).rows).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }, { version: 10 }, { version: 11 }, { version: 12 }, { version: 13 }, { version: 14 }, { version: 15 }, { version: 16 }]);
     } finally { await old.end(); await admin.query(`DROP SCHEMA ${oldSchema} CASCADE`); }
   });
   it('rejects reversed simulation time and oversized runs before creating commands', async () => {

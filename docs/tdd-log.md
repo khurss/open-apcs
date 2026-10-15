@@ -826,3 +826,38 @@ numeric browser journey verified saved v2 metadata, preview, raw/report CSV and
 real PDF bytes. The print-template screenshot was inspected: units and revision
 are legible, with missing historical measurements correctly shown as unavailable.
 No image rebuild, firmware flash or physical output command was needed.
+
+### Versioned thermal recipes in isolated simulation (2026-10-15)
+
+RED: the PostgreSQL API test expected publication (201), but the recipe route
+returned 404. The domain contract suite initially could not load the absent
+recipe module. GREEN adds bounded parameters, immutable published versions,
+frozen run snapshots, owner isolation, serialized starts, a server timer and
+transactional run/audit events. It never creates physical command intents.
+
+Targeted Docker tests passed: three domain and three PostgreSQL integration
+cases. The latter covers completion without reads, restart aborts, exclusive
+simulator ownership, cancellation and fault injection. Chromium passed the
+complete publish/edit/start/leave-page/complete journey and both injected faults.
+Desktop and phone screenshots were inspected; forms, version actions and journal
+remain readable with no horizontal phone overflow. Full gate results follow.
+
+Review found a queued-tick race: capturing time before waiting for a database
+connection could make a newly started run appear to have a backward clock.
+A dedicated PostgreSQL test held the worker connection, started a run, then
+released the connection: RED observed Aborted instead of Running. The worker now
+samples time after obtaining row locks. This is covered by the final repeat.
+
+The initial full run retained the pre-fix worker module and reproduced the queued
+clock failure (651 passed, one failed). The clean final Docker `make test` passed:
+**652 unit/integration tests in 83 files and 16 Chromium scenarios**, plus
+TypeScript, English content, firmware tests/build, orchestration, renderer
+recovery, frontend build, offline dependencies and database backup/restore.
+Recipe parameters, run events and version immutability survive backup restoration.
+
+The existing LAN containers were verified healthy without rebuilding images.
+The operator's Automation demo now contains Thermal chamber demo v1 (22 C,
+5-second hold, 60-second heat timeout), with a completed run and its three events.
+The original virtual PID demo is running; the physical LED bench remains stopped.
+This acceptance establishes the isolated recipe simulation only, not general
+recipes, physical recipe control, full SFC, scale qualification or completion of M2.

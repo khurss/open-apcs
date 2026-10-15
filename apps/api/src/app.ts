@@ -1,3 +1,5 @@
+import {registerRecipes} from './recipe-api.js';
+import {startRecipeSimulator} from './recipe-service.js';
 import {registerAi} from './ai-api.js';
 import type {AiProvider} from './ai-provider.js';
 import { registerDemo } from './demo-api.js';
@@ -30,6 +32,7 @@ export interface ApiOptions {
   runtime?: RuntimeControl;
   scripts?: ScriptClient;
   reportsEnabled?: boolean;
+  recipesEnabled?: boolean;
   ai?: AiProvider;
   resolveContext?: (request: CommandRequest) => CommandContext | Promise<CommandContext>;
   readSignal?: (id: string) => SignalSnapshot | Promise<SignalSnapshot>;
@@ -239,6 +242,9 @@ export async function createApi(options: ApiOptions) {
   registerNotifications(app, pool);
   registerAggregates(app, pool);
   registerReports(app, pool, options.reportsEnabled ?? false);
+  const stopRecipes=options.recipesEnabled ? await startRecipeSimulator(pool,error=>app.log.error(error, 'Recipe simulation tick failed')) : undefined;
+  registerRecipes(app, pool,stopRecipes?.isAvailable);
+  if(stopRecipes) app.addHook('onClose',stopRecipes);
   registerEditors(app, pool, options.scripts);
   registerGraphRuntime(app, pool, options.runtime);
   registerPhysicalRuntime(app, pool, options.runtime);

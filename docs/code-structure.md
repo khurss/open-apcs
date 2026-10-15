@@ -31,7 +31,9 @@ Feature extraction does not mean the application shell and editor orchestration 
 
 ## Thermal recipe preview
 
-`packages/domain/src/recipe.ts` defines the isolated thermal state machine.
+`packages/domain/src/recipe.ts` defines the legacy isolated thermal state machine.
+`recipe-program.ts` validates and executes version-2 ordered Heat/Hold/Cool steps
+while dispatching legacy snapshots unchanged.
 `apps/api/src/recipe-api.ts` owns authorization and immutable version/run routes;
 `recipe-service.ts` serializes persistence and schedules server simulation.
 `apps/web/src/features/recipes/workspace.tsx` provides version publication, run

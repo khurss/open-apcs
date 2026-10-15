@@ -49,6 +49,8 @@ INSERT INTO apcs_documents (id,project_id,kind,name,document) VALUES ('00000000-
 INSERT INTO apcs_document_revisions (document_id,revision,name,document,checksum,actor_id) VALUES ('00000000-0000-4000-8000-000000000003',1,'Immutable graph','{}',repeat('a',64),'00000000-0000-4000-8000-000000000001');
 INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000002',1,'Thermal backup','{"targetC":22,"holdSeconds":5,"maxHeatSeconds":60}');
 INSERT INTO apcs_recipe_runs(id,project_id,recipe_id,revision,actor_id,snapshot,events) VALUES('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000010',1,'00000000-0000-4000-8000-000000000001','{"status":"Aborted","heater":false,"parameters":{"targetC":22,"holdSeconds":5,"maxHeatSeconds":60}}','[{"at":0,"message":"Cancelled by operator"}]');
+INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000002',2,'Ordered thermal backup','{"schemaVersion":2,"steps":[{"kind":"cool","name":"Cool batch","targetC":21,"timeoutSeconds":60}]}');
+INSERT INTO apcs_recipe_runs(id,project_id,recipe_id,revision,actor_id,snapshot,events) VALUES('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000010',2,'00000000-0000-4000-8000-000000000001','{"status":"Completed","heater":false,"stageIndex":0,"parameters":{"schemaVersion":2,"steps":[{"kind":"cool","name":"Cool batch","targetC":21,"timeoutSeconds":60}]}}','[{"at":0,"message":"Run started"},{"at":500,"message":"Run completed"}]');
 SQL
 file=$(sh scripts/database-backup.sh "$backup_dir")
 [ -f "$file" ] || { echo 'FAIL: no backup archive was created' >&2; exit 1; }
@@ -71,8 +73,10 @@ sh scripts/database-restore.sh "$file" "$restored"
 if psql -X -q -v ON_ERROR_STOP=1 --dbname="$restored" -c "UPDATE apcs_document_revisions SET name='tampered'" > /dev/null 2>&1; then
   echo 'FAIL: restored revision protection was lost' >&2; exit 1
 fi
-[ "$(psql -X -Atq --dbname="$restored" -c "SELECT snapshot->>'status' FROM apcs_recipe_runs")" = 'Aborted' ]
-[ "$(psql -X -Atq --dbname="$restored" -c "SELECT events->0->>'message' FROM apcs_recipe_runs")" = 'Cancelled by operator' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT snapshot->>'status' FROM apcs_recipe_runs WHERE revision=1")" = 'Aborted' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT events->0->>'message' FROM apcs_recipe_runs WHERE revision=1")" = 'Cancelled by operator' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT snapshot->'parameters'->'steps'->0->>'name' FROM apcs_recipe_runs WHERE revision=2")" = 'Cool batch' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT parameters->>'schemaVersion' FROM apcs_recipes WHERE revision=2")" = '2' ]
 if psql -X -q -v ON_ERROR_STOP=1 --dbname="$restored" -c "UPDATE apcs_recipes SET name='tampered'" > /dev/null 2>&1; then
   echo 'FAIL: restored recipe protection was lost' >&2; exit 1
 fi

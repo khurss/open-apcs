@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import type {FastifyInstance} from 'fastify';
 import type {Pool} from 'pg';
-import {beginRecipe,abortRecipe,validateRecipe,type RecipeParameters} from '../../../packages/domain/src/recipe.js';
+import {beginRecipeRun as beginRecipe,abortRecipeRun as abortRecipe,validateRecipeDefinition as validateRecipe,type RecipeDefinition} from '../../../packages/domain/src/recipe-program.js';
 import {requireProjectOwner} from './ownership.js';
 import {audit,transaction} from './store.js';
 import {saveRecipeRun,type RecipeRun} from './recipe-service.js';
@@ -9,13 +9,21 @@ class RecipeError extends Error {constructor(readonly statusCode:number,readonly
 const uuid={type:'string',format:'uuid'};
 const object=(properties:Record<string,unknown>,required=Object.keys(properties))=>({type:'object',additionalProperties:false,properties,required});
 const params=object({id:uuid});
-const parameters=object({targetC:{type:'number',minimum:21,maximum:35},holdSeconds:{type:'integer',minimum:1,maximum:3600},maxHeatSeconds:{type:'integer',minimum:1,maximum:600}});
+const legacyParameters=object({targetC:{type:'number',minimum:21,maximum:35},holdSeconds:{type:'integer',minimum:1,maximum:3600},maxHeatSeconds:{type:'integer',minimum:1,maximum:600}});
+const stepName={type:'string',minLength:1,maxLength:64,pattern:'\\S'};
+const temperature=(minimum:number)=>({type:'number',minimum,maximum:35});
+const timeout={type:'integer',minimum:1,maximum:600};
+const parameters={oneOf:[legacyParameters,object({schemaVersion:{type:'integer',const:2},steps:{type:'array',minItems:1,maxItems:16,items:{oneOf:[
+ object({kind:{const:'heat',type:'string'},name:stepName,targetC:temperature(21),timeoutSeconds:timeout}),
+ object({kind:{const:'cool',type:'string'},name:stepName,targetC:temperature(20.5),timeoutSeconds:timeout}),
+ object({kind:{const:'hold',type:'string'},name:stepName,targetC:temperature(21),durationSeconds:{type:'integer',minimum:1,maximum:3600}})
+]}}})]};
 export function registerRecipes(app:FastifyInstance,pool:Pool,isAvailable:()=>boolean=()=>true) {
  app.get<{Params:{id:string}}>('/api/v1/projects/:id/recipes',{schema:{params}},async req=>transaction(pool,async client=>{
   await requireProjectOwner(client,req.params.id,req.sessionUser!.id);
   return {items:(await client.query('SELECT * FROM apcs_recipes WHERE project_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',[req.params.id])).rows};
  }));
- app.post<{Params:{id:string};Body:{name:string;parameters:RecipeParameters;recipeId?:string;expectedRevision?:number}}>('/api/v1/projects/:id/recipes',{
+ app.post<{Params:{id:string};Body:{name:string;parameters:RecipeDefinition;recipeId?:string;expectedRevision?:number}}>('/api/v1/projects/:id/recipes',{
   schema:{params,body:object({name:{type:'string',minLength:1,maxLength:128,pattern:'\\S'},parameters,recipeId:uuid,expectedRevision:{type:'integer',minimum:1,maximum:10000}},['name','parameters'])}
  },async(req,reply)=>{
   const result=await transaction(pool,async client=>{

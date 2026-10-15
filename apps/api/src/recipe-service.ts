@@ -1,10 +1,10 @@
 import type {Pool,PoolClient} from 'pg';
-import {abortRecipe,advanceRecipe,type RecipeSnapshot} from '../../../packages/domain/src/recipe.js';
+import {abortRecipeRun as abortRecipe,advanceRecipeRun as advanceRecipe,recipeStepDescription,type RecipeRunSnapshot as RecipeSnapshot} from '../../../packages/domain/src/recipe-program.js';
 import {audit,transaction} from './store.js';
 export interface RecipeEvent {at:number;message:string;}
 export interface RecipeRun {id:string;project_id:string;recipe_id:string;revision:number;actor_id:string;snapshot:RecipeSnapshot;events:RecipeEvent[];}
 export async function saveRecipeRun(client:PoolClient,run:RecipeRun,next:RecipeSnapshot,at:number,message?:string) {
- const transition=message??(next.status!==run.snapshot.status?next.reason??`Run ${next.status.toLowerCase()}`:next.step!==run.snapshot.step?`Step: ${next.step}`:null);
+ const transition=message??(next.status!==run.snapshot.status?next.reason??`Run ${next.status.toLowerCase()}`:recipeStepDescription(next)!==recipeStepDescription(run.snapshot)?('stageIndex' in next?`Step ${recipeStepDescription(next)}`:`Step: ${next.step}`):null);
  const events=transition?[...run.events,{at,message:transition}]:run.events;
  await client.query('UPDATE apcs_recipe_runs SET snapshot=$2,events=$3 WHERE id=$1',[run.id,next,JSON.stringify(events)]);
  if(transition) await audit(client,run.actor_id,'recipe.run.event',run.id,{message:transition,status:next.status});

@@ -861,3 +861,43 @@ The operator's Automation demo now contains Thermal chamber demo v1 (22 C,
 The original virtual PID demo is running; the physical LED bench remains stopped.
 This acceptance establishes the isolated recipe simulation only, not general
 recipes, physical recipe control, full SFC, scale qualification or completion of M2.
+
+### Ordered thermal recipe programs (2026-10-15)
+
+RED: publishing a version-2 ordered recipe returned 400 instead of 201; the new
+domain program module was absent. GREEN adds bounded Heat/Hold/Cool steps with
+names, targets and per-step timers, frozen ordered snapshots and index-aware
+journal transitions. The legacy engine and stored legacy parameters remain
+unchanged. The editor adds/removes/reorders steps and exposes published parameters
+for inspection before starting a run.
+
+Docker domain and PostgreSQL tests cover bounds, no coercion, frozen ordering,
+consecutive same-kind transitions, one transition per tick, entry-relative timers,
+heating/cooling timeouts, safety faults and legacy completion. Both recipe browser
+journeys passed: edit/reorder, publish, freeze, leave the page, complete and inspect
+the journal. Backup/restore preserves both parameter formats and run snapshots.
+Final regression and visual evidence follow below.
+
+A targeted browser rerun against an uncleared fixture found duplicate recipe
+buttons from the previous run. The fixture was recreated before repeating the
+scenario; no production validation or selector strictness was relaxed.
+
+Review also reproduced a Unicode length mismatch: the domain rejected a valid
+64-code-point name that JSON Schema permits. The validator now counts code points
+and rejects 65; the dedicated RED/GREEN case preserves Unicode user data while
+keeping authored repository text English.
+
+Final Docker `make test` passed: **660 unit/integration tests in 84 files and
+17 Chromium scenarios**, plus TypeScript, English content, firmware tests/build,
+orchestration, renderer recovery, frontend build, offline dependencies and
+backup/restore. The Unicode regression is included in this full passing run.
+Desktop and phone screenshots were inspected: ordered fields, reorder controls,
+published parameter inspection and frozen-step journals are readable without
+horizontal overflow.
+
+The existing LAN containers remain healthy without image rebuilds. Automation
+demo now includes Multi-step thermal demo v1: heat to 22 C, hold for 5 seconds,
+then passively cool to 21 C. Its live-server simulation completed with four durable
+events and heater OFF. The original virtual PID demo is running and the physical
+LED bench remains stopped. Device binding, general branching/SFC and physical
+recipe execution remain outside this increment.

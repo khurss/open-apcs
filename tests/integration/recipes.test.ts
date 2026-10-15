@@ -108,3 +108,22 @@ it('samples time after waiting for a database connection so a newly started run 
   expect((await pool.query('SELECT snapshot FROM apcs_recipe_runs WHERE id=$1',[run.id])).rows[0].snapshot.status).toBe('Running');
  }finally{await single.end();}
 });
+
+it('publishes ordered programs, freezes their steps and journals consecutive same-kind transitions',async()=>{
+ await setup();const projectId=(await project()).json().id;
+ const parameters={schemaVersion:2,steps:[{kind:'cool',name:'First',targetC:21,timeoutSeconds:10},{kind:'cool',name:'Second',targetC:21,timeoutSeconds:10}]};
+ const published=await app!.inject({method:'POST',url:`/api/v1/projects/${projectId}/recipes`,headers:headers(),payload:{name:'Staged recipe',parameters}});
+ expect(published.statusCode).toBe(201);const recipe=published.json();
+ const started=await app!.inject({method:'POST',url:`/api/v1/projects/${projectId}/recipe-runs`,headers:headers(),payload:{recipeId:recipe.id,revision:1}});expect(started.statusCode).toBe(201);const run=started.json();
+ const changed=structuredClone(parameters);changed.steps[0]!.name='Changed';
+ expect((await app!.inject({method:'POST',url:`/api/v1/projects/${projectId}/recipes`,headers:headers(),payload:{name:'Staged recipe',recipeId:recipe.id,expectedRevision:1,parameters:changed}})).statusCode).toBe(201);
+ const {tickRecipes}=await import('../../apps/api/src/recipe-service.js');
+ await tickRecipes(pool,run.snapshot.startedAt+500);await tickRecipes(pool,run.snapshot.startedAt+1000);
+ const saved=(await pool.query('SELECT * FROM apcs_recipe_runs WHERE id=$1',[run.id])).rows[0];
+ expect(saved.snapshot).toMatchObject({status:'Completed',heater:false,parameters});
+ expect(saved.events.map((event:{message:string})=>event.message)).toEqual(['Run started','Step 2: Second (Cooling)','Run completed']);
+ expect((await pool.query('SELECT count(*)::int AS n FROM apcs_commands')).rows[0].n).toBe(0);
+ for(const steps of [[],Array(17).fill(parameters.steps[0]),[{kind:'cool',name:'Too cold',targetC:20,timeoutSeconds:1}],[{kind:'heat',name:'Unknown field',targetC:22,timeoutSeconds:2,extra:true}]]) {
+  expect((await app!.inject({method:'POST',url:`/api/v1/projects/${projectId}/recipes`,headers:headers(),payload:{name:'Invalid',parameters:{schemaVersion:2,steps}}})).statusCode).toBe(400);
+ }
+});

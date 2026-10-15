@@ -56,3 +56,11 @@ a.project-link{color:var(--text);text-decoration:none;cursor:pointer;transition:
 .recipe-workspace h2 { margin-bottom: 12px; }
 .recipe-workspace .device-form { padding: 0; }
 .recipe-run li { margin: 8px 0; }
+
+.recipe-step-editor { grid-column: 1 / -1; min-width: 0; }
+.recipe-step-editor fieldset { margin: 16px 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.recipe-step-editor legend { padding: 0 8px; color: var(--accent); }
+.recipe-step-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.recipe-step-summary { padding-left: 24px; line-height: 1.8; overflow-wrap: anywhere; }
+@media(max-width:900px) { .recipe-step-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media(max-width:600px) { .recipe-step-fields { grid-template-columns: 1fr; } }

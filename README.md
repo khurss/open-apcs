@@ -104,7 +104,8 @@ This is ordinary automation and supervision software. Emergency stops and critic
 ### Thermal recipe preview
 
 Open **Recipes**, select a project, publish the prefilled thermal-chamber recipe,
-and start its simulation. Versioned parameters, headless execution, cancellation,
+and start its simulation. Choose **New multi-step demo** to build ordered heating,
+holding and passive cooling steps. Versioned parameters, headless execution, cancellation,
 fault injection and a durable run journal are available. This isolated model does
 not control real equipment. See [recipe scope and limits](docs/recipes.md).
 

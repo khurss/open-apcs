@@ -6,7 +6,7 @@ The core runs without a cloud account. Start with the included virtual demo, the
 
 ![Open APCS automation project with prepared logic, HMI screens and virtual equipment](docs/screenshots/project.png)
 
-**[Quick start](#run-with-docker) · [Try the demo](#try-the-automation-demo) · [Documentation](#documentation) · [Roadmap](docs/roadmap.md)**
+**[Quick start](#run-with-docker) · [Test login](#test-login) · [Try the demo](#try-the-automation-demo) · [Documentation](#documentation) · [Roadmap](docs/roadmap.md)**
 
 ## From a signal to an operator screen
 
@@ -48,6 +48,29 @@ unset APCS_BOOTSTRAP_INPUT
 Sign in as `operator` with the password you chose (12–256 characters). **There is no default password.** Bootstrap runs only against a database without accounts. Configuration and history persist in Docker volumes; `make dev-stop` stops the stack without deleting them.
 
 For another computer, tablet or phone, configure the [HTTPS LAN profile](docs/lan-testing.md). The development web server is intended for a trusted test network.
+
+## Test login
+
+For a disposable local demo, use these credentials **after creating the account
+with the command below**:
+
+| Field | Value |
+| --- | --- |
+| Username | `operator` |
+| Password | `OpenAPCS-demo-only!` |
+
+After `make dev`, run this **instead of** the interactive account-creation command
+above, against a fresh database with no accounts:
+
+```bash
+printf '%s' 'OpenAPCS-demo-only!' | docker compose exec -T api pnpm --filter @open-apcs/api exec tsx src/admin.ts operator
+```
+
+Open **http://localhost:5173** and sign in with the test credentials. This public
+password is for disposable local testing only. It is not installed automatically
+and does not reset an existing account; an existing LAN deployment keeps its
+configured password. For a shared deployment, use the interactive setup above
+with a private password.
 
 ## Try the automation demo
 

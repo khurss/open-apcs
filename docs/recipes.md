@@ -1,14 +1,84 @@
-# Thermal recipes: isolated model and virtual MQTT
+# Automation recipes: reusable programs and virtual MQTT
 
-This M2 increment provides versioned parameters and durable execution history for
-an isolated server-side model or a registered virtual thermal chamber over MQTT.
-The MQTT path uses measured telemetry and the existing durable command journal.
-Bindings to other device profiles, branching, SFC, retentive execution and
-physical recipe control remain pending.
+This M2 increment provides immutable recipe versions, reusable signal roles and
+durable execution history. Universal programs run across registered virtual
+LED, thermal and input-bank devices through MQTT. Legacy and ordered thermal
+programs retain their isolated model and measured chamber execution paths.
+Physical recipe control, branching, loops, SFC and retentive execution remain pending.
+
+## Universal programs (schema version 3)
+
+Open **Recipes → Recipe preset library**. Filter by category or search, then use
+an example to populate an editable draft. Change role labels/types, add/remove
+roles, edit Set / Wait / Delay steps and reorder them. Removing an in-use role is
+disabled; change or remove its referencing steps first. Publishing saves a new
+immutable version and never starts control. **Configure and run** on a published
+version lets you bind every role to a distinct compatible signal from this project.
+Start the selected simulators explicitly, then choose **Start recipe vN**.
+Bindings and project revision are frozen in the run; draft edits cannot change them.
+
+**Install universal recipe demo** idempotently creates two separate virtual LED
+devices, **Universal startup demo** and prepared **Universal sequence overview**.
+It also fills the demo's role selectors. Start both simulators, run the recipe,
+then open the screen under **Screens → Operate revision 1**. Reinstalling returns
+the same manifest; it does not overwrite edited content or start equipment.
+
+### Definition and execution contract
+
+- A program declares 1–16 uniquely keyed roles, including 1–8 boolean outputs,
+  and 1–64 ordered steps. Role keys are lowercase ASCII identifiers (max 32);
+  labels and step names accept Unicode (max 64). Unknown properties, duplicate
+  roles, missing references and value type coercion are rejected.
+- `set`: boolean output intent with a 1–2 second verification timeout. Progress
+  waits for the durable command journal's Verified state, not a requested value.
+- `wait`: boolean equality or finite numeric `eq/gt/gte/lt/lte` comparison with a
+  1–3600 second timeout. The comparison observes the bound signal's raw units;
+  display units do not convert values. Output readback is allowed but is not
+  independent mechanical feedback. A satisfied condition at the observation
+  boundary wins over its timeout; the 2.5 second sampling watchdog still applies.
+- `delay`: elapsed 1–3600 seconds. Only one step transition is processed per
+  observation; time from a previous step is never borrowed by the next delay.
+- All ports require Good, correctly typed telemetry and stable device boot IDs.
+  Outputs must initially be OFF, owned by this operator and have no unresolved
+  commands. All devices/outputs are checked before the output group is reserved.
+  A conflict does not claim the other outputs or stop an unrelated graph.
+- Execution uses the existing private runtime worker, a serial 250 ms task and
+  an independent 2.5 second watchdog. This is supervisory, not hard real-time
+  control. Commands are sequential; there is no atomic multi-device actuation.
+- Each Set command uses the existing journal/outbox and at most a 2 second TTL.
+  Finishing sends an explicit OFF to **every declared output**, one at a time,
+  and remains Running until every final command is Verified. The control record
+  preserves per-role command ID, state and requested boolean value.
+- Failure, ambiguous/expired commands, timeout, bad telemetry, changed boot,
+  cancellation or lost persistence revokes all owned outputs before transport
+  teardown. Output simulators stop; read-only input devices remain running.
+  Revocation does not prove OFF. Restarts never resume or automatically rearm.
+- The inherited limits remain: 16 active devices, one active recipe per project,
+  100 published versions and 100 historical runs per project. No scale increase
+  or physical-process safety qualification is implied.
+
+### Included presets
+
+| Category | Examples |
+| --- | --- |
+| Lighting | Timed lighting; Staircase lighting |
+| Equipment | Sequential startup; Alternating pump test |
+| Irrigation | Two-zone irrigation; Moisture-gated irrigation |
+| Fluid handling | Tank filling; Tank draining; Fill and transfer |
+| Ventilation | Ventilation purge; Threshold ventilation |
+| Thermal | Warm then cool; Heating and fan cooldown |
+| Batch processing | Timed dosing; Batch mixing |
+| Diagnostics | Indicator test |
+
+These 16 presets are editable teaching examples. Only the thermal device models
+process dynamics; LED and input-bank profiles do not simulate pumps, water levels,
+moisture, airflow or delivered volume. A threshold example may therefore time out
+with a particular signal source. Preset values are not engineering recommendations
+or independent protection logic. Physical commissioning requires a separate scope.
 
 ## Operator workflow
 
-Open a project and choose **Thermal recipes**, or use **Recipes** in navigation.
+For a thermal program, use **Recipes** in navigation and **New demo recipe**.
 The new-recipe form contains a working demo: target 22 C, hold 5 seconds, heating
 timeout 60 seconds. **New multi-step demo** creates an editable Heat → Hold → Cool
 program. Add, remove and reorder up to 16 steps. **Use step editor** explicitly
@@ -130,7 +200,8 @@ All routes require the existing session, owner authorization and mutation CSRF.
 | GET `/recipes` | Published versions, newest first |
 | POST `/recipes` | `{name, parameters}` creates v1; add `recipeId` and `expectedRevision` to publish the next version |
 | GET `/recipe-runs` | Newest runs with frozen parameters, latest state and events |
-| POST `/recipe-runs` | `{recipeId, revision, deviceId?}` starts that version; omitted device means isolated mode; 409 if active or activation conflicts |
+| POST `/recipe-runs` | `{recipeId, revision, deviceId?}` starts a thermal version; `{recipeId, revision, bindings:{roleKey:signalId}}` starts a universal version; 409 if active or activation conflicts |
+| POST `/universal-recipe-demo` | `{}` installs or returns two unarmed LED devices, role bindings, a published universal recipe and prepared HMI |
 | POST `/recipe-demo` | `{}` installs or returns a dedicated chamber, published recipe and prepared HMI in this project; never arms control |
 | POST `/recipe-runs/:runId/cancel` | `{}` cancels; `{cause:"permit"}` or `{cause:"quality"}` injects a terminal simulation fault |
 

@@ -1,6 +1,7 @@
 import {abortRecipeRun,advanceRecipeRun,type RecipeRunSnapshot} from '../../domain/src/recipe-program.js';
 import type {CommandSnapshot,CommandState} from '../../domain/src/commands.js';
 export interface RecipeControl {
+ outputs?:Record<string,{commandId:string;state:CommandState;value:boolean}>;
  phase:'Controlling'|'Awaiting verification'|'Finishing'|'Verified OFF'|'Revoked';
  commandId:string|null;commandState:CommandState|null;observedOutput:boolean|null;
 }

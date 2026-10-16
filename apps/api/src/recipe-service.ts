@@ -1,13 +1,14 @@
 import type {Pool,PoolClient} from 'pg';
-import {abortRecipeRun as abortRecipe,advanceRecipeRun as advanceRecipe,recipeStepDescription,type RecipeRunSnapshot as RecipeSnapshot} from '../../../packages/domain/src/recipe-program.js';
+import {abortRecipeRun as abortRecipe,advanceRecipeRun as advanceRecipe,recipeStepDescription,type RecipeRunSnapshot as RecipeSnapshot} from '../../../packages/domain/src/recipe-model.js';
 import {audit,transaction} from './store.js';
 export interface RecipeEvent {at:number;message:string;}
-export interface RecipeBinding {deviceId:string;temperatureSignalId:string;outputSignalId:string;projectRevision:number;}
+import type {RecipeBinding} from './recipe-bindings.js';
+export type {RecipeBinding} from './recipe-bindings.js';
 export interface RecipeRun {binding:RecipeBinding|null;control:import('../../../packages/gateway/src/recipe-task.js').RecipeControl|null;id:string;project_id:string;recipe_id:string;revision:number;actor_id:string;snapshot:RecipeSnapshot;events:RecipeEvent[];}
 export async function saveRecipeRun(client:PoolClient,run:RecipeRun,next:RecipeSnapshot,at:number,message?:string) {
  const transition=message??(next.status!==run.snapshot.status?next.reason??`Run ${next.status.toLowerCase()}`:recipeStepDescription(next)!==recipeStepDescription(run.snapshot)?('stageIndex' in next?`Step ${recipeStepDescription(next)}`:`Step: ${next.step}`):null);
  const events=transition?[...run.events,{at,message:transition}]:run.events;
- const control=run.binding&&next.status==='Aborted'?{phase:'Revoked',commandId:run.control?.commandId??null,commandState:run.control?.commandState??null,observedOutput:run.control?.observedOutput??null}:run.control;
+ const control=run.binding&&next.status==='Aborted'?{...run.control,phase:'Revoked',commandId:run.control?.commandId??null,commandState:run.control?.commandState??null,observedOutput:run.control?.observedOutput??null}:run.control;
  await client.query('UPDATE apcs_recipe_runs SET snapshot=$2,events=$3,control=$4 WHERE id=$1',[run.id,next,JSON.stringify(events),control]);
  if(transition) await audit(client,run.actor_id,'recipe.run.event',run.id,{message:transition,status:next.status});
  return {...run,snapshot:next,events,control};

@@ -942,3 +942,50 @@ backup/restore including binding/control evidence and the demo manifest.
 The worker-kill regression verifies orphan detection and no automatic rearming.
 No image rebuild, physical recipe commissioning or capacity claim is part of this
 increment. General device profiles, physical numeric drivers and SFC remain open.
+
+## 2026-10-16 — Universal control recipes and preset library
+
+Scope: schema-version-3 Set/Wait/Delay programs with named, typed signal roles;
+virtual LED/thermal/input-bank bindings across multiple devices; 16 editable
+presets in eight categories; web role/step editor and explicit launch mappings;
+idempotent two-device demo and prepared HMI. Legacy thermal formats remain valid.
+Physical bindings, SFC, branching, loops and new capacity claims remain outside
+this increment.
+
+RED: new domain and gateway tests initially failed because their modules did not
+exist. The first real MQTT two-output integration returned 409 (the prior executor
+accepted only virtual thermal devices). The demo installation test returned 404
+before its endpoint existed. GREEN: validation/transition and verification/fault
+unit tests passed after implementation; all six new PostgreSQL/MQTT integration
+scenarios then passed. They cover verified final OFF on both outputs, idempotent
+unarmed demo installation, invalid/physical/cross-project mappings, all-or-none
+ownership, manual/graph exclusion, cancellation, real MQTT socket loss and numeric
+wait timeout while a read-only device remains running.
+
+The first Chromium journey passed editing/publication, two-device execution and
+HMI verification, then exposed an ambiguous implicit category-select label. An
+explicit accessible name fixed it. The numeric timeout test's default poll budget
+was shorter than Set verification plus its one-second Wait; a six-second test
+observation budget now accommodates the unchanged runtime deadlines. Targeted
+Chromium passed, including filtering, disabled incomplete bindings, final OFF,
+prepared HMI and a 390-pixel phone overflow assertion. Desktop HMI and phone
+screenshots were visually inspected. Complete gate and live deployment results
+are recorded below after completion.
+
+Full Docker `make test` passed: **700 unit/integration tests in 90 files and
+19 Chromium scenarios**, plus firmware tests/build, bench orchestration, renderer
+recovery, English-content validation, TypeScript, frontend build, offline
+installation with a fresh dependency store and backup/restore. Restore assertions
+include universal recipe definitions, binding snapshots, per-output command
+proof and the migration-019 demo manifest. The browser regression also publishes
+an edited demo version with a renamed role and requires fresh explicit mappings;
+version-1 demo defaults are not carried into a different role definition.
+
+LAN validation passed on the existing deployment without rebuilding images.
+Automation demo contains Sequence primary/secondary, Universal startup demo v1
+and Universal sequence overview. Run `c1c6a282-bc39-4dc1-a133-b3295ed4520f`
+completed all six steps and the final verification phase, with both output
+commands durably Verified OFF; both recipe simulators stopped. The existing
+Climate PID demo is running again and readiness is healthy. The physical LED
+bench remains stopped. Firmware build coverage does not qualify physical
+universal recipe control.

@@ -1,3 +1,6 @@
+import {UniversalRecipeTask} from '../../../packages/gateway/src/universal-recipe-task.js';
+import {isUniversalSnapshot,type UniversalSnapshot} from '../../../packages/domain/src/universal-recipe.js';
+import {isUniversalBinding,type UniversalRecipeBinding} from './recipe-bindings.js';
 import {RecipeTask} from '../../../packages/gateway/src/recipe-task.js';
 import {saveRecipeRun,type RecipeRun} from './recipe-service.js';
 import {transaction} from './store.js';
@@ -51,7 +54,7 @@ export class SimulationRuntime implements RuntimeControl {
   private readonly signals = new SignalStore(this.clock);
   private readonly registered = new Set<string>();
   private readonly entries = new Map<string, Entry>();
-  private readonly recipes = new Map<string,RecipeTask>();
+  private readonly recipes = new Map<string,RecipeTask|UniversalRecipeTask>();
   private readonly graphs = new Map<string, GraphEntry>();
   private readonly journal: PgCommandJournal;
   private readonly alarms: AlarmService;
@@ -149,6 +152,8 @@ export class SimulationRuntime implements RuntimeControl {
     if(this.closed||this.lockLost)throw new Error('Recipe runtime unavailable');
     const run=(await this.pool.query<RecipeRun>('SELECT r.* FROM apcs_recipe_runs r JOIN apcs_projects p ON p.id=r.project_id WHERE r.id=$1 AND p.owner_id=$2',[runId,actorId])).rows[0];
     if(!run?.binding||run.snapshot.status!=='Running')throw new Error('Recipe run unavailable');
+    if(isUniversalSnapshot(run.snapshot)){if(!isUniversalBinding(run.binding))throw new Error('Recipe binding format mismatch');return this.activateUniversalRecipe(run,run.snapshot,run.binding,actorId);}
+    if(isUniversalBinding(run.binding))throw new Error('Recipe binding format mismatch');
     const binding=run.binding;const entry=this.entries.get(binding.deviceId);
     if(!entry||entry.catalog.kind!=='virtual-thermal'||entry.catalog.projectId!==run.project_id||entry.catalog.signalId!==binding.outputSignalId||entry.temperatureSignalId!==binding.temperatureSignalId||entry.stopping||entry.runtime.status.state!=='running')throw new Error('Recipe requires a running virtual thermal device');
     if(entry.policy.ownerId!==actorId)throw new Error('Output belongs to another owner');
@@ -184,6 +189,54 @@ export class SimulationRuntime implements RuntimeControl {
     });
     entry.policy.ownerId=ownerId;this.recipes.set(runId,task);task.start();
   });}
+  private async activateUniversalRecipe(run:RecipeRun,snapshot:UniversalSnapshot,binding:UniversalRecipeBinding,actorId:string):Promise<void>{
+    const entries=new Map<string,Entry>();const outputs=new Map<string,Entry>();
+    for(const port of snapshot.parameters.ports){
+      const target=binding.ports[port.key];const entry=target?this.entries.get(target.deviceId):undefined;
+      if(!target||!entry||!['virtual-led','virtual-thermal','virtual-input-bank'].includes(entry.catalog.kind)||entry.catalog.projectId!==run.project_id||entry.stopping||entry.runtime.status.state!=='running'||!(entry.catalog.signalId===target.signalId||entry.inputSignalIds.includes(target.signalId)))throw new Error('Recipe requires all bound virtual devices to be running');
+      await this.refresh(entry);if(entry.policy.projectRevision!==binding.projectRevision)throw new Error('Recipe project revision changed');
+      const sample=await this.readSignal(target.signalId);
+      if(sample.quality!=='Good'||!sample.bootId||(port.kind==='number-input'?typeof sample.value!=='number'||!Number.isFinite(sample.value):typeof sample.value!=='boolean'))throw new Error('Recipe requires Good typed telemetry on every port');
+      entries.set(port.key,entry);
+      if(port.kind==='boolean-output'){
+        if(entry.catalog.signalId!==target.signalId||sample.value!==false)throw new Error('Recipe requires OFF outputs');
+        if(entry.policy.ownerId!==actorId)throw new Error('Output belongs to another owner');
+        const unfinished=await this.pool.query("SELECT id FROM apcs_commands WHERE target_signal_id=$1 AND (snapshot->>'state' IN ('Accepted','Dispatched','DeviceAccepted') OR (snapshot->>'state'='Unknown' AND reconciliation IS NULL)) LIMIT 1",[target.signalId]);
+        if(unfinished.rowCount)throw new Error('Recipe output has unresolved commands');outputs.set(port.key,entry);
+      }
+    }
+    // All-or-none ownership reservation. No await between validation and transfer.
+    for(const entry of entries.values())if(entry.stopping||entry.runtime.status.state!=='running')throw new Error('Recipe device stopped during activation');
+    const ownerId=`recipe:${run.id}`;
+    const task=new UniversalRecipeTask(snapshot,{
+      read:async()=>{
+        if(this.closed||this.lockLost)throw new Error('Recipe runtime unavailable');
+        for(const entry of entries.values())if(entry.stopping||entry.runtime.status.state!=='running')throw new Error('Recipe device stopped or disconnected');
+        for(const entry of outputs.values())if(entry.policy.ownerId!==ownerId)throw new Error('Recipe output ownership unavailable');
+        return Object.fromEntries(await Promise.all(snapshot.parameters.ports.map(async port=>[port.key,await this.readSignal(binding.ports[port.key]!.signalId)])));
+      },
+      request:async(port,value,ttlMs)=>{
+        const entry=outputs.get(port);if(!entry||entry.stopping||entry.policy.ownerId!==ownerId)throw new Error('Recipe output ownership unavailable');
+        if(!(await this.pool.query("SELECT id FROM apcs_recipe_runs WHERE id=$1 AND snapshot->>'status'='Running'",[run.id])).rowCount)throw new Error('Recipe run is no longer active');
+        const request:CommandRequest={id:randomUUID(),idempotencyKey:randomUUID(),actorId:ownerId,targetSignalId:binding.ports[port]!.signalId,value,ttlMs,expectedProjectRevision:binding.projectRevision,reason:`Recipe ${run.recipe_id} v${run.revision} run ${run.id} port ${port}`};
+        return this.journal.request(request,await this.context(request));
+      },
+      command:id=>this.journal.get(id),
+      save:(next,control)=>transaction(this.pool,async client=>{
+        const current=(await client.query<RecipeRun>('SELECT * FROM apcs_recipe_runs WHERE id=$1 FOR UPDATE',[run.id])).rows[0];
+        if(!current||current.snapshot.status!=='Running')return false;
+        await saveRecipeRun(client,current,next,Date.now());await client.query('UPDATE apcs_recipe_runs SET control=$2 WHERE id=$1',[run.id,control]);return true;
+      }),
+      revoke:async()=>{
+        // Revoke every output before awaiting any transport teardown.
+        const owned=[...outputs.values()].filter(entry=>entry.policy.ownerId===ownerId);for(const entry of owned)entry.policy.ownerId=null;
+        await Promise.all(owned.map(entry=>this.stopEntry(entry)));
+      },
+    });
+    for(const [id,task] of this.recipes)if(task.finished)this.recipes.delete(id);
+    for(const entry of outputs.values())entry.policy.ownerId=ownerId;
+    this.recipes.set(run.id,task);task.start();
+  }
   stopRecipe(runId:string,reason:string):Promise<void>{return this.serial(async()=>{await this.recipes.get(runId)?.stop(reason);});}
   activateGraph(id: string, revision: number, actorId: string, activationId: string = randomUUID()): Promise<GraphRuntimeStatus> { return this.serial(async () => {
     if (this.closed || this.lockLost) throw new Error('Runtime is closed or lost ownership');

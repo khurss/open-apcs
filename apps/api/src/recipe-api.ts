@@ -1,8 +1,11 @@
+import {registerUniversalRecipeDemo} from './universal-recipe-demo.js';
+import {isUniversalRecipe} from '../../../packages/domain/src/universal-recipe.js';
+import {resolveUniversalBinding} from './recipe-bindings.js';
 import {registerRecipeDemo} from './recipe-demo.js';
 import {randomUUID} from 'node:crypto';
 import type {FastifyInstance} from 'fastify';
 import type {Pool} from 'pg';
-import {beginRecipeRun as beginRecipe,abortRecipeRun as abortRecipe,validateRecipeDefinition as validateRecipe,type RecipeDefinition} from '../../../packages/domain/src/recipe-program.js';
+import {beginRecipeRun as beginRecipe,abortRecipeRun as abortRecipe,validateRecipeDefinition as validateRecipe,type RecipeDefinition} from '../../../packages/domain/src/recipe-model.js';
 import {requireProjectOwner} from './ownership.js';
 import {audit,transaction} from './store.js';
 import type {RuntimeControl} from './runtime-service.js';
@@ -19,9 +22,9 @@ const parameters={oneOf:[legacyParameters,object({schemaVersion:{type:'integer',
  object({kind:{const:'heat',type:'string'},name:stepName,targetC:temperature(21),timeoutSeconds:timeout}),
  object({kind:{const:'cool',type:'string'},name:stepName,targetC:temperature(20.5),timeoutSeconds:timeout}),
  object({kind:{const:'hold',type:'string'},name:stepName,targetC:temperature(21),durationSeconds:{type:'integer',minimum:1,maximum:3600}})
-]}}})]};
+]}}}),object({schemaVersion:{const:3,type:'integer'},ports:{type:'array',minItems:1,maxItems:16,items:{type:'object'}},steps:{type:'array',minItems:1,maxItems:64,items:{type:'object'}}})]};
 export function registerRecipes(app:FastifyInstance,pool:Pool,isAvailable:()=>boolean=()=>true,runtime?:RuntimeControl) {
- registerRecipeDemo(app,pool);
+ registerRecipeDemo(app,pool);registerUniversalRecipeDemo(app,pool);
  app.get<{Params:{id:string}}>('/api/v1/projects/:id/recipes',{schema:{params}},async req=>transaction(pool,async client=>{
   await requireProjectOwner(client,req.params.id,req.sessionUser!.id);
   return {items:(await client.query('SELECT * FROM apcs_recipes WHERE project_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',[req.params.id])).rows};
@@ -41,7 +44,8 @@ export function registerRecipes(app:FastifyInstance,pool:Pool,isAvailable:()=>bo
     revision=found.revision+1;
    }
    if(Number((await client.query('SELECT count(*) FROM apcs_recipes WHERE project_id=$1',[req.params.id])).rows[0].count)>=100) throw new RecipeError(409,'RECIPE_LIMIT','Simulation preview supports 100 recipe versions per project');
-   const row=(await client.query('INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES($1,$2,$3,$4,$5) RETURNING *',[id,req.params.id,revision,input.name,validateRecipe(input.parameters)])).rows[0];
+   let definition:RecipeDefinition;try{definition=validateRecipe(input.parameters);}catch(error){throw new RecipeError(400,'INVALID_RECIPE',error instanceof Error?error.message:'Invalid recipe');}
+   const row=(await client.query('INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES($1,$2,$3,$4,$5) RETURNING *',[id,req.params.id,revision,input.name,definition])).rows[0];
    await audit(client,req.sessionUser!.id,'recipe.published',id,{revision,projectId:req.params.id}); return row;
   }); return reply.code(201).send(result);
  });
@@ -49,7 +53,7 @@ export function registerRecipes(app:FastifyInstance,pool:Pool,isAvailable:()=>bo
   await requireProjectOwner(client,req.params.id,req.sessionUser!.id);
   return {items:(await client.query('SELECT * FROM apcs_recipe_runs WHERE project_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100',[req.params.id])).rows};
  }));
- app.post<{Params:{id:string};Body:{recipeId:string;revision:number;deviceId?:string}}>('/api/v1/projects/:id/recipe-runs',{schema:{params,body:object({recipeId:uuid,revision:{type:'integer',minimum:1,maximum:10000},deviceId:uuid},['recipeId','revision'])}},async(req,reply)=>{
+ app.post<{Params:{id:string};Body:{recipeId:string;revision:number;deviceId?:string;bindings?:Record<string,string>}}>('/api/v1/projects/:id/recipe-runs',{schema:{params,body:object({recipeId:uuid,revision:{type:'integer',minimum:1,maximum:10000},deviceId:uuid,bindings:{type:'object',maxProperties:16,additionalProperties:uuid}},['recipeId','revision'])}},async(req,reply)=>{
   if(!isAvailable()) throw new RecipeError(503,'SIMULATOR_UNAVAILABLE','Recipe simulator is unavailable');
   const run=await transaction(pool,async client=>{
    await requireProjectOwner(client,req.params.id,req.sessionUser!.id,true);
@@ -58,7 +62,12 @@ export function registerRecipes(app:FastifyInstance,pool:Pool,isAvailable:()=>bo
    if((await client.query("SELECT id FROM apcs_recipe_runs WHERE project_id=$1 AND snapshot->>'status'='Running'",[req.params.id])).rowCount) throw new RecipeError(409,'RUN_ACTIVE','Cancel or complete the active simulation first');
    if(Number((await client.query('SELECT count(*) FROM apcs_recipe_runs WHERE project_id=$1',[req.params.id])).rows[0].count)>=100) throw new RecipeError(409,'RUN_LIMIT','Simulation preview supports 100 runs per project');
    let binding:RecipeBinding|null=null;
-   if(req.body.deviceId){
+   if(isUniversalRecipe(recipe.parameters)){
+    if(req.body.deviceId)throw new RecipeError(400,'INVALID_BINDING','Universal recipes use port bindings, not a thermal device ID');
+    if(!runtime?.activateRecipe)throw new RecipeError(503,'RUNTIME_UNAVAILABLE','Recipe runtime unavailable');
+    binding=await resolveUniversalBinding(client,req.params.id,recipe.parameters,req.body.bindings);
+   }else if(req.body.bindings)throw new RecipeError(400,'INVALID_BINDING','Thermal recipes do not accept port bindings');
+   else if(req.body.deviceId){
     if(!runtime?.activateRecipe)throw new RecipeError(503,'RUNTIME_UNAVAILABLE','Recipe runtime unavailable');
     const device=(await client.query('SELECT d.kind,p.revision FROM apcs_devices d JOIN apcs_projects p ON p.id=d.project_id WHERE d.id=$1 AND d.project_id=$2',[req.body.deviceId,req.params.id])).rows[0];
     if(!device)throw new RecipeError(404,'NOT_FOUND','Recipe device not found in this project');

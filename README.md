@@ -95,11 +95,25 @@ The [code map](docs/code-structure.md) explains the application, domain and work
 | --- | --- |
 | Virtual LED/thermal process and ESP32 LED bench | General Arduino/AVR, STM32 and other board profiles |
 | MQTT integration and local HTTP API | Additional industrial protocols and driver SDK distribution |
-| Visual logic, bounded JS/TS blocks, timed sequences and thermal recipe simulation | Full SFC, Structured Text, advanced recipes |
+| Visual logic, bounded JS/TS blocks, timed sequences and universal recipe simulation | Full SFC, Structured Text, advanced recipes |
 | Explicit revision switching, local restart and backup/restore | High availability, multi-user collaboration and complete production distribution |
 | Measured 16-device command/history workload | 10,000-device target qualification |
 
 This is ordinary automation and supervision software. Emergency stops and critical protective functions must remain independent; no SIL certification is claimed. See [safety boundaries](docs/specification.md) and [load qualification](docs/load-l0.md).
+
+### Universal recipe presets
+
+Use **Recipes → Recipe preset library** to adapt 16 examples for lighting,
+irrigation, pumps/tanks, ventilation, heating/cooling, dosing, mixing and tests.
+Compose **Set output → Wait condition → Delay** steps, publish an immutable
+version, then bind its named roles to project signals. Runs keep an execution
+journal and complete only after all outputs have verified OFF commands.
+
+For a ready-to-run example, click **Install universal recipe demo**, start its
+two virtual simulators and choose **Start recipe v1**. Open **Universal sequence
+overview** in Screens to see its operator view. Current bindings support virtual
+LED, thermal and input-bank profiles over MQTT. Physical bindings and full SFC
+remain planned. [Recipe guide and preset catalog](docs/recipes.md).
 
 ### Thermal recipe preview
 

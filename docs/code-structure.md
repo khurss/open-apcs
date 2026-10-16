@@ -45,3 +45,17 @@ ownership and connects the task to MQTT, durable commands and conditional run
 persistence; `runtime-process.ts` exposes private IPC. `recipe-demo.ts` installs a
 dedicated virtual chamber and prepared HMI without activation. The operator
 monitor under `features/recipes` displays project-level MQTT run state.
+
+## Universal recipes
+
+`packages/domain/src/recipe-model.ts` is the shared facade over legacy thermal,
+ordered thermal and schema-version-3 universal definitions. `universal-recipe.ts`
+validates roles/steps and advances the pure sequential state machine;
+`recipe-presets.ts` supplies independently editable examples.
+`packages/gateway/src/universal-recipe-task.ts` owns verification, final OFF for
+all outputs, watchdog and cancellation. `apps/api/src/recipe-bindings.ts` resolves
+same-project typed virtual signals; `runtime-service.ts` reserves the complete
+output group before execution. `universal-recipe-demo.ts` installs idempotent
+content backed by migration 019. Web components `universal-editor.tsx` and
+`universal-launch.tsx` separate preset/step editing from explicit signal binding
+and device startup. Existing recipe HMI status and persistence serve all formats.

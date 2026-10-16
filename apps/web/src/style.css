@@ -64,3 +64,9 @@ a.project-link{color:var(--text);text-decoration:none;cursor:pointer;transition:
 .recipe-step-summary { padding-left: 24px; line-height: 1.8; overflow-wrap: anywhere; }
 @media(max-width:900px) { .recipe-step-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media(max-width:600px) { .recipe-step-fields { grid-template-columns: 1fr; } }
+.recipe-preset-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 12px; max-height: 540px; overflow-y: auto; padding: 4px; }
+.recipe-preset { padding: 16px; border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.recipe-preset h3, .recipe-preset p { margin: 0; }
+.recipe-preset button { margin-top: auto; }
+.universal-launch { flex-basis: 100%; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+#recipe-draft { scroll-margin-top: 20px; }

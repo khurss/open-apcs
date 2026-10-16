@@ -1,0 +1,16 @@
+import {useEffect,useState} from 'react';
+import {api,type Device,type Signal,type Page} from '../../api.js';
+import {VirtualDeviceControl} from '../../runtime-controls.js';
+import type {UniversalRecipe} from '../../../../../packages/domain/src/universal-recipe.js';
+export function UniversalRecipeLaunch({projectId,parameters,revision,disabled,defaults,onStart}:{projectId:string;parameters:UniversalRecipe;revision:number;disabled:boolean;defaults?:Record<string,string>|undefined;onStart:(bindings:Record<string,string>)=>void}){
+ const [devices,setDevices]=useState<Device[]>([]);const [signals,setSignals]=useState<Signal[]>([]);const [mapping,setMapping]=useState<Record<string,string>>(defaults??{});const [error,setError]=useState('');
+ useEffect(()=>{if(defaults)setMapping(defaults);},[defaults]);
+ useEffect(()=>{let stopped=false;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),10000);
+ const all=async<T,>(path:string)=>{const items:T[]=[];let cursor:string|null=null;do{const p:Page<T>=await api(`${path}?projectId=${projectId}&limit=100${cursor?'&cursor='+cursor:''}`,{signal:controller.signal});items.push(...p.items);cursor=p.nextCursor;}while(cursor&&!stopped);return items;};
+ void Promise.all([all<Device>('/devices'),all<Signal>('/signals')]).then(([d,s])=>{if(!stopped){setDevices(d.filter(v=>v.kind.startsWith('virtual-')));setSignals(s);}}).catch(()=>{if(!stopped)setError('Could not load signals. Close and reopen this configuration to retry.');}).finally(()=>clearTimeout(timeout));return()=>{stopped=true;controller.abort();clearTimeout(timeout);};
+ },[projectId]);
+ const compatible=(p:UniversalRecipe['ports'][number],s:Signal)=>devices.some(d=>d.id===s.deviceId)&&(p.kind==='number-input'?s.dataType==='float64'&&s.direction==='input':s.dataType==='boolean'&&(p.kind!=='boolean-output'||s.direction==='output'));
+ const complete=parameters.ports.every(p=>signals.some(s=>s.id===mapping[p.key]&&compatible(p,s)))&&new Set(Object.values(mapping)).size===parameters.ports.length;
+ const selectedDevices=devices.filter(d=>signals.some(s=>s.deviceId===d.id&&Object.values(mapping).includes(s.id)));
+ return <div className="universal-launch"><h4>Bind signal roles</h4><p>Virtual devices only. Bind every role to a distinct signal, start the selected simulators, then run. Output devices must be OFF and available for exclusive control.</p>{error&&<p role="alert">{error}</p>}{parameters.ports.map(p=><label className="field" key={p.key}>{p.label} · {p.kind}<select aria-label={`Bind ${p.label}`} disabled={disabled} value={mapping[p.key]??''} onChange={e=>setMapping({...mapping,[p.key]:e.target.value})}><option value="">Select a signal</option>{signals.filter(s=>compatible(p,s)).map(s=><option key={s.id} value={s.id}>{devices.find(d=>d.id===s.deviceId)?.name} / {s.name}</option>)}</select></label>)}{selectedDevices.map(d=><div key={d.id}><h4>{d.name}</h4><VirtualDeviceControl deviceId={d.id}/></div>)}<button className="primary" disabled={disabled||!complete} onClick={()=>onStart(mapping)}>Start recipe v{revision}</button><p className="muted">Completion verifies every output OFF and stops its simulator. Cancellation or failure revokes output authority; restart devices explicitly for another run. Read-only devices are not stopped.</p></div>;
+}

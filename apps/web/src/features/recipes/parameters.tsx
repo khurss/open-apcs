@@ -1,14 +1,20 @@
-import {isRecipeProgram,type RecipeDefinition,type RecipeProgram,type ThermalStep} from '../../../../../packages/domain/src/recipe-program.js';
+import type {RecipeDefinition} from '../../../../../packages/domain/src/recipe-model.js';
+import {isUniversalRecipe} from '../../../../../packages/domain/src/universal-recipe.js';
+import {UniversalRecipeEditor} from './universal-editor.js';
+import {isRecipeProgram,type RecipeProgram,type ThermalStep} from '../../../../../packages/domain/src/recipe-program.js';
 export function multiStepDemo():RecipeProgram {
  return {schemaVersion:2,steps:[{kind:'heat',name:'Warm chamber',targetC:22,timeoutSeconds:60},{kind:'hold',name:'Hold temperature',targetC:22,durationSeconds:5},{kind:'cool',name:'Cool chamber',targetC:21,timeoutSeconds:60}]};
 }
 export function recipeSummary(parameters:RecipeDefinition):string {
+ if(isUniversalRecipe(parameters))return `${parameters.steps.length} steps · ${parameters.ports.length} signal roles · Set / Wait / Delay`;
  return isRecipeProgram(parameters)?`${parameters.steps.length} steps · ${parameters.steps.map(step=>step.kind==='heat'?'Heat':step.kind==='hold'?'Hold':'Cool').join(' → ')}`:`${parameters.targetC} C · hold ${parameters.holdSeconds} s · heating timeout ${parameters.maxHeatSeconds} s`;
 }
 export function RecipeParametersView({parameters,frozen=true}:{parameters:RecipeDefinition;frozen?:boolean}) {
+ if(isUniversalRecipe(parameters))return <><p className="muted">{frozen?'Frozen steps and roles':'Published steps and roles'}</p><ul>{parameters.ports.map(p=><li key={p.key}>{p.label} ({p.key}) · {p.kind}</li>)}</ul><ol>{parameters.steps.map((s,i)=><li key={i}>{s.name}: {s.kind==='delay'?`delay ${s.durationSeconds} s`:`${s.kind} ${s.port} ${s.kind==='wait'?s.operator:'='} ${s.value} · timeout ${s.timeoutSeconds} s`}</li>)}</ol></>;
  return isRecipeProgram(parameters)?<><p className="muted">{frozen?'Frozen steps':'Published steps'}</p><ol className="recipe-step-summary">{parameters.steps.map((step,index)=><li key={index}><strong>{step.name}</strong>: {step.kind} at {step.targetC} C · {step.kind==='hold'?`${step.durationSeconds} s duration`:`${step.timeoutSeconds} s timeout`}</li>)}</ol></>:<p className="muted">{frozen?'Frozen parameters':'Published parameters'}: {parameters.targetC} C / {parameters.holdSeconds} s hold / {parameters.maxHeatSeconds} s heating timeout</p>;
 }
 export function RecipeParameterEditor({value,onChange}:{value:RecipeDefinition;onChange:(value:RecipeDefinition)=>void}) {
+ if(isUniversalRecipe(value))return <UniversalRecipeEditor value={value} onChange={onChange}/>;
  if(!isRecipeProgram(value))return <>
   {([['targetC','Target temperature (C)',21,35,0.1],['holdSeconds','Hold duration (seconds)',1,3600,1],['maxHeatSeconds','Heating timeout (seconds)',1,600,1]] as const).map(([key,label,min,max,step])=><label className="field" key={key}>{label}<input type="number" required min={min} max={max} step={step} value={Number.isFinite(value[key])?value[key]:''} onChange={e=>onChange({...value,[key]:e.target.valueAsNumber})}/></label>)}
   <button type="button" className="secondary" onClick={()=>onChange({schemaVersion:2,steps:[{kind:'heat',name:'Heat',targetC:value.targetC,timeoutSeconds:value.maxHeatSeconds},{kind:'hold',name:'Hold',targetC:value.targetC,durationSeconds:value.holdSeconds}]})}>Use step editor</button>

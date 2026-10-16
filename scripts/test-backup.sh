@@ -31,6 +31,7 @@ psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/015-recipes.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/016-recipe-protection.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/017-bound-recipes.sql
 psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/018-recipe-demo.sql
+psql -X -q -v ON_ERROR_STOP=1 -f apps/api/migrations/019-universal-recipe-demo.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/001-command-journal.sql
 psql -X -q -v ON_ERROR_STOP=1 -f packages/storage/migrations/002-reconciliation.sql
 psql -X -q -v ON_ERROR_STOP=1 <<'SQL'
@@ -55,6 +56,9 @@ INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES('0000000
 INSERT INTO apcs_recipe_runs(id,project_id,recipe_id,revision,actor_id,snapshot,events) VALUES('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000010',2,'00000000-0000-4000-8000-000000000001','{"status":"Completed","heater":false,"stageIndex":0,"parameters":{"schemaVersion":2,"steps":[{"kind":"cool","name":"Cool batch","targetC":21,"timeoutSeconds":60}]}}','[{"at":0,"message":"Run started"},{"at":500,"message":"Run completed"}]');
 UPDATE apcs_recipe_runs SET binding='{"deviceId":"00000000-0000-4000-8000-000000000004","temperatureSignalId":"backup-temperature","outputSignalId":"00000000-0000-4000-8000-000000000005","projectRevision":1}',control='{"phase":"Verified OFF","commandId":"backup-command","commandState":"Verified","observedOutput":false}' WHERE revision=2;
 INSERT INTO apcs_recipe_demo_installations(project_id,manifest) VALUES('00000000-0000-4000-8000-000000000002','{"deviceId":"00000000-0000-4000-8000-000000000004"}');
+INSERT INTO apcs_universal_recipe_demo_installations(project_id,manifest) VALUES('00000000-0000-4000-8000-000000000002','{"bindings":{"output":"00000000-0000-4000-8000-000000000005"}}');
+INSERT INTO apcs_recipes(id,project_id,revision,name,parameters) VALUES('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000002',3,'Universal backup','{"schemaVersion":3,"ports":[{"key":"output","label":"Output","kind":"boolean-output"}],"steps":[{"kind":"set","name":"Off","port":"output","value":false,"timeoutSeconds":2}]}');
+INSERT INTO apcs_recipe_runs(id,project_id,recipe_id,revision,actor_id,snapshot,events,binding,control) VALUES('00000000-0000-4000-8000-000000000013','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000010',3,'00000000-0000-4000-8000-000000000001','{"status":"Completed","parameters":{"schemaVersion":3}}','[]','{"kind":"universal","projectRevision":1,"ports":{"output":{"signalId":"00000000-0000-4000-8000-000000000005","deviceId":"00000000-0000-4000-8000-000000000004","kind":"boolean-output"}}}','{"phase":"Verified OFF","outputs":{"output":{"commandId":"backup-command","state":"Verified","value":false}}}');
 SQL
 file=$(sh scripts/database-backup.sh "$backup_dir")
 [ -f "$file" ] || { echo 'FAIL: no backup archive was created' >&2; exit 1; }
@@ -84,6 +88,10 @@ fi
 [ "$(psql -X -Atq --dbname="$restored" -c "SELECT control->>'phase' FROM apcs_recipe_runs WHERE revision=2")" = 'Verified OFF' ]
 [ "$(psql -X -Atq --dbname="$restored" -c "SELECT binding->>'projectRevision' FROM apcs_recipe_runs WHERE revision=2")" = '1' ]
 [ "$(psql -X -Atq --dbname="$restored" -c "SELECT count(*) FROM apcs_recipe_demo_installations")" = '1' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT parameters->>'schemaVersion' FROM apcs_recipes WHERE revision=3")" = '3' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT binding->>'kind' FROM apcs_recipe_runs WHERE revision=3")" = 'universal' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT control->'outputs'->'output'->>'state' FROM apcs_recipe_runs WHERE revision=3")" = 'Verified' ]
+[ "$(psql -X -Atq --dbname="$restored" -c "SELECT manifest->'bindings'->>'output' FROM apcs_universal_recipe_demo_installations")" = '00000000-0000-4000-8000-000000000005' ]
 if psql -X -q -v ON_ERROR_STOP=1 --dbname="$restored" -c "UPDATE apcs_recipes SET name='tampered'" > /dev/null 2>&1; then
   echo 'FAIL: restored recipe protection was lost' >&2; exit 1
 fi
